@@ -48,3 +48,17 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - Revocation closes sessions; clipboard contents are excluded from activity logs.
 - Validation: 12 Rust tests and strict Clippy pass; four real two-daemon TLS
   integration scenarios pass, including certificate mismatch and restart.
+
+## 5. Flutter client and local audio adapter
+
+- Device dashboard, QR invitation display/import, code comparison and pairing
+  approval; capability permission management and unpair controls.
+- File picker, durable outgoing history, transfer progress, resume and cancel.
+- Clipboard preview/acceptance with actual platform clipboard writes.
+- Separate WebRTC connections for microphone-to-speaker audio, host-only ICE,
+  authenticated signaling, permission gates and explicit stop/cleanup.
+- Media adapter lease prevents a disconnected UI from leaving its capability active.
+- Responsive desktop/phone-sized layouts and activity diagnostics.
+- Validation: five Flutter tests and static analysis pass; Linux debug build
+  succeeds with native WebRTC plugin. Windows/mobile and physical-device audio
+  are not yet validated.
