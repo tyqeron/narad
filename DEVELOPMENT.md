@@ -34,3 +34,17 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   and accidental overwrite. Cancelled transfers reject further chunks.
 - Validation: six core tests pass, including restart/resume, duplicate chunks,
   corrupt chunks, cancellation, encrypted-state tampering and authorization.
+
+## 4. Network daemon and usable CLI
+
+- mDNS/DNS-SD discovery and manual invitations; discovery is never a trust grant.
+- Pinned TLS control and file listeners; signed, bounded protocol frames.
+- One-time expiring pairing invitations and transcript verification codes with
+  explicit approval on both devices.
+- Token-authenticated loopback API, bounded concurrent connections and
+  exclusive state-directory locking.
+- File offer/accept/resume/cancel, encrypted outgoing history, clipboard
+  permission plus per-payload acceptance, and approved WebRTC signaling.
+- Revocation closes sessions; clipboard contents are excluded from activity logs.
+- Validation: 12 Rust tests and strict Clippy pass; four real two-daemon TLS
+  integration scenarios pass, including certificate mismatch and restart.

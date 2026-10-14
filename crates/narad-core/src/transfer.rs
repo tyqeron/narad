@@ -1,6 +1,6 @@
 use crate::{
     model::now,
-    storage::{atomic_write, load_encrypted, save_encrypted},
+    storage::{load_encrypted, save_encrypted},
     CHUNK_SIZE,
 };
 use anyhow::{ensure, Context, Result};
@@ -130,11 +130,9 @@ impl Transfer {
         let destination = downloads.join(&self.id);
         crate::storage::private_dir(&destination)?;
         let out = destination.join(&self.file_name);
-        atomic_write(
-            &out.with_extension("narad-receipt"),
-            self.checksum.as_bytes(),
-        )?;
-        fs::rename(self.path(dir), &out)?;
+        // Hard-link publication is atomic and refuses to replace an existing file.
+        fs::hard_link(self.path(dir), &out)?;
+        fs::remove_file(self.path(dir))?;
         self.status = "completed".into();
         self.updated_at = now();
         self.persist(dir, key)?;
@@ -181,7 +179,13 @@ pub fn load_transfers(dir: &Path, key: &[u8; 32], downloads: &Path) -> Result<Ve
         t.validate()?;
         if t.status == "receiving" {
             let completed = downloads.join(&t.id).join(&t.file_name);
-            if !t.path(dir).exists() && completed.exists() && hash_file(&completed)? == t.checksum {
+            if completed.exists()
+                && t.received == t.file_size
+                && hash_file(&completed)? == t.checksum
+            {
+                if t.path(dir).exists() {
+                    fs::remove_file(t.path(dir))?;
+                }
                 t.status = "completed".into();
                 t.persist(dir, key)?;
             } else {

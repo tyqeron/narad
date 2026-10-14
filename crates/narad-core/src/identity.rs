@@ -29,7 +29,7 @@ pub fn random_token() -> String {
     hex(&b)
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Identity {
     secret: [u8; 32],
     pub certificate: Vec<u8>,
