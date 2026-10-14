@@ -16,3 +16,21 @@ the first commit. `git log --reverse --oneline` shows the development sequence.
 Run formatting, relevant behavioral tests, and lint checks at milestones.
 Use two actual daemon instances for integration tests, including negative trust,
 permission and recovery cases. Record unsupported or untested behavior honestly.
+
+## 2. Identity, trust and authorization
+
+- Stable Ed25519 identities and self-signed TLS certificates.
+- Signed protocol envelopes bind the sender, payload, nonce and timestamp.
+- Replay and stale-message rejection; encrypted ChaCha20-Poly1305 trust state.
+- Capability permissions are independent of pairing; session transitions are guarded.
+- Validation: four behavioral core tests passed; strict Clippy cleanup included in
+  the transfer milestone.
+
+## 3. Recoverable file storage
+
+- Bounded chunks and BLAKE3 checksums for chunks and complete files.
+- Encrypted progress manifests, atomic writes and durable checkpoints.
+- Safe file names and per-transfer download directories prevent path traversal
+  and accidental overwrite. Cancelled transfers reject further chunks.
+- Validation: six core tests pass, including restart/resume, duplicate chunks,
+  corrupt chunks, cancellation, encrypted-state tampering and authorization.

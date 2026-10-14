@@ -9,7 +9,12 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::Path};
 
 pub fn hex(data: &[u8]) -> String {
-    data.iter().map(|b| format!("{b:02x}")).collect()
+    use std::fmt::Write;
+    data.iter()
+        .fold(String::with_capacity(data.len() * 2), |mut s, b| {
+            write!(&mut s, "{b:02x}").unwrap();
+            s
+        })
 }
 pub fn unhex(s: &str) -> Result<Vec<u8>> {
     ensure!(s.len() % 2 == 0 && s.is_ascii(), "invalid hex");
