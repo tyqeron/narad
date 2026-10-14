@@ -1,0 +1,15 @@
+/target/
+/.narad/
+*.log
+.DS_Store
+clients/flutter/.dart_tool/
+clients/flutter/build/
+clients/flutter/.flutter-plugins*
+clients/flutter/linux/flutter/ephemeral/
+clients/flutter/windows/flutter/ephemeral/
+clients/flutter/android/.gradle/
+clients/flutter/android/local.properties
+clients/flutter/android/key.properties
+clients/flutter/android/app/debug/
+clients/flutter/android/app/profile/
+clients/flutter/android/app/release/
