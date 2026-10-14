@@ -88,3 +88,20 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - Flush download directories before removing the partial-file link on Unix.
 - Validation: Rust behavior tests and strict Clippy pass; real transfer/restart
   integration verifies the same framing and durability behavior.
+
+## 8. Patched dependencies and project toolchain
+
+- Checked registry dependencies against OSV and inspected the corresponding
+  RustSec advisories. Updated Anyhow, Rand, Rustls/WebPKI, Tokio/Tokio-Rustls,
+  Time, and the compatible Serde dependency chain.
+- Rustls 0.23.46 includes the fixes listed in the
+  [TLS handshake advisory](https://rustsec.org/advisories/RUSTSEC-2026-0285.html).
+  Time 0.3.55 includes the
+  [stack exhaustion fix](https://rustsec.org/advisories/RUSTSEC-2026-0009.html).
+- `rust-toolchain.toml` pins Rust 1.88, required by patched Time. The global
+  default toolchain remains unchanged.
+- Added `scripts/check-dependencies.py` to repeat the public package-version
+  advisory check; it sends no source code or private state.
+- Validation on 2026-10-15: all 151 registry dependencies returned no matched
+  OSV advisories; 12 Rust tests, strict Clippy and all seven daemon integration
+  scenarios pass on the patched graph. This is not an independent security audit.
