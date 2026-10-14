@@ -105,3 +105,13 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - Validation on 2026-10-15: all 151 registry dependencies returned no matched
   OSV advisories; 12 Rust tests, strict Clippy and all seven daemon integration
   scenarios pass on the patched graph. This is not an independent security audit.
+
+## 9. Run instructions, CI and implementation status
+
+- Added the Linux development launcher, CLI/GUI setup instructions, experimental
+  protocol reference, architecture decisions and explicit remaining-work status.
+- Added Rust and Flutter CI jobs; CI configuration is committed, not yet run on
+  a hosted repository. Linux native builds and equivalent local checks pass.
+- Set client version 0.1.0 and included the workspace MIT license.
+- Original PRD, architecture, roadmap, backlog and technical specification stay
+  preserved as the planning baseline; cross-platform release criteria remain open.
