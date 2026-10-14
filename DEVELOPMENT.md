@@ -62,3 +62,21 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - Validation: five Flutter tests and static analysis pass; Linux debug build
   succeeds with native WebRTC plugin. Windows/mobile and physical-device audio
   are not yet validated.
+
+## 6. Reliability and lifecycle fixes
+
+- Actual multicast integration confirms discovery remains untrusted and audio
+  availability follows the connected adapter.
+- Refresh paired addresses only when discovery keys and TLS pins match; incoming
+  metadata uses the observed network source address.
+- Independent connection budgets for control, files and the local UI.
+- Paginated history, bounded peer metadata, private IPv4 endpoints and archive
+  actions that preserve completed downloads.
+- Revoked file sessions stay closed through restart and need explicit resume.
+- Keep one shutdown future across the accept loop and drain cancelled tasks;
+  the expanded restart test exposed and resolved a missed-signal race.
+- Audio cleanup stops local capture before network teardown; late microphone
+  permission results are disposed when their session has already ended.
+- Validation: 12 Rust tests, seven real daemon integration scenarios (including
+  multicast and interrupted 8 MiB transfer), five Flutter tests, clean linting
+  and rendered desktop/narrow layout previews.

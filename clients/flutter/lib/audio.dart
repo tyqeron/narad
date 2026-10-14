@@ -23,13 +23,14 @@ class AudioController {
   bool enabled = false;
 
   Future<void> setEnabled(bool value) async {
-    await api.call({'op': 'media_ready', 'ready': value});
-    enabled = value;
     if (!value) {
+      enabled = false;
       for (final id in links.keys.toList()) {
-        await stop(id);
+        await stop(id, notify: false);
       }
     }
+    await api.call({'op': 'media_ready', 'ready': value});
+    enabled = value;
   }
 
   Future<String> start(String peer) async {
@@ -61,26 +62,7 @@ class AudioController {
         final state = (response['session'] as Map)['state'];
         if (state == 'authorized') {
           link.starting = true;
-          try {
-            await _connect(link);
-            // Capture starts only after both devices have approved the session.
-            link.microphone = await navigator.mediaDevices.getUserMedia({
-              'audio': true,
-              'video': false,
-            });
-            for (final track in link.microphone!.getAudioTracks()) {
-              await link.connection!.addTrack(track, link.microphone!);
-            }
-            final offer = await link.connection!.createOffer({
-              'offerToReceiveAudio': false,
-              'offerToReceiveVideo': false,
-            });
-            await link.connection!.setLocalDescription(offer);
-            await _signal(link, {'type': 'offer', 'sdp': offer.sdp});
-          } catch (error) {
-            await stop(link.id);
-            rethrow;
-          }
+          unawaited(_startOutgoing(link));
         } else if (['closed', 'denied', 'failed'].contains(state)) {
           await stop(link.id, notify: false);
         }
@@ -116,6 +98,41 @@ class AudioController {
     }
   }
 
+  Future<void> _startOutgoing(AudioLink link) async {
+    try {
+      await _connect(link);
+      if (!links.containsKey(link.id)) return;
+      final stream = await navigator.mediaDevices.getUserMedia({
+        'audio': true,
+        'video': false,
+      });
+      // A permission dialog can outlive a cancelled session.
+      if (!links.containsKey(link.id)) {
+        for (final track in stream.getTracks()) {
+          await track.stop();
+        }
+        await stream.dispose();
+        return;
+      }
+      link.microphone = stream;
+      await api.call({'op': 'session_touch', 'id': link.id});
+      for (final track in stream.getAudioTracks()) {
+        await link.connection!.addTrack(track, stream);
+      }
+      if (!links.containsKey(link.id)) return;
+      final offer = await link.connection!.createOffer({
+        'offerToReceiveAudio': false,
+        'offerToReceiveVideo': false,
+      });
+      await link.connection!.setLocalDescription(offer);
+      await _signal(link, {'type': 'offer', 'sdp': offer.sdp});
+    } catch (error) {
+      final active = links.containsKey(link.id);
+      await stop(link.id);
+      if (active) onError(error);
+    }
+  }
+
   Future<void> _connect(AudioLink link) async {
     await api.call({
       'op': 'media_state',
@@ -127,6 +144,11 @@ class AudioController {
       'iceServers': [],
       'sdpSemantics': 'unified-plan',
     });
+    if (!links.containsKey(link.id)) {
+      await pc.close();
+      await pc.dispose();
+      throw StateError('Audio session ended');
+    }
     link.connection = pc;
     pc.onIceCandidate = (candidate) {
       if (candidate.candidate?.isNotEmpty == true) {
@@ -144,14 +166,20 @@ class AudioController {
       }
     };
     pc.onTrack = (event) async {
-      if (event.streams.isNotEmpty) {
-        link.renderer ??= RTCVideoRenderer();
-        try {
-          await link.renderer!.initialize();
-          link.renderer!.srcObject = event.streams.first;
-        } catch (error) {
-          onError(error);
+      if (event.streams.isEmpty || !links.containsKey(link.id)) return;
+      final renderer = RTCVideoRenderer();
+      try {
+        await renderer.initialize();
+        if (!links.containsKey(link.id)) {
+          await renderer.dispose();
+          return;
         }
+        await link.renderer?.dispose();
+        link.renderer = renderer;
+        renderer.srcObject = event.streams.first;
+      } catch (error) {
+        await renderer.dispose();
+        onError(error);
       }
     };
     pc.onConnectionState = (state) async {
@@ -245,27 +273,33 @@ class AudioController {
   Future<void> stop(String id, {bool notify = true}) async {
     final link = links.remove(id);
     if (link == null) return;
+    // Stop capture and playback before waiting for network teardown.
+    try {
+      for (final track
+          in link.microphone?.getTracks() ?? <MediaStreamTrack>[]) {
+        await track.stop();
+      }
+    } finally {
+      try {
+        await link.connection?.close();
+        await link.connection?.dispose();
+      } finally {
+        await link.microphone?.dispose();
+        await link.renderer?.dispose();
+      }
+    }
     if (notify) {
       try {
         await api.call({'op': 'session_stop', 'id': id, 'peer_id': link.peer});
-      } catch (_) {
-        /* Local cleanup must still run when peer is unreachable. */
-      }
+      } catch (_) {}
     }
-    for (final track in link.microphone?.getTracks() ?? <MediaStreamTrack>[]) {
-      await track.stop();
-    }
-    await link.microphone?.dispose();
-    await link.connection?.close();
-    await link.connection?.dispose();
-    await link.renderer?.dispose();
     link.candidates.clear();
   }
 
   Future<void> dispose() async {
     enabled = false;
     for (final id in links.keys.toList()) {
-      await stop(id);
+      await stop(id, notify: false);
     }
     try {
       await api.call({'op': 'media_ready', 'ready': false});

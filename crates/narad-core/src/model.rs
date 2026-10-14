@@ -35,7 +35,23 @@ impl Peer {
             "invalid device name"
         );
         ensure!(self.port > 0 && self.port < 65535, "invalid control port");
-        let _: std::net::IpAddr = self.address.parse()?;
+        let address: std::net::Ipv4Addr = self.address.parse()?;
+        ensure!(
+            address.is_private() || address.is_loopback() || address.is_link_local(),
+            "endpoint must be on a private IPv4 network"
+        );
+        ensure!(
+            !self.platform.is_empty() && self.platform.len() <= 32 && self.platform.is_ascii(),
+            "invalid platform"
+        );
+        ensure!(
+            self.capabilities.len() <= 16
+                && self.capabilities.iter().all(|c| !c.is_empty()
+                    && c.len() <= 64
+                    && c.bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'_')),
+            "invalid advertised capabilities"
+        );
         ensure!(
             self.public_key.len() == 64 && self.certificate_hash.len() == 64,
             "invalid identity"
@@ -114,8 +130,12 @@ impl Session {
             self.state,
             SessionState::Closed | SessionState::Denied | SessionState::Failed
         ) {
-            self.state = SessionState::Closed;
-            self.updated_at = now();
+            if self.state != SessionState::Releasing {
+                self.transition(SessionState::Releasing)
+                    .expect("nonterminal session can release");
+            }
+            self.transition(SessionState::Closed)
+                .expect("releasing session can close");
         }
     }
 }

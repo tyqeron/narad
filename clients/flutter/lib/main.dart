@@ -40,7 +40,9 @@ class Dashboard extends StatefulWidget {
 
 class _DashboardState extends State<Dashboard> {
   late final TextEditingController _directory;
-  final _port = TextEditingController(text: '45700');
+  final _port = TextEditingController(
+    text: Platform.environment['NARAD_API_PORT'] ?? '45700',
+  );
   NaradApi? _api;
   AudioController? _audio;
   Map<String, dynamic> _data = {};
@@ -48,6 +50,7 @@ class _DashboardState extends State<Dashboard> {
   bool _online = false, _busy = false, _refreshing = false;
   String? _error;
   int _page = 0;
+  int _connectionGeneration = 0;
   static const _titles = ['Devices', 'Inbox', 'Transfers', 'Audio', 'Activity'];
   static const _icons = [
     Icons.devices_rounded,
@@ -77,6 +80,9 @@ class _DashboardState extends State<Dashboard> {
   }
 
   void _attach(NaradApi api) {
+    _connectionGeneration++;
+    final previous = _audio;
+    if (previous != null) unawaited(previous.dispose().catchError(_showError));
     _api = api;
     _audio = AudioController(api, _showError);
     unawaited(_refresh());
@@ -108,29 +114,51 @@ class _DashboardState extends State<Dashboard> {
   Future<void> _refresh() async {
     if (_refreshing || _api == null) return;
     _refreshing = true;
+    final generation = _connectionGeneration;
+    final api = _api!;
+    final audio = _audio;
     try {
-      final data = await _api!.call({'op': 'status'});
-      if (!mounted) return;
+      final data = await api.call({'op': 'status'});
+      var more = data['has_more'] == true;
+      var offset = 32;
+      while (more && offset <= 512) {
+        final page = await api.call({'op': 'status', 'offset': offset});
+        for (final key in [
+          'pairings',
+          'transfers',
+          'outbound',
+          'sessions',
+          'clipboard',
+        ]) {
+          (data[key] as List).addAll(page[key] as List);
+        }
+        for (final key in ['paired', 'permissions']) {
+          (data[key] as Map).addAll(page[key] as Map);
+        }
+        more = page['has_more'] == true;
+        offset += 32;
+      }
+      if (!mounted || generation != _connectionGeneration) return;
       setState(() {
         _data = data;
         _online = true;
         _error = null;
       });
       try {
-        await _audio?.tick(data);
+        await audio?.tick(data);
       } catch (error) {
         _showError(error);
       }
     } catch (error) {
-      if (mounted) {
+      if (mounted && generation == _connectionGeneration) {
         setState(() {
           _online = false;
           _error = error.toString();
         });
       }
-      if (_audio != null) {
-        for (final id in _audio!.links.keys.toList()) {
-          await _audio!.stop(id, notify: false);
+      if (audio != null) {
+        for (final id in audio.links.keys.toList()) {
+          await audio.stop(id, notify: false);
         }
       }
     } finally {
@@ -860,6 +888,15 @@ class _DashboardState extends State<Dashboard> {
               ),
               primary: true,
             ),
+          if (['completed', 'cancelled'].contains(t['status']))
+            _button(
+              'Archive',
+              () => _command({
+                'op': 'archive_transfer',
+                'id': t['id'],
+                'outgoing': true,
+              }),
+            ),
         ],
         extra: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -907,6 +944,15 @@ class _DashboardState extends State<Dashboard> {
               );
               _notice('Saved path copied');
             }),
+          if (['completed', 'cancelled'].contains(t['status']))
+            _button(
+              'Archive',
+              () => _command({
+                'op': 'archive_transfer',
+                'id': t['id'],
+                'outgoing': false,
+              }),
+            ),
         ],
         extra: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

@@ -30,7 +30,7 @@ class DaemonApi implements NaradApi {
             if (byte == 10) {
               return jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
             }
-            if (bytes.length >= 128 * 1024) {
+            if (bytes.length >= 512 * 1024) {
               throw const FormatException('Daemon response exceeds size limit');
             }
             bytes.add(byte);

@@ -249,7 +249,7 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
             let offset = p["offset"].as_u64().unwrap_or(0) as usize;
             let clipboard=s.clipboard.values().skip(offset).take(32).map(|c|json!({"id":c.id,"peer_id":c.peer_id,"status":c.status,"preview":c.text.chars().take(160).collect::<String>(),"expires_at":c.expires_at})).collect::<Vec<_>>();
             Ok(
-                json!({"ok":true,"device":s.own,"paired":s.trust.peers.iter().skip(offset).take(32).collect::<std::collections::BTreeMap<_,_>>(),"permissions":s.trust.permissions.iter().skip(offset).take(96).collect::<std::collections::BTreeMap<_,_>>(),"pairings":s.pairings.values().skip(offset).take(32).collect::<Vec<_>>(),"transfers":s.transfers.values().skip(offset).take(32).collect::<Vec<_>>(),"sessions":s.sessions.values().skip(offset).take(32).collect::<Vec<_>>(),"clipboard":clipboard,"events":s.events.iter().rev().take(20).collect::<Vec<_>>(),"outbound":s.outbound.values().skip(offset).take(32).collect::<Vec<_>>(),"media_ready":s.media_ready,"offset":offset}),
+                json!({"ok":true,"device":s.own,"paired":s.trust.peers.iter().skip(offset).take(32).collect::<std::collections::BTreeMap<_,_>>(),"permissions":s.trust.permissions.iter().skip(offset).take(96).collect::<std::collections::BTreeMap<_,_>>(),"pairings":s.pairings.values().skip(offset).take(32).collect::<Vec<_>>(),"transfers":s.transfers.values().skip(offset).take(32).collect::<Vec<_>>(),"sessions":s.sessions.values().skip(offset).take(32).collect::<Vec<_>>(),"clipboard":clipboard,"events":s.events.iter().rev().take(20).collect::<Vec<_>>(),"outbound":s.outbound.values().skip(offset).take(32).collect::<Vec<_>>(),"media_ready":s.media_ready,"offset":offset,"has_more":([s.trust.peers.len(),s.pairings.len(),s.transfers.len(),s.sessions.len(),s.clipboard.len(),s.outbound.len()].into_iter().max().unwrap_or(0)>offset+32)}),
             )
         }
         "invite" => {
@@ -360,6 +360,28 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
             s.event("file.accepted", json!({"id":id}));
             Ok(ok())
         }
+        "archive_transfer" => {
+            let id = string(&p, "id")?;
+            if p["outgoing"] == true {
+                let t = s.outbound.get(id).context("unknown outgoing transfer")?;
+                ensure!(
+                    ["completed", "cancelled"].contains(&t.status.as_str()),
+                    "transfer is still active"
+                );
+                s.outbound.remove(id);
+                s.save_outbound()?;
+            } else {
+                let t = s.transfers.get(id).context("unknown transfer")?;
+                ensure!(
+                    ["completed", "cancelled"].contains(&t.status.as_str()),
+                    "transfer is still active"
+                );
+                std::fs::remove_file(s.dir.join("transfers").join(format!("{id}.json.enc")))?;
+                s.transfers.remove(id);
+                s.sessions.remove(id);
+            }
+            Ok(ok())
+        }
         "file_cancel" => {
             let id = string(&p, "id")?;
             let dir = s.dir.join("transfers");
@@ -417,6 +439,13 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
         "media_ready" => {
             s.media_ready = p["ready"].as_bool().context("missing ready flag")?;
             s.media_seen = now();
+            if s.media_ready {
+                if !s.own.capabilities.iter().any(|c| c == "audio.output") {
+                    s.own.capabilities.push("audio.output".into());
+                }
+            } else {
+                s.own.capabilities.retain(|c| c != "audio.output");
+            }
             if !s.media_ready {
                 for session in s.sessions.values_mut() {
                     if session.capability == "audio.output" {

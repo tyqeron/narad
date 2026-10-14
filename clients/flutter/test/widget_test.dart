@@ -49,8 +49,17 @@ class FakeApi implements NaradApi {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  setUp(() {TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform,(call) async => null);});
-  tearDown(() {TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform,null);});
+  setUp(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          SystemChannels.platform,
+          (call) async => null,
+        );
+  });
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, null);
+  });
   testWidgets('paired device actions and empty discovery are visible', (
     tester,
   ) async {
@@ -60,7 +69,10 @@ void main() {
     expect(find.text('My laptop'), findsOneWidget);
     expect(find.text('My phone'), findsOneWidget);
     expect(find.text('Send file'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('Looking on your local network'), 200);
+    await tester.scrollUntilVisible(
+      find.text('Looking on your local network'),
+      200,
+    );
     expect(find.text('Looking on your local network'), findsOneWidget);
     expect(
       api.calls.any((c) => c['op'] == 'media_ready' && c['ready'] == true),

@@ -1,4 +1,5 @@
 """Real two-daemon TLS integration tests. Run after cargo build --workspace."""
+import concurrent.futures
 import json
 import os
 from pathlib import Path
@@ -33,6 +34,7 @@ class Device:
         self.api = free_port_pair()
         self.name = name
         self.process = None
+        self.discovery = False
         self.start()
 
     def start(self):
@@ -40,7 +42,7 @@ class Device:
         self.process = subprocess.Popen([
             str(BIN), "--state", str(self.state), "--api-port", str(self.api),
             "serve", "--name", self.name, "--port", str(self.control),
-            "--address", "127.0.0.1", "--no-discovery",
+            "--address", "127.0.0.1", *([] if self.discovery else ["--no-discovery"]),
         ], stdout=self.log, stderr=self.log)
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
@@ -56,7 +58,12 @@ class Device:
     def stop(self):
         if self.process and self.process.poll() is None:
             self.process.send_signal(signal.SIGINT)
-            self.process.wait(timeout=10)
+            try:
+                self.process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait(timeout=5)
+                raise RuntimeError("daemon did not stop: " + (self.state.parent / f"{self.name}.log").read_text())
         self.log.close()
 
     def call(self, token=None, **command):
@@ -64,7 +71,7 @@ class Device:
         with socket.create_connection(("127.0.0.1", self.api), timeout=30) as s:
             s.settimeout(60)
             s.sendall(json.dumps({"token": token, "command": command}).encode() + b"\n")
-            data = s.makefile("rb").readline(128 * 1024 + 2)
+            data = s.makefile("rb").readline(512 * 1024 + 2)
         result = json.loads(data)
         if not result.get("ok"):
             raise RuntimeError(result.get("error"))
@@ -130,6 +137,77 @@ class NaradIntegration(unittest.TestCase):
         cancelled = self.a.call(op="send_file", peer_id=self.bid, path=str(source))
         self.b.call(op="file_cancel", id=cancelled["id"])
         self.assertEqual(self.a.call(op="send_file", peer_id=self.bid, path=str(source), id=cancelled["id"])["status"], "cancelled")
+
+    def test_interrupted_transfer_resumes_from_verified_checkpoint(self):
+        self.pair()
+        source = self.root / "interrupted.bin"
+        source.write_bytes(os.urandom(8 * 1024 * 1024))
+        offer = self.a.call(op="send_file", peer_id=self.bid, path=str(source))
+        self.b.call(op="file_accept", id=offer["id"])
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            sending = pool.submit(self.a.call, op="send_file", peer_id=self.bid, path=str(source), id=offer["id"])
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                progress = self.b.call(op="status")["transfers"][0]["received"]
+                if 0 < progress < source.stat().st_size:
+                    break
+                time.sleep(0.01)
+            else:
+                self.fail("failed to observe an interrupted checkpoint")
+            self.b.stop()
+            with self.assertRaises((RuntimeError, OSError)):
+                sending.result(timeout=20)
+        self.b.start()
+        checkpoint = self.b.call(op="status")["transfers"][0]["received"]
+        self.assertGreater(checkpoint, 0)
+        self.assertLess(checkpoint, source.stat().st_size)
+        self.a.stop()
+        self.a.start()
+        self.assertEqual(self.a.call(op="status")["outbound"][0]["id"], offer["id"])
+        result = self.a.call(op="send_file", peer_id=self.bid, path=str(source), id=offer["id"])
+        self.assertEqual(Path(result["path"]).read_bytes(), source.read_bytes())
+
+    def test_file_revocation_survives_restart_and_needs_explicit_resume(self):
+        self.pair()
+        source = self.root / "private.txt"
+        source.write_text("permission sensitive")
+        offer = self.a.call(op="send_file", peer_id=self.bid, path=str(source))
+        self.b.call(op="file_accept", id=offer["id"])
+        self.b.call(op="permission", peer_id=self.aid, capability="file.transfer", allow=False)
+        self.b.stop()
+        self.b.start()
+        self.b.call(op="permission", peer_id=self.aid, capability="file.transfer", allow=True)
+        with self.assertRaisesRegex(RuntimeError, "unknown session"):
+            self.a.call(op="send_file", peer_id=self.bid, path=str(source), id=offer["id"])
+        self.b.call(op="file_resume", id=offer["id"])
+        result = self.a.call(op="send_file", peer_id=self.bid, path=str(source), id=offer["id"])
+        self.assertEqual(result["status"], "completed")
+
+    @unittest.skipUnless(os.environ.get("NARAD_TEST_MDNS") == "1", "multicast test is opt-in")
+    def test_mdns_discovery_is_untrusted_and_advertises_live_audio(self):
+        self.a.stop()
+        self.b.stop()
+        self.a.discovery = self.b.discovery = True
+        self.a.start()
+        self.b.start()
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            discovered = self.a.call(op="status")["discovered"]
+            if any(p["device_id"] == self.bid for p in discovered):
+                break
+            time.sleep(0.1)
+        else:
+            self.fail("mDNS peer not discovered")
+        self.assertFalse(self.a.call(op="status")["paired"])
+        self.b.call(op="media_ready", ready=True)
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            discovered = self.a.call(op="status")["discovered"]
+            if any(p["device_id"] == self.bid and "audio.output" in p["capabilities"] for p in discovered):
+                break
+            time.sleep(0.1)
+        else:
+            self.fail("live audio capability not advertised")
 
     def test_bad_local_token_expired_invite_and_wrong_certificate_pin(self):
         with self.assertRaisesRegex(RuntimeError, "authentication failed"):

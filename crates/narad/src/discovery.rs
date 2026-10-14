@@ -9,8 +9,8 @@ use std::{
 
 pub const SERVICE: &str = "_narad._tcp.local.";
 pub type Discovered = Arc<Mutex<BTreeMap<String, (Peer, Instant)>>>;
-pub fn start(peer: &Peer, peers: Discovered) -> Result<ServiceDaemon> {
-    let daemon = ServiceDaemon::new()?;
+pub fn advertise(daemon: &ServiceDaemon, peer: &Peer) -> Result<()> {
+    let capabilities = peer.capabilities.join(",");
     let properties = [
         ("id", peer.device_id.as_str()),
         ("name", peer.device_name.as_str()),
@@ -18,6 +18,7 @@ pub fn start(peer: &Peer, peers: Discovered) -> Result<ServiceDaemon> {
         ("version", "1"),
         ("key", peer.public_key.as_str()),
         ("pin", peer.certificate_hash.as_str()),
+        ("capabilities", capabilities.as_str()),
     ];
     let info = ServiceInfo::new(
         SERVICE,
@@ -29,6 +30,11 @@ pub fn start(peer: &Peer, peers: Discovered) -> Result<ServiceDaemon> {
     )?
     .enable_addr_auto();
     daemon.register(info)?;
+    Ok(())
+}
+pub fn start(peer: &Peer, peers: Discovered) -> Result<ServiceDaemon> {
+    let daemon = ServiceDaemon::new()?;
+    advertise(&daemon, peer)?;
     let events = daemon.browse(SERVICE)?;
     let own = peer.device_id.clone();
     std::thread::spawn(move || {
@@ -56,7 +62,13 @@ pub fn start(peer: &Peer, peers: Discovered) -> Result<ServiceDaemon> {
                         certificate_hash: get("pin"),
                         address: address.to_string(),
                         port: info.get_port(),
-                        capabilities: vec!["file.transfer".into(), "clipboard.sync".into()],
+                        capabilities: get("capabilities")
+                            .split(',')
+                            .filter(|c| {
+                                ["file.transfer", "clipboard.sync", "audio.output"].contains(c)
+                            })
+                            .map(String::from)
+                            .collect(),
                     };
                     if peer.validate().is_ok() {
                         let mut map = peers.lock().unwrap();

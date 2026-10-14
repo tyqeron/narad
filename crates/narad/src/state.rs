@@ -216,6 +216,7 @@ impl State {
         let t = now();
         if self.media_ready && t.saturating_sub(self.media_seen) > 15 {
             self.media_ready = false;
+            self.own.capabilities.retain(|c| c != "audio.output");
             for s in self.sessions.values_mut() {
                 if s.capability == "audio.output" {
                     s.close();

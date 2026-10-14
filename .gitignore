@@ -13,3 +13,14 @@ clients/flutter/android/key.properties
 clients/flutter/android/app/debug/
 clients/flutter/android/app/profile/
 clients/flutter/android/app/release/
+
+# Private daemon state, including custom state directories.
+.aws/
+**/api-token
+**/identity.json
+**/trust.enc
+**/outbound.enc
+**/daemon.lock
+**/*.json.enc
+**/*.part
+__pycache__/

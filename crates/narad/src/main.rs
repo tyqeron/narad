@@ -140,8 +140,13 @@ async fn run() -> Result<()> {
         let mut stream = TcpStream::connect(("127.0.0.1", args.api_port))
             .await
             .context("local daemon unavailable")?;
-        write_frame(&mut stream, &json!({"token":token,"command":value})).await?;
-        read_frame::<_, Value>(&mut stream).await
+        transport::write_frame_limit(
+            &mut stream,
+            &json!({"token":token,"command":value}),
+            transport::LOCAL_MAX_FRAME,
+        )
+        .await?;
+        transport::read_frame_limit::<_, Value>(&mut stream, transport::LOCAL_MAX_FRAME).await
     })
     .await
     .context("local command timed out")??;
@@ -217,34 +222,45 @@ async fn serve(
         state.dir.display()
     );
     let shared = Arc::new(Mutex::new(state));
-    let permits = Arc::new(Semaphore::new(32));
+    let control_permits = Arc::new(Semaphore::new(16));
+    let file_permits = Arc::new(Semaphore::new(16));
     let local_permits = Arc::new(Semaphore::new(8));
     let mut workers = tokio::task::JoinSet::new();
+    let shutdown = tokio::signal::ctrl_c();
+    tokio::pin!(shutdown);
     loop {
         tokio::select! {
-            _=tokio::signal::ctrl_c()=>break,
+            _=&mut shutdown=>break,
             Some(result)=workers.join_next(),if !workers.is_empty()=>{if let Err(e)=result {eprintln!("connection task failed: {e}");}},
-            accepted=control.accept()=>{let (socket,_)=accepted?;spawn_remote(&mut workers,socket,tls.clone(),shared.clone(),permits.clone(),false);},
-            accepted=file.accept()=>{let (socket,_)=accepted?;spawn_remote(&mut workers,socket,tls.clone(),shared.clone(),permits.clone(),true);},
+            accepted=control.accept()=>{let (socket,_)=accepted?;spawn_remote(&mut workers,socket,tls.clone(),shared.clone(),control_permits.clone(),false);},
+            accepted=file.accept()=>{let (socket,_)=accepted?;spawn_remote(&mut workers,socket,tls.clone(),shared.clone(),file_permits.clone(),true);},
             accepted=local.accept()=>{
-                let (mut socket,_)=accepted?;let Ok(permit)=local_permits.clone().try_acquire_owned() else {continue;};let shared=shared.clone();let discovered=discovered.clone();
+                let (mut socket,_)=accepted?;let Ok(permit)=local_permits.clone().try_acquire_owned() else {continue;};let shared=shared.clone();let discovered=discovered.clone();let discovery=discovery.clone();
                 workers.spawn(async move {let _permit=permit;
                     let result=tokio::time::timeout(Duration::from_secs(600),async {
-                        let request:Value=tokio::time::timeout(Duration::from_secs(10),read_frame(&mut socket)).await??;
+                        let request:Value=tokio::time::timeout(Duration::from_secs(10),transport::read_frame_limit(&mut socket,transport::LOCAL_MAX_FRAME)).await??;
                         {let s=shared.lock().await;let token=request["token"].as_str().unwrap_or("");ensure!(token.len()==s.token.len() && token.bytes().zip(s.token.bytes()).fold(0u8,|a,(b,c)|a|(b^c))==0,"local API authentication failed");}
+                        let candidates=discovered.lock().unwrap().values().map(|(p,_)|p.clone()).collect::<Vec<_>>();
+                        {let mut s=shared.lock().await;for candidate in candidates {if let Some(record)=s.trust.peers.get_mut(&candidate.device_id){if record.peer.public_key==candidate.public_key && record.peer.certificate_hash==candidate.certificate_hash {record.peer.address=candidate.address;record.peer.port=candidate.port;}}}}
+                        let before=shared.lock().await.own.capabilities.clone();
                         let mut result=handler::local(shared.clone(),request["command"].clone()).await?;
-                        if request["command"]["op"]=="status" {let map=discovered.lock().unwrap();let peers=map.values().filter(|(_,seen)|seen.elapsed()<Duration::from_secs(120)).map(|(p,_)|p).take(32).collect::<Vec<_>>();result["discovered"]=json!(peers);}
+                        let own=shared.lock().await.own.clone();
+                        if before!=own.capabilities {if let Some(d)=&discovery {let _=discovery::advertise(d,&own);}}
+                        if request["command"]["op"]=="status" {let map=discovered.lock().unwrap();let peers=map.values().map(|(p,_)|p).take(32).collect::<Vec<_>>();result["discovered"]=json!(peers);}
                         Ok::<_,anyhow::Error>(result)
                     }).await;
-                    let result=match result {Ok(Ok(v))=>v,Ok(Err(e))=>json!({"ok":false,"error":e.to_string()}),Err(_)=>json!({"ok":false,"error":"command timed out"})};let _=write_frame(&mut socket,&result).await;
+                    let result=match result {Ok(Ok(v))=>v,Ok(Err(e))=>json!({"ok":false,"error":e.to_string()}),Err(_)=>json!({"ok":false,"error":"command timed out"})};let _=transport::write_frame_limit(&mut socket,&result,transport::LOCAL_MAX_FRAME).await;
                 });
             }
         }
     }
     if let Some(d) = discovery {
+        let own = shared.lock().await.own.clone();
+        let _ = d.unregister(&format!("{}.{}", &own.device_id[..16], discovery::SERVICE));
         let _ = d.shutdown();
     }
     workers.abort_all();
+    while workers.join_next().await.is_some() {}
     let mut s = shared.lock().await;
     for session in s.sessions.values_mut() {
         session.close();
@@ -263,6 +279,7 @@ fn spawn_remote(
     let Ok(permit) = permits.try_acquire_owned() else {
         return;
     };
+    let observed_ip = socket.peer_addr().map(|a| a.ip().to_string());
     workers.spawn(async move {
         let _permit = permit;
         let result = tokio::time::timeout(Duration::from_secs(20), async {
@@ -272,7 +289,11 @@ fn spawn_remote(
                 let mut s = shared.lock().await;
                 let result = (|| {
                     frame.verify(&mut s.replay)?;
-                    handler::remote(&mut s, &frame.sender, &frame.payload, file_plane)
+                    let mut sender = frame.sender.clone();
+                    if let Ok(ip) = &observed_ip {
+                        sender.address = ip.clone();
+                    }
+                    handler::remote(&mut s, &sender, &frame.payload, file_plane)
                 })();
                 let value = match result {
                     Ok(v) => v,

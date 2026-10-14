@@ -17,14 +17,22 @@ use tokio::{
 };
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 
+pub const LOCAL_MAX_FRAME: usize = 512 * 1024;
+
 pub async fn read_frame<R: AsyncRead + Unpin, T: DeserializeOwned>(stream: &mut R) -> Result<T> {
+    read_frame_limit(stream, MAX_FRAME).await
+}
+pub async fn read_frame_limit<R: AsyncRead + Unpin, T: DeserializeOwned>(
+    stream: &mut R,
+    limit: usize,
+) -> Result<T> {
     let mut data = Vec::new();
     loop {
         let b = stream.read_u8().await?;
         if b == b'\n' {
             break;
         }
-        ensure!(data.len() < MAX_FRAME, "message too large");
+        ensure!(data.len() < limit, "message too large");
         data.push(b);
     }
     Ok(serde_json::from_slice(&data)?)
@@ -33,8 +41,15 @@ pub async fn write_frame<W: AsyncWrite + Unpin, T: Serialize>(
     stream: &mut W,
     value: &T,
 ) -> Result<()> {
+    write_frame_limit(stream, value, MAX_FRAME).await
+}
+pub async fn write_frame_limit<W: AsyncWrite + Unpin, T: Serialize>(
+    stream: &mut W,
+    value: &T,
+    limit: usize,
+) -> Result<()> {
     let data = serde_json::to_vec(value)?;
-    ensure!(data.len() <= MAX_FRAME, "message too large");
+    ensure!(data.len() <= limit, "message too large");
     stream.write_all(&data).await?;
     stream.write_all(b"\n").await?;
     stream.flush().await?;
