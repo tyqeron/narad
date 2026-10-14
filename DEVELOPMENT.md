@@ -80,3 +80,11 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - Validation: 12 Rust tests, seven real daemon integration scenarios (including
   multicast and interrupted 8 MiB transfer), five Flutter tests, clean linting
   and rendered desktop/narrow layout previews.
+
+## 7. Bounded buffered transport
+
+- Read JSON frames through bounded buffered I/O instead of awaiting each byte.
+- Keep the existing remote/local limits and reject missing frame terminators.
+- Flush download directories before removing the partial-file link on Unix.
+- Validation: Rust behavior tests and strict Clippy pass; real transfer/restart
+  integration verifies the same framing and durability behavior.

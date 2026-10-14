@@ -132,6 +132,11 @@ impl Transfer {
         let out = destination.join(&self.file_name);
         // Hard-link publication is atomic and refuses to replace an existing file.
         fs::hard_link(self.path(dir), &out)?;
+        #[cfg(unix)]
+        {
+            File::open(&destination)?.sync_all()?;
+            File::open(downloads)?.sync_all()?;
+        }
         fs::remove_file(self.path(dir))?;
         self.status = "completed".into();
         self.updated_at = now();

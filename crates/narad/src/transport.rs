@@ -12,7 +12,7 @@ use rustls::{
 use serde::{de::DeserializeOwned, Serialize};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::TcpStream,
 };
 use tokio_rustls::{TlsAcceptor, TlsConnector};
@@ -27,14 +27,11 @@ pub async fn read_frame_limit<R: AsyncRead + Unpin, T: DeserializeOwned>(
     limit: usize,
 ) -> Result<T> {
     let mut data = Vec::new();
-    loop {
-        let b = stream.read_u8().await?;
-        if b == b'\n' {
-            break;
-        }
-        ensure!(data.len() < limit, "message too large");
-        data.push(b);
-    }
+    let mut reader = tokio::io::BufReader::new(stream).take((limit + 2) as u64);
+    reader.read_until(b'\n', &mut data).await?;
+    ensure!(data.len() <= limit + 1, "message too large");
+    ensure!(data.last() == Some(&b'\n'), "truncated message");
+    data.pop();
     Ok(serde_json::from_slice(&data)?)
 }
 pub async fn write_frame<W: AsyncWrite + Unpin, T: Serialize>(
