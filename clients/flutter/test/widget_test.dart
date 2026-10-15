@@ -141,6 +141,107 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('nearby device sends a request without an invitation', (
+    tester,
+  ) async {
+    final api = FakeApi();
+    final peer = {
+      'device_id': 'new-phone',
+      'device_name': 'Nearby phone',
+      'platform': 'android',
+      'address': '192.168.1.20',
+      'port': 45678,
+    };
+    api.status['discovered'] = [peer];
+    await tester.pumpWidget(NaradApp(api: api));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Send pairing request'), 200);
+    await Scrollable.ensureVisible(
+      tester.element(find.text('Send pairing request')),
+      alignment: 0.5,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Send pairing request'));
+    await tester.pumpAndSettle();
+    expect(
+      api.calls.where((c) => c['op'] == 'pair_nearby').single['peer'],
+      peer,
+    );
+    expect(
+      api.calls.any((c) => c['op'] == 'invite' || c['op'] == 'pair'),
+      isFalse,
+    );
+    expect(find.textContaining('Accept it in their Inbox'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets(
+    'incoming nearby request has a notice and accepts without typing a code',
+    (tester) async {
+      final api = FakeApi();
+      api.status['pairings'] = [
+        {
+          'id': 'nearby',
+          'peer': {'device_id': 'new-phone', 'device_name': 'Nearby phone'},
+          'code': '123456',
+          'status': 'pending',
+          'outgoing': false,
+          'nearby': true,
+        },
+      ];
+      await tester.pumpWidget(NaradApp(api: api));
+      await tester.pumpAndSettle();
+      expect(find.text('Pairing request from Nearby phone'), findsOneWidget);
+      expect(find.byType(Badge), findsOneWidget);
+      expect(api.calls.any((c) => c['op'] == 'pair_approve'), isFalse);
+      await tester.tap(find.text('Review request'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Accept request'));
+      await tester.pumpAndSettle();
+      expect(api.calls.where((c) => c['op'] == 'pair_approve').single, {
+        'op': 'pair_approve',
+        'id': 'nearby',
+        'code': '123456',
+      });
+      expect(find.byType(TextField), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets(
+    'outgoing nearby request waits for receiver and can be cancelled',
+    (tester) async {
+      final api = FakeApi();
+      api.status['pairings'] = [
+        {
+          'id': 'nearby',
+          'peer': {'device_id': 'new-phone', 'device_name': 'Nearby phone'},
+          'code': '123456',
+          'status': 'pending',
+          'outgoing': true,
+          'nearby': true,
+        },
+      ];
+      await tester.pumpWidget(NaradApp(api: api));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Inbox'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Waiting for acceptance'), findsOneWidget);
+      expect(find.text('Confirm both devices'), findsNothing);
+      expect(api.calls.any((c) => c['op'] == 'pair_confirm'), isFalse);
+      await tester.tap(find.text('Cancel request'));
+      await tester.pumpAndSettle();
+      expect(
+        api.calls.any((c) => c['op'] == 'pair_deny' && c['id'] == 'nearby'),
+        isTrue,
+      );
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    },
+  );
+
   testWidgets('phone-sized navigation and inbox layout do not overflow', (
     tester,
   ) async {

@@ -294,7 +294,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                 destinations: List.generate(
                   _titles.length,
                   (i) => NavigationRailDestination(
-                    icon: Icon(_icons[i]),
+                    icon: _navigationIcon(i),
                     label: Text(_titles[i]),
                   ),
                 ),
@@ -329,6 +329,23 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                                         ?.copyWith(color: Colors.black54),
                                   ),
                                   const SizedBox(height: 24),
+                                  if (_page != 1)
+                                    for (final pair in _items('pairings').where(
+                                      (p) =>
+                                          p['nearby'] == true &&
+                                          p['outgoing'] != true &&
+                                          p['status'] == 'pending',
+                                    ))
+                                      _card(
+                                        Icons.link,
+                                        'Pairing request from ${(pair['peer'] as Map)['device_name']}',
+                                        'Review this device before accepting a connection.',
+                                        [
+                                          _button('Review request', () async {
+                                            setState(() => _page = 1);
+                                          }),
+                                        ],
+                                      ),
                                   ...switch (_page) {
                                     0 => _devices(),
                                     1 => _inbox(),
@@ -353,7 +370,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                 destinations: List.generate(
                   _titles.length,
                   (i) => NavigationDestination(
-                    icon: Icon(_icons[i]),
+                    icon: _navigationIcon(i),
                     label: _titles[i],
                   ),
                 ),
@@ -362,6 +379,15 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       );
     },
   );
+
+  Widget _navigationIcon(int index) {
+    final count = _items(
+      'pairings',
+    ).where((p) => p['outgoing'] != true && p['status'] == 'pending').length;
+    return index == 1 && count > 0
+        ? Badge.count(count: count, child: Icon(_icons[index]))
+        : Icon(_icons[index]);
+  }
 
   String _subtitle() => switch (_page) {
     0 =>
@@ -577,7 +603,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     if (_paired.isEmpty)
       _empty(
         'No paired devices yet',
-        'Create an invitation on one device and enter it on the other.',
+        'Send a pairing request to a nearby device, or use an invitation.',
         Icons.link,
       ),
     for (final record in _paired.values)
@@ -595,7 +621,22 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
           Icons.devices_other,
           peer['device_name'] as String,
           '${peer['platform']} · Discovered, awaiting pairing',
-          [_button('Enter invitation', _enterInvitation)],
+          [
+            if (_items('pairings').any(
+              (p) =>
+                  p['outgoing'] == true &&
+                  p['nearby'] == true &&
+                  p['status'] == 'pending' &&
+                  p['peer']['device_id'] == peer['device_id'],
+            ))
+              const OutlinedButton(onPressed: null, child: Text('Request sent'))
+            else
+              _button(
+                'Send pairing request',
+                () => _requestPairing(peer),
+                primary: true,
+              ),
+          ],
         ),
   ];
   Widget _pairedCard(Map<String, dynamic> peer) => _card(
@@ -616,6 +657,15 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       _button('Unpair', () => _unpair(peer)),
     ],
   );
+
+  Future<void> _requestPairing(Map<String, dynamic> peer) async {
+    await _api!.call({'op': 'pair_nearby', 'peer': peer});
+    if (!mounted) return;
+    setState(() => _page = 1);
+    _notice(
+      'Request sent to ${peer['device_name']}. Accept it in their Inbox to connect.',
+    );
+  }
 
   Future<void> _invitation() async {
     if (_android != null && _data['device']['address'] == '127.0.0.1') {
@@ -838,6 +888,12 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
 
   List<Widget> _inbox() {
     final pairings = _items('pairings').where((p) => p['status'] == 'pending');
+    final endedRequests = _items('pairings').where(
+      (p) =>
+          p['nearby'] == true &&
+          p['outgoing'] == true &&
+          p['status'] == 'denied',
+    );
     final files = _items('transfers').where((t) => t['status'] == 'pending');
     final media = _items('sessions').where(
       (s) =>
@@ -847,6 +903,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     );
     final clipboard = _items('clipboard');
     if (pairings.isEmpty &&
+        endedRequests.isEmpty &&
         files.isEmpty &&
         media.isEmpty &&
         clipboard.isEmpty) {
@@ -863,33 +920,48 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         _card(
           Icons.link,
           'Pair with ${(pair['peer'] as Map)['device_name']}',
-          'Compare this code on both devices: ${pair['code']}',
+          pair['nearby'] == true && pair['outgoing'] == true
+              ? 'Waiting for acceptance on the other device. Verification code: ${pair['code']}'
+              : 'Compare this code on both devices: ${pair['code']}',
           [
+            if (!(pair['nearby'] == true && pair['outgoing'] == true))
+              _button(
+                pair['nearby'] == true
+                    ? 'Accept request'
+                    : pair['outgoing'] == true
+                    ? 'Confirm both devices'
+                    : 'Codes match · approve',
+                () async {
+                  if (pair['nearby'] == true ||
+                      await _confirm(
+                        'Do both devices show ${pair['code']}?',
+                        'Approve only if you recognize this device and the codes match.',
+                      )) {
+                    await _command({
+                      'op': pair['outgoing'] == true
+                          ? 'pair_confirm'
+                          : 'pair_approve',
+                      'id': pair['id'],
+                      'code': pair['code'],
+                    });
+                  }
+                },
+                primary: true,
+              ),
             _button(
-              pair['outgoing'] == true
-                  ? 'Confirm both devices'
-                  : 'Codes match · approve',
-              () async {
-                if (await _confirm(
-                  'Do both devices show ${pair['code']}?',
-                  'Approve only if you recognize this device and the codes match.',
-                )) {
-                  await _command({
-                    'op': pair['outgoing'] == true
-                        ? 'pair_confirm'
-                        : 'pair_approve',
-                    'id': pair['id'],
-                    'code': pair['code'],
-                  });
-                }
-              },
-              primary: true,
-            ),
-            _button(
-              'Decline',
+              pair['nearby'] == true && pair['outgoing'] == true
+                  ? 'Cancel request'
+                  : 'Decline',
               () => _command({'op': 'pair_deny', 'id': pair['id']}),
             ),
           ],
+        ),
+      for (final pair in endedRequests)
+        _card(
+          Icons.link_off,
+          'Request declined',
+          '${(pair['peer'] as Map)['device_name']} declined your pairing request.',
+          [],
         ),
       for (final t in files)
         _card(

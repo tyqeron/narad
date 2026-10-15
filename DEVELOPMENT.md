@@ -213,3 +213,16 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - Validation: 16 Rust tests, strict Clippy and nine real-daemon integration
   scenarios pass, including mDNS-selected pairing, acceptance without sender
   confirmation, decline, cancellation, persistence and permission boundaries.
+
+## 17. Nearby request interface
+
+- Nearby device cards now offer Send pairing request, with a disabled Request sent
+  state while approval is pending. Sending opens the outgoing Inbox request.
+- Incoming requests have a dashboard notice, Inbox badge, visible verification
+  code and Accept request / Decline actions; no text entry or camera is needed.
+- Outgoing requests show waiting/declined states and a cancellation action;
+  automatic completion belongs to the daemon rather than UI polling.
+- Bumped the Android development build to 0.1.0+3.
+- Validation: Flutter analysis and all 11 tests pass, including sending without
+  invitations, accepting without code entry, and sender cancellation. Existing
+  invitation confirmation and narrow-screen behavior remain covered.
