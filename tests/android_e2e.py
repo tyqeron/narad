@@ -23,6 +23,7 @@ PACKAGE = 'dev.narad.narad_client'
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--serial', required=True, help='adb device serial')
+    parser.add_argument('--pairing', choices=['invitation', 'nearby'], default='invitation')
     args = parser.parse_args()
     adb = ['adb', '-s', args.serial]
 
@@ -60,10 +61,13 @@ def main():
     process = None
     try:
         for _ in range(100):
+            candidate = subprocess.run(adb + ['shell', 'run-as', PACKAGE, 'cat', 'no_backup/narad/api-token'], capture_output=True)
+            if candidate.returncode == 0:
+                token = candidate.stdout.decode()
             try:
                 status = phone(op='status')
                 break
-            except OSError:
+            except (OSError, RuntimeError):
                 time.sleep(0.1)
         else:
             raise RuntimeError('The Android backend is not accepting local connections')
@@ -84,7 +88,7 @@ def main():
                 process = subprocess.Popen([
                     str(BIN), '--state', str(state), '--api-port', str(api),
                     'serve', '--name', 'Narad Android test', '--address', host_ip,
-                    '--port', str(control), '--no-discovery',
+                    '--port', str(control), *([] if args.pairing == 'nearby' else ['--no-discovery']),
                 ], stdout=log, stderr=log)
                 for _ in range(200):
                     if process.poll() is not None:
@@ -104,11 +108,32 @@ def main():
                     return call(api, desktop_token, **command)
 
                 host_id = desktop(op='status')['device']['device_id']
-                pair = desktop(op='pair', invitation=phone(op='invite')['invitation'])
+                if args.pairing == 'nearby':
+                    deadline = time.monotonic() + 25
+                    while True:
+                        discovered_phone = next((p for p in desktop(op='status')['discovered'] if p['device_id'] == phone_id), None)
+                        discovered_host = next((p for p in phone(op='status')['discovered'] if p['device_id'] == host_id), None)
+                        if discovered_phone and discovered_host:
+                            break
+                        if time.monotonic() > deadline:
+                            raise RuntimeError(f'LAN mDNS discovery incomplete (desktop sees Android: {bool(discovered_phone)}, Android sees desktop: {bool(discovered_host)})')
+                        time.sleep(0.2)
+                    print('PASS Android and desktop discover each other over physical LAN mDNS')
+                    pair = desktop(op='pair_nearby', peer=discovered_phone)
+                else:
+                    pair = desktop(op='pair', invitation=phone(op='invite')['invitation'])
                 phone(op='pair_approve', id=pair['id'], code=pair['code'])
                 cleanup.append(lambda: phone(op='unpair', peer_id=host_id))
-                desktop(op='pair_confirm', id=pair['id'], code=pair['code'])
-                print('PASS Android/Linux TLS pairing with both-side code approval')
+                if args.pairing == 'nearby':
+                    deadline = time.monotonic() + 15
+                    while phone_id not in desktop(op='status')['paired']:
+                        if time.monotonic() > deadline:
+                            raise RuntimeError('Nearby pairing did not complete automatically')
+                        time.sleep(0.1)
+                    print('PASS Desktop nearby request connects after Android acceptance without invitation')
+                else:
+                    desktop(op='pair_confirm', id=pair['id'], code=pair['code'])
+                    print('PASS Android/Linux TLS pairing with both-side code approval')
 
                 data = os.urandom(256 * 1024 + 9)
                 source = root / 'narad-generated-test.bin'
@@ -124,7 +149,14 @@ def main():
                 phone(op='file_accept', id=offer['id'])
                 # Recreate the whole Android process, not just the Rust runtime.
                 run('shell', 'am', 'force-stop', PACKAGE)
-                run('shell', 'am', 'start', '-n', f'{PACKAGE}/.MainActivity')
+                for _ in range(100):
+                    stopped = subprocess.run(adb + ['shell', 'pidof', PACKAGE], capture_output=True)
+                    if stopped.returncode != 0:
+                        break
+                    time.sleep(0.05)
+                else:
+                    raise RuntimeError('Android app did not stop before the restart test')
+                run('shell', 'am', 'start', '-W', '-n', f'{PACKAGE}/.MainActivity')
                 for _ in range(200):
                     candidate = subprocess.run(adb + ['shell', 'run-as', PACKAGE, 'cat', 'no_backup/narad/api-token'], capture_output=True)
                     if candidate.returncode == 0:
@@ -177,6 +209,25 @@ def main():
                 else:
                     raise AssertionError('Revoked peer must be rejected')
                 print('PASS Android revocation rejects previously paired desktop')
+                if args.pairing == 'nearby':
+                    desktop(op='unpair', peer_id=phone_id)
+                    # The daemon must finish pairing even while Flutter is backgrounded.
+                    run('shell', 'input', 'keyevent', 'KEYCODE_HOME')
+                    try:
+                        pair = phone(op='pair_nearby', peer=discovered_host)
+                        cleanup.append(lambda: phone(op='unpair', peer_id=host_id))
+                        desktop(op='pair_approve', id=pair['id'], code=pair['code'])
+                        deadline = time.monotonic() + 15
+                        while host_id not in phone(op='status')['paired']:
+                            if time.monotonic() > deadline:
+                                raise RuntimeError('Background Android pairing did not complete')
+                            time.sleep(0.1)
+                        phone(op='ping_peer', peer_id=host_id)
+                        phone(op='unpair', peer_id=host_id)
+                        cleanup.pop()
+                        print('PASS Background Android nearby request connects after desktop acceptance')
+                    finally:
+                        run('shell', 'am', 'start', '-n', f'{PACKAGE}/.MainActivity')
     finally:
         # A failure during process restart must still clean up the generated peer.
         if cleanup:

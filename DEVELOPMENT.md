@@ -226,3 +226,24 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - Validation: Flutter analysis and all 11 tests pass, including sending without
   invitations, accepting without code entry, and sender cancellation. Existing
   invitation confirmation and narrow-screen behavior remain covered.
+
+## 18. Physical nearby discovery and updated Android delivery
+
+- Extended the Android/Linux harness with nearby-request mode and token rotation
+  handling during app upgrades/startup; invitation mode remains available.
+- Verified physical mutual mDNS discovery, desktop-to-Android request acceptance,
+  and Android-to-desktop acceptance while Flutter is backgrounded.
+- All eight nearby-mode device checks pass on the Android 15 tablet, including
+  process restart, persisted trust, generated files in both directions, clipboard
+  gates and revocation. Test peers, records and fixtures are cleaned up.
+- Updated the user guides and protocol reference for request/accept pairing,
+  waiting/decline/cancel behavior, five-minute expiry and invitation fallback.
+- Repeated all eight device checks successfully on a second phone, Nothing A015
+  running Android 16/API 36. Added explicit process-termination and Activity
+  readiness waits to the restart harness after an initial timing failure; a
+  direct restart diagnostic also confirmed stable identity. One discovery run
+  timed out; the subsequent complete physical mDNS/pairing/transfer run passed.
+- Rebuilt universal 0.1.0+3 successfully; signature, SHA-256, 16 KiB ZIP alignment
+  and all 16 packaged 64-bit native ELF alignment checks pass.
+- Installed and launched the universal release APK on the connected Android 16
+  phone after testing, preserving app data. The connection service is active.

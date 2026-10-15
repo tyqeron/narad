@@ -13,17 +13,24 @@ armeabi-v7a and x86_64. Each installation creates its own Keystore-wrapped ident
 2. Connect devices to the same Wi-Fi network or hotspot. Open Narad on each.
    Allow notifications so its connection service is visible. Give each device
    a recognizable name using **Rename device**.
-3. On device A, select **Create invitation**. On B, select **Scan invitation**
-   and allow camera access, or use **Enter invitation** to paste the JSON.
-4. Compare the six-digit code on both devices and approve the pairing in
-   **Inbox** on each. Repeat for every pair that needs to communicate: pairing
-   A–B and A–C does not automatically pair B–C.
+3. Find device B under **Nearby devices** on A and select **Send pairing request**.
+   A shows the pending request and verification code; it can cancel the request.
+4. On B, open **Inbox** (or **Review request** from its incoming notice). Recognize
+   the requesting device, compare the displayed verification code, and select
+   **Accept request**. Both devices connect automatically; no invitation, code
+   entry or camera is required. **Decline** leaves them unpaired. Requests expire
+   in five minutes. Update Narad on both devices to use nearby requests.
 5. Send a small file from B. Accept it in A's Inbox, then choose **Send / resume**
    on B. In A's Transfers view, select **Save to device** and choose a destination.
    Repeat in the other direction, then try a larger file and a network interruption.
 6. To test clipboard sharing, allow the peer's clipboard permission on the
    receiver. Each text offer still needs acceptance. Audio needs **Enable Audio**
    on both devices plus receiver approval; keep both apps in the foreground.
+
+Repeat these steps for each device pair: A–B and A–C do not automatically pair
+B–C. If multicast discovery is blocked, use **Create invitation** on one device
+and **Scan invitation** or **Enter invitation** on the other; compare the code
+and approve on both screens for that fallback flow.
 
 To test Android against Linux, start the desktop daemon and Flutter client using
 [the root README](../README.md#run-on-linux), then follow the same pairing steps.
@@ -77,7 +84,9 @@ flutter test integration_test/android_smoke_test.dart -d DEVICE_SERIAL
 cd ../..
 cargo build --workspace --locked
 # Launch the debug app, then run generated-fixture Android/Linux checks:
-python3 tests/android_e2e.py --serial DEVICE_SERIAL
+python3 tests/android_e2e.py --serial DEVICE_SERIAL --pairing nearby
+# Retain the invitation compatibility regression too:
+python3 tests/android_e2e.py --serial DEVICE_SERIAL --pairing invitation
 ```
 
 Use an expendable installation for `flutter test integration_test/...`: the
@@ -90,7 +99,8 @@ exchange. It does not record audio or use the camera. The host harness pairs a
 fresh temporary desktop identity, restarts the Android process to check identity,
 trust and file approval persistence, sends generated files in both directions,
 checks bytes and clipboard permission/acceptance, then removes its temporary
-pairing and fixtures. It never reads the system clipboard or personal files.
+pairing and fixtures. In nearby mode it also verifies Android-initiated pairing while the app is
+backgrounded. It never reads the system clipboard or personal files.
 It requires the debug APK (`run-as`) and reachable IPv4 addresses on the LAN.
 
 If discovery is empty, QR/pasted invitations still work. Guest Wi-Fi/client

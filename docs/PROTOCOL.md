@@ -92,9 +92,25 @@ from both public keys and certificate pins plus the invitation nonce:
 3. Interpret the first four hash bytes as an unsigned little-endian integer,
    reduce modulo 1,000,000, and format as six digits.
 
-The receiver approves only after comparing codes. The requester checks
-`pair_status` and explicitly confirms the same code before storing trust.
+For invitation pairing, the receiver approves after comparing codes. The
+requester checks `pair_status` and explicitly confirms the same code before
+storing trust.
+
 Privileged requests remain gated by capability permissions after pairing.
+
+Nearby requests use the selected discovered peer's key and certificate pin.
+Local `pair_nearby` sends a signed `pair_request`; the receiver generates a fresh
+nonce, request ID, verification code and five-minute expiry. Discovery itself
+still grants no trust. Sending the request is the initiator's explicit consent.
+Receiver `pair_approve` is required; the daemon polls `pair_status` and completes
+only its own pending outgoing nearby requests, independently of Flutter. No
+invitation or sender-side code-entry/confirmation step is needed. Both screens
+show the code for verification before acceptance. Pending requests are bounded
+and duplicate pending requests for a peer are rejected. Declines and local
+cancellation prevent automatic completion; `pair_cancel` withdraws a reachable
+receiver's pending request. Pending requests expire and are not persisted across
+process restart; completed trust is persisted. Older clients can keep using
+invitation pairing.
 
 ## Remote commands
 
@@ -103,7 +119,9 @@ Every command uses a JSON payload containing `op` plus the fields below.
 | Control command | Fields | Result and gate |
 | --- | --- | --- |
 | `pair_begin` | `nonce` | `{id,code}`; valid invitation and signed peer, pending approval |
-| `pair_status` | `id` | `status`; pairing owner only |
+| `pair_status` | `id` | `status`; pairing owner only; revoked approval reports denied |
+| `pair_request` | — | `{id,nonce,code,expires_at}`; signed nearby request, no trust granted |
+| `pair_cancel` | `id` | withdraw pending nearby request; signed request owner only |
 | `ping` | — | local `device`; trusted peer only |
 | `file_offer` | `id,file_name,file_size,checksum` | `transfer`; trusted peer, per-offer acceptance |
 | `clipboard_offer` | `text` | new `id`; receive permission, bounded text, fresh user acceptance |
@@ -154,7 +172,8 @@ or copy the token to peers.
 | --- | --- | --- |
 | `status` | optional `offset` | device, discovered/paired peers, permissions, requests, transfers, sessions, clipboard previews, activity |
 | `invite` | — | create out-of-band invitation |
-| `pair` | `invitation` | initiate pairing |
+| `pair` | `invitation` | initiate invitation pairing |
+| `pair_nearby` | `peer` | explicitly request nearby pairing; auto-completes after receiver approval |
 | `pair_approve`, `pair_confirm` | `id,code` | receiver approval / requester confirmation |
 | `pair_deny` | `id` | reject pending pairing |
 | `permission` | `peer_id,capability,allow` | grant/revoke capability; revocation closes matching sessions |

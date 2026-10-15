@@ -13,8 +13,8 @@ See [implementation status](docs/IMPLEMENTATION_STATUS.md).
 
 Build an installable APK with `./scripts/build-android.sh`, then install
 `dist/narad-android-release.apk` on each Android 8.0+ phone or tablet. The backend
-starts inside the app. Pair devices on the same Wi-Fi by scanning an invitation
-and comparing the code on both screens.
+starts inside the app. On the same Wi-Fi, select **Send pairing request** under
+Nearby devices, then **Accept request** in the receiver’s Inbox.
 
 See [Android setup and multi-device testing](docs/ANDROID.md) for build requirements,
 installation, device checks, and troubleshooting.
@@ -54,8 +54,10 @@ on TCP 45700 binds only to loopback and requires a private token.
 
 ## Use the app
 
-1. Create an invitation on one device; paste it into Enter invitation on the
-   other. Compare the verification code and approve in Inbox on **both** devices.
+1. Under **Nearby devices**, select **Send pairing request**. On the receiver,
+   open **Inbox**, recognize the device and compare the displayed code, then
+   select **Accept request**. Both devices pair automatically. No code entry or
+   QR scan is needed. Invitations and QR remain available as a fallback.
 2. Send a file. The receiver accepts it; the sender selects **Send / resume**.
    Completed files appear under `.narad/downloads/<transfer-id>/<file-name>`.
 3. Grant clipboard permission on the receiver, then review and send text from

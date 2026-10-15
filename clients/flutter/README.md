@@ -21,8 +21,10 @@ launching the packaged app elsewhere. Set `NARAD_STATE` to prefill it. The app
 reads the daemon's private API token from that directory; tokens never need to
 be pasted into the interface.
 
-1. Create an invitation on one device and enter it on the other.
-2. Compare the six-digit code on both devices and approve in Inbox on both.
+1. Select **Send pairing request** under Nearby devices.
+2. Recognize the device and compare the displayed code in the receiver's Inbox,
+   then **Accept request**. Both devices pair automatically. Invitation/QR pairing
+   remains a fallback when discovery is unavailable.
 3. Send a file, accept it on the receiving device, then select Send / resume.
 4. Grant clipboard permission on the receiver before sending. Each payload
    still requires acceptance.
