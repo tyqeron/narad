@@ -1,6 +1,6 @@
 use crate::{
     model::{now, Peer},
-    storage::{atomic_write, private_dir},
+    storage::private_dir,
 };
 use anyhow::{ensure, Result};
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
@@ -38,13 +38,18 @@ pub struct Identity {
 impl Identity {
     pub fn load_or_create(dir: &Path) -> Result<Self> {
         private_dir(dir)?;
-        let path = dir.join("identity.json");
-        if path.exists() {
-            return Ok(serde_json::from_slice(&std::fs::read(path)?)?);
+        #[cfg(windows)]
+        return crate::windows::load_identity(dir);
+        #[cfg(not(windows))]
+        {
+            let path = dir.join("identity.json");
+            if path.exists() {
+                return Ok(serde_json::from_slice(&std::fs::read(path)?)?);
+            }
+            let identity = Self::generate()?;
+            crate::storage::atomic_write(&path, &serde_json::to_vec(&identity)?)?;
+            Ok(identity)
         }
-        let identity = Self::generate()?;
-        atomic_write(&path, &serde_json::to_vec(&identity)?)?;
-        Ok(identity)
     }
     /// Generate in memory so platform keystores can persist wrapped identity bytes.
     pub fn generate() -> Result<Self> {
@@ -75,14 +80,19 @@ impl Identity {
             certificate_hash: blake3::hash(&self.certificate).to_hex().to_string(),
             address,
             port,
-            capabilities: vec![
-                "file.transfer".into(),
-                "clipboard.sync".into(),
-                "file.browse".into(),
-                "command.run".into(),
-                "device.lock".into(),
-                "device.unlock".into(),
-            ],
+            capabilities: {
+                let mut capabilities = vec![
+                    "file.transfer".into(),
+                    "clipboard.sync".into(),
+                    "file.browse".into(),
+                    "command.run".into(),
+                    "device.lock".into(),
+                ];
+                if !cfg!(windows) {
+                    capabilities.push("device.unlock".into());
+                }
+                capabilities
+            },
         }
     }
     pub fn sign(&self, peer: &Peer, payload: serde_json::Value) -> Result<SignedFrame> {

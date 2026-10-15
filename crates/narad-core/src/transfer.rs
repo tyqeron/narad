@@ -38,6 +38,8 @@ impl Transfer {
                 && self.file_name != "..",
             "unsafe file name"
         );
+        #[cfg(windows)]
+        validate_windows_name(&self.file_name)?;
         ensure!(
             self.file_size <= MAX_FILE_SIZE && self.received <= self.file_size,
             "file size exceeds limit"
@@ -190,6 +192,37 @@ fn publish_completed(source: &Path, destination: &Path) -> Result<()> {
     fs::hard_link(source, destination).context("publish completed transfer")
 }
 
+/// Reject DOS devices, alternate streams and Win32 normalization aliases.
+/// Kept platform-independent so these cases are also regression-tested on Unix.
+pub fn validate_windows_name(name: &str) -> Result<()> {
+    let stem = name
+        .split('.')
+        .next()
+        .unwrap_or("")
+        .trim_end()
+        .to_uppercase();
+    let device = matches!(
+        stem.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || ["COM", "LPT"].iter().any(|prefix| {
+        stem.strip_prefix(prefix).is_some_and(|number| {
+            matches!(
+                number,
+                "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+            )
+        })
+    });
+    ensure!(
+        !name.is_empty()
+            && name.len() <= 240
+            && !name.ends_with([' ', '.'])
+            && !name.chars().any(|c| c < ' ' || "<>:\"/\\|?*".contains(c))
+            && !device,
+        "file name is not supported on Windows"
+    );
+    Ok(())
+}
+
 pub fn hash_file(path: &Path) -> Result<String> {
     let mut file = File::open(path)?;
     let mut hash = blake3::Hasher::new();
@@ -252,6 +285,26 @@ mod tests {
             received: 0,
             status: "pending".into(),
             updated_at: now(),
+        }
+    }
+    #[test]
+    fn windows_names_reject_devices_streams_and_aliases() {
+        for name in [
+            "CON",
+            "nul.txt",
+            "COM1.csv",
+            "LPT²",
+            "aux .log",
+            "foo:stream",
+            "file.",
+            "file ",
+            "a?b",
+            "a\\b",
+        ] {
+            assert!(validate_windows_name(name).is_err(), "{name}");
+        }
+        for name in ["notes.txt", "COM10.txt", "hello 世界.txt"] {
+            validate_windows_name(name).unwrap();
         }
     }
     #[test]

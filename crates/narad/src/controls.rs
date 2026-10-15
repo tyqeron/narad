@@ -25,6 +25,10 @@ pub fn shared_path(state: &State, relative: &str) -> Result<PathBuf> {
             .all(|c| matches!(c, Component::Normal(_))),
         "path must stay in the shared folder"
     );
+    #[cfg(windows)]
+    for part in relative.split('/').filter(|p| !p.is_empty()) {
+        narad_core::transfer::validate_windows_name(part)?;
+    }
     let root = state.dir.join("shared");
     narad_core::storage::private_dir(&root)?;
     ensure!(
@@ -143,6 +147,15 @@ pub async fn remote(
                 json!({"ok":true,"id":action.id,"status":action.status,"message":action.message}),
             );
         }
+        #[cfg(windows)]
+        if op == "device_action" {
+            let result = crate::windows::device_action(kind)?;
+            state.event(
+                "device.completed",
+                json!({"peer_id":peer.device_id,"kind":kind}),
+            );
+            return Ok(result);
+        }
         if op == "device_action" && cfg!(target_os = "android") {
             ensure!(
                 state.platform_actions.len() < 32,
@@ -210,7 +223,9 @@ async fn read_bounded<R: tokio::io::AsyncRead + Unpin>(mut source: R) -> Result<
         truncated |= n > remaining;
     }
 }
+#[cfg(unix)]
 struct ProcessGroup(Option<u32>);
+#[cfg(unix)]
 impl Drop for ProcessGroup {
     fn drop(&mut self) {
         #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -232,14 +247,28 @@ async fn execute(
         let state = shared.lock().await;
         shared_path(&state, "")?
     };
-    let mut builder = tokio::process::Command::new(if cfg!(target_os = "android") {
-        "/system/bin/sh"
-    } else {
-        "/bin/sh"
-    });
+    #[cfg(windows)]
+    let mut builder = {
+        // Use the system shell, never a cmd.exe found in a writable cwd/PATH.
+        let system =
+            std::env::var_os("SystemRoot").context("Windows system directory unavailable")?;
+        let mut command_builder =
+            tokio::process::Command::new(PathBuf::from(system).join("System32/cmd.exe"));
+        command_builder.args(["/D", "/S", "/C"]).arg(command);
+        command_builder.creation_flags(0x08000000 | 0x00000004); // NO_WINDOW | SUSPENDED
+        command_builder
+    };
+    #[cfg(not(windows))]
+    let mut builder = {
+        let mut command_builder = tokio::process::Command::new(if cfg!(target_os = "android") {
+            "/system/bin/sh"
+        } else {
+            "/bin/sh"
+        });
+        command_builder.arg("-c").arg(command);
+        command_builder
+    };
     builder
-        .arg("-c")
-        .arg(command)
         .current_dir(directory)
         .kill_on_drop(true)
         .stdin(std::process::Stdio::null())
@@ -251,7 +280,10 @@ async fn execute(
         builder.as_std_mut().process_group(0);
     }
     let mut child = builder.spawn().context("could not start command")?;
+    #[cfg(unix)]
     let group = ProcessGroup(child.id());
+    #[cfg(windows)]
+    let group = crate::windows::CommandJob::attach(&child)?;
     let stdout = tokio::spawn(read_bounded(child.stdout.take().unwrap()));
     let stderr = tokio::spawn(read_bounded(child.stderr.take().unwrap()));
     let deadline = tokio::time::sleep(Duration::from_secs(10));

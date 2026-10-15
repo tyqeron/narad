@@ -303,3 +303,17 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   persistent grants, theme settings, scoped controls and OS authentication limits.
 - Universal 0.1.0+4 release APK passes signature, SHA-256, ZIP alignment and all
   16 packaged 64-bit native-library alignment checks; three backend ABIs included.
+
+## 23. Windows identity, storage and backend controls
+
+- Added current-user DPAPI identity wrapping and migration, protected owner/SYSTEM
+  directory ACLs, and durable Windows atomic replacement without deleting the old
+  destination first. Corrupt wrapped identity fails closed.
+- Added cmd.exe presets with suspended-start Windows Job containment and descendant
+  cleanup on revocation/deadline; LockWorkStation controls the interactive session.
+  Windows does not advertise remote unlock or bypass authentication.
+- Rejected Windows DOS devices, alternate streams and normalized filename aliases
+  in transfers and shared browsing.
+- Validation: Windows GNU backend and test executables cross-compile successfully;
+  Windows-target strict Clippy passes. All 21 host Rust tests and 13 real-daemon
+  regression scenarios pass. Windows-native execution remains a separate CI check.

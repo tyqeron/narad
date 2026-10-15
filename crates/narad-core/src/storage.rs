@@ -18,6 +18,8 @@ pub fn private_dir(path: &Path) -> Result<()> {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
     }
+    #[cfg(windows)]
+    crate::windows::private_path(path)?;
     Ok(())
 }
 
@@ -37,6 +39,9 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
         let mut file = options.open(&tmp)?;
         file.write_all(bytes)?;
         file.sync_all()?;
+        #[cfg(windows)]
+        crate::windows::replace(&tmp, path)?;
+        #[cfg(not(windows))]
         fs::rename(&tmp, path)?;
         #[cfg(unix)]
         fs::File::open(parent)?.sync_all()?;
@@ -73,6 +78,14 @@ pub fn load_encrypted<T: DeserializeOwned>(path: &Path, key: &[u8; 32]) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn atomic_replacement_preserves_latest_value() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state");
+        atomic_write(&path, b"first").unwrap();
+        atomic_write(&path, b"second").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"second");
+    }
     #[test]
     fn encrypted_state_rejects_tampering_and_wrong_key() {
         let d = tempfile::tempdir().unwrap();

@@ -616,6 +616,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "uuid",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -647,6 +648,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "uuid",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

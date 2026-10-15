@@ -22,3 +22,6 @@ tempfile.workspace = true
 
 [target.'cfg(any(target_os = "android", target_os = "linux"))'.dependencies]
 libc = "=0.2.190"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.59.0", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Security_Cryptography", "Win32_Storage_FileSystem"] }
