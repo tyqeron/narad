@@ -328,3 +328,19 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - Validation: all 20 Flutter tests and analysis pass. Both backend_host.cpp and
   Flutter method-channel integration cross-compile against Windows/Flutter SDK
   headers. Full Windows MSVC GUI linking/execution requires a Windows host.
+
+## 25. Windows packaging, installation and native CI
+
+- Added release/debug ZIP builds with SHA-256, per-user installation and Start-menu
+  shortcut, and a separate optional private-subnet firewall helper. No firewall
+  changes or administrative prompts run automatically during installation.
+- Added a Windows-native integration suite covering generated file fixtures,
+  DPAPI restart persistence, scoped browsing, cmd presets/revocation and capability
+  gates, plus Windows CI for native tests, script parsing and ZIP artifacts.
+- Documented Windows prerequisites, one-executable startup, Android/Linux pairing,
+  per-user state, upgrades/uninstallation and OS media/authentication boundaries.
+- Validation: workflow YAML and Python suites parse; Windows Rust cross-builds,
+  native C++ compile checks, host regression tests and Flutter checks are recorded
+  above. Full MSVC/Flutter Windows release build and physical Windows QA remain
+  unverified on this Linux host. Wine initialization stalled and was stopped;
+  no Wine result is counted as a successful Windows runtime test.

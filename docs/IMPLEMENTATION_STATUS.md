@@ -17,20 +17,20 @@ baseline. This document describes the actual implementation.
 | Controls | Locally configured command presets, bounded execution, Android force-lock and unlock-authentication notification, Linux loginctl | Physical lock/unlock matrix and desktop-session support |
 | Flutter client | Nearby/online/offline dashboard, per-device settings, saved Device/Light/Dark themes, grouped activity, Media, Inbox and transfers | Platform packaging/installers, accessibility/device QA |
 | Linux | Rust checks, Flutter tests, native debug build, real daemon integration | Packaged release and physical two-machine media QA |
-| Windows | Generated runner and portable Rust/network code | Native build, storage/clipboard/audio/firewall QA |
+| Windows | Supervised packaged daemon, DPAPI identity migration, private ACLs, Windows command Jobs, workstation lock, ZIP/installer/firewall helpers, CI job; cross-compiled backend | Windows-native CI run, full GUI build and physical Windows/Android/Linux media/firewall/locking QA |
 | Android | Embedded Rust/JNI backend, connected-device service, multicast lock, permissions, Keystore identity, QR scan, file picker/export, universal APK | More physical devices/OS versions; camera, document export and microphone QA; battery policy matrix |
 | iOS | Architecture boundary only | Runner, embedding, entitlements, lifecycle, keychain and device QA |
 | Release | Lockfiles, development journal, CI configuration, setup/protocol docs | Release candidate criteria and security/compatibility review |
 
 ## Verified locally
 
-- 19 Rust behavioral tests, formatting and strict Clippy.
+- 21 Rust behavioral tests, formatting and strict Clippy.
 - Thirteen two-daemon integration scenarios with multicast enabled: pairing and
   code mismatch, certificate pin mismatch, expired invitations, local API
   authentication, file acceptance/cancellation, interruption/resume, restart,
   persisted revocation, clipboard acceptance, media signaling gates, nearby acceptance/decline/cancellation, authenticated online/offline/reconnect,
   automatic grants, scoped browsing, and preset command execution/revocation.
-- Fifteen Flutter tests: device actions, clipboard acceptance, pairing confirmation,
+- Twenty Flutter tests: device actions, clipboard acceptance, pairing confirmation,
   narrow-screen layout, no media capture before approval, Android readiness,
   shutdown waiting, identity-error propagation, nearby request/accept/cancel UI, themes, grouped activity and per-device grants.
 - Flutter analysis and Linux native debug build.
@@ -54,12 +54,18 @@ baseline. This document describes the actual implementation.
   alignment checks; APK zip alignment passes too. The physical tablet uses
   4 KiB pages; physical 16 KiB-page hardware and additional Android devices
   remain untested.
+- Windows GNU backend and test executables cross-compile, with strict Windows-target
+  Clippy. The native supervisor and Flutter method channel compile against official
+  Windows engine headers. Full Windows GUI packaging and Windows-native integration
+  are configured in CI but have not run here; isolated Wine initialization did not
+  complete and is not counted as Windows runtime validation.
 - Public OSV check: 171 locked Rust registry packages, no matched advisories.
   CI includes an Android APK artifact job; hosted CI has not been run here.
 
 ## Release boundaries
 
-Desktop identity material is stored in a permissions-protected local file.
+Linux identity material is stored in a permissions-protected local file. Windows
+wraps identity with per-user DPAPI and protects state with owner/SYSTEM DACLs.
 Android stores only AES-GCM-wrapped identity bytes using a non-exportable Android
 Keystore key in no-backup app storage; unwrapped bytes remain in process memory.
 Trust, permissions, transfer manifests and outgoing history are encrypted with

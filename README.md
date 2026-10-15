@@ -6,7 +6,8 @@ Flutter client provides the interface and native WebRTC media adapter. No
 account, cloud signaling, STUN or TURN service is required.
 
 This is a development implementation of the [product plan](PRD.md). Linux and
-Android builds are available; Windows and iOS still need platform work.
+Android builds are available. Windows runner, native backend support and packaging
+are implemented; Windows-native builds and physical QA are pending. iOS still needs platform work.
 See [implementation status](docs/IMPLEMENTATION_STATUS.md).
 
 ## Run on Android
@@ -18,6 +19,18 @@ Nearby devices, then **Accept request** in the receiver’s Inbox.
 
 See [Android setup and multi-device testing](docs/ANDROID.md) for build requirements,
 installation, device checks, and troubleshooting.
+
+## Run on Windows
+
+On Windows 10/11 x64 with Rust, Flutter and Visual Studio C++ tools installed:
+
+```powershell
+.\scripts\build-windows.ps1
+```
+
+Extract `dist/narad-windows-x64-release.zip` and open `narad_client.exe`.
+It starts the bundled backend automatically. The optional installer adds a Start
+menu shortcut. See [Windows setup and testing](docs/WINDOWS.md).
 
 ## Run on Linux
 

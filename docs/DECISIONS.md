@@ -81,3 +81,20 @@ toolchain without changing the global Rust default. Flutter
 uses the tested 3.44.8 SDK. Planning documents and each milestone remain in Git;
 `DEVELOPMENT.md` and implementation status describe validation without claiming
 untested platforms or a completed production release.
+
+## Windows desktop lifecycle and permissions
+
+The Windows runner starts an adjacent Rust executable with an absolute path and
+per-user LocalAppData state. A native Job owns that child and closes it when the
+window exits; an authenticated existing daemon is reused without acquiring its
+process ownership. Startup waits for the token-authenticated API and exposes
+failures/retry. CMake builds the matching backend for flutter run/build.
+
+Windows identity storage uses current-user DPAPI, with in-place migration from
+legacy plaintext only after wrapped persistence succeeds. Protected directory
+DACLs grant the owner and SYSTEM access; atomic replacement uses MoveFileExW with
+write-through. Transfer and browse paths reject DOS devices, streams and Win32
+normalization aliases. Commands start suspended, join a kill-on-close Windows Job,
+then resume, preventing preset child processes from outliving revocation/timeout.
+Windows locking uses LockWorkStation; credential-based local unlock remains owned
+by Windows. No remote-unlock capability is advertised for that platform.

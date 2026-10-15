@@ -10,7 +10,7 @@ import tempfile
 import time
 import unittest
 
-BIN = Path(__file__).resolve().parents[1] / "target/debug/narad"
+BIN = Path(os.environ.get("NARAD_TEST_BIN", str(Path(__file__).resolve().parents[1] / ("target/debug/narad.exe" if os.name == "nt" else "target/debug/narad"))))
 
 
 def free_port_pair():
@@ -57,7 +57,10 @@ class Device:
 
     def stop(self):
         if self.process and self.process.poll() is None:
-            self.process.send_signal(signal.SIGINT)
+            if os.name == "nt":
+                self.process.terminate()
+            else:
+                self.process.send_signal(signal.SIGINT)
             try:
                 self.process.wait(timeout=10)
             except subprocess.TimeoutExpired:

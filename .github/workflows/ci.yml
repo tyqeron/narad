@@ -65,3 +65,48 @@ jobs:
           path: |
             dist/narad-android-release.apk
             dist/narad-android-release.apk.sha256
+
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.88.0'
+          components: rustfmt, clippy
+          targets: x86_64-pc-windows-msvc
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.8'
+          channel: stable
+          cache: true
+      - run: cargo test --workspace --locked
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo build --locked -p narad
+      - run: python tests/windows_e2e.py
+      - run: flutter pub get
+        working-directory: clients/flutter
+      - run: flutter analyze
+        working-directory: clients/flutter
+      - run: flutter test
+        working-directory: clients/flutter
+      - name: Parse Windows packaging scripts
+        shell: pwsh
+        run: |
+          Get-ChildItem scripts/*windows*.ps1 | ForEach-Object {
+            $ParseErrors = $null
+            $Tokens = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$Tokens, [ref]$ParseErrors) | Out-Null
+            if ($ParseErrors.Count) { throw ($ParseErrors | Out-String) }
+          }
+      - run: ./scripts/build-windows.ps1
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: narad-windows-x64-development
+          path: |
+            dist/narad-windows-x64-release.zip
+            dist/narad-windows-x64-release.zip.sha256
