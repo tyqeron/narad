@@ -164,3 +164,20 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   survive a refused publication, followed by successful retry.
 - Validation: 14 Rust tests, strict Clippy and all seven desktop integration
   scenarios pass. Tablet revalidation follows with a rebuilt APK.
+
+## 14. Physical Android interoperability and lifecycle checks
+
+- Added two on-device integration tests for Keystore-wrapped identity persistence
+  across service restart and an actual native WebRTC data-channel exchange.
+  Neither test captures microphone, camera or system clipboard contents.
+- Added an opt-in ADB harness using only generated fixtures and a temporary peer.
+  It validates Android/Linux pairing, a full Android process restart preserving
+  identity/trust/file approval, both file directions, clipboard gates and unpair.
+  The harness waits through the expected local API disconnect during restart and
+  cleans its own temporary peer, transfer records and fixture files.
+- Validation on 2026-10-15: both device tests and all six Android/Linux checks pass
+  on the connected 23073RPBFG ARM64 tablet, Android 15/API 35 with 4 KiB pages.
+  Incoming and outgoing generated files match byte-for-byte.
+- Physical testing exposed and verified the hard-link fix in step 13. Camera QR
+  scanning, Android document export, real microphone audio quality, more Android
+  models and physical 16 KiB-page devices still need manual device QA.
