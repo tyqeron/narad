@@ -5,31 +5,80 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart'
+    show RTCVideoView, RTCVideoViewObjectFit;
 import 'api.dart';
+import 'app_settings.dart';
 import 'audio.dart';
 import 'android_backend.dart';
 import 'pairing_scanner.dart';
 
 void main() => runApp(const NaradApp());
 
-class NaradApp extends StatelessWidget {
-  const NaradApp({super.key, this.api});
+class NaradApp extends StatefulWidget {
+  const NaradApp({super.key, this.api, this.preferences});
   final NaradApi? api;
+  final ThemePreferences? preferences;
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'Narad',
-    debugShowCheckedModeBanner: false,
-    theme: ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff286458)),
+  State<NaradApp> createState() => _NaradAppState();
+}
+
+class _NaradAppState extends State<NaradApp> {
+  ThemeMode _mode = ThemeMode.system;
+  late final ThemePreferences _preferences =
+      widget.preferences ??
+      (widget.api == null
+          ? DeviceThemePreferences()
+          : MemoryThemePreferences());
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    try {
+      final mode = await _preferences.read();
+      if (mounted) setState(() => _mode = mode);
+    } catch (_) {
+      /* Device theme remains the default if preferences are unavailable. */
+    }
+  }
+
+  Future<void> _change(ThemeMode mode) async {
+    await _preferences.write(mode);
+    if (mounted) setState(() => _mode = mode);
+  }
+
+  ThemeData _theme(Brightness brightness) {
+    final colors = ColorScheme.fromSeed(
+      seedColor: const Color(0xff286458),
+      brightness: brightness,
+    );
+    return ThemeData(
       useMaterial3: true,
-      scaffoldBackgroundColor: const Color(0xfff6f7f3),
-      cardTheme: const CardThemeData(
+      colorScheme: colors,
+      scaffoldBackgroundColor: colors.surface,
+      cardTheme: CardThemeData(
         elevation: 0,
-        color: Colors.white,
-        margin: EdgeInsets.only(bottom: 12),
+        color: colors.surfaceContainerLow,
+        margin: const EdgeInsets.only(bottom: 12),
       ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => AppSettingsScope(
+    mode: _mode,
+    change: _change,
+    child: MaterialApp(
+      title: 'Narad',
+      debugShowCheckedModeBanner: false,
+      theme: _theme(Brightness.light),
+      darkTheme: _theme(Brightness.dark),
+      themeMode: _mode,
+      home: Dashboard(api: widget.api),
     ),
-    home: Dashboard(api: api),
   );
 }
 
@@ -47,6 +96,8 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   );
   AndroidBackend? _android;
   bool _starting = false;
+  bool _foreground = true;
+  bool _restoredMedia = false;
   NaradApi? _api;
   AudioController? _audio;
   Map<String, dynamic> _data = {};
@@ -55,7 +106,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   String? _error;
   int _page = 0;
   int _connectionGeneration = 0;
-  static const _titles = ['Devices', 'Inbox', 'Transfers', 'Audio', 'Activity'];
+  static const _titles = ['Devices', 'Inbox', 'Transfers', 'Media', 'Activity'];
   static const _icons = [
     Icons.devices_rounded,
     Icons.inbox_outlined,
@@ -103,13 +154,24 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
       // Background availability is for control/files. Microphone capture stays foreground-only.
+      _foreground = false;
+      _restoredMedia = false;
       if (_audio != null) {
+        unawaited(
+          _audio!.setCameraEnabled(false).catchError((Object e) {
+            _showError(e);
+          }),
+        );
         unawaited(
           _audio!.setEnabled(false).catchError((Object error) {
             if (mounted) _showError(error);
           }),
         );
       }
+    }
+    if (state == AppLifecycleState.resumed) {
+      _foreground = true;
+      _restoredMedia = false;
     }
     if (state == AppLifecycleState.resumed && !_online && !_starting) {
       unawaited(_startAndroid());
@@ -124,6 +186,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
 
   void _attach(NaradApi api) {
     _connectionGeneration++;
+    _restoredMedia = false;
     final previous = _audio;
     if (previous != null) unawaited(previous.dispose().catchError(_showError));
     _api = api;
@@ -152,7 +215,6 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   String _peerName(String id) =>
       (_paired[id] as Map?)?['peer']?['device_name'] as String? ??
       'Nearby device';
-  String _short(String id) => id.length > 12 ? id.substring(0, 12) : id;
 
   Future<void> _refresh() async {
     if (_refreshing || _api == null) return;
@@ -175,8 +237,8 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         ]) {
           (data[key] as List).addAll(page[key] as List);
         }
-        for (final key in ['paired', 'permissions']) {
-          (data[key] as Map).addAll(page[key] as Map);
+        for (final key in ['paired', 'permissions', 'automatic_permissions']) {
+          (data[key] as Map?)?.addAll(page[key] as Map? ?? {});
         }
         more = page['has_more'] == true;
         offset += 32;
@@ -188,6 +250,36 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         _error = null;
       });
       try {
+        if (!Platform.isAndroid) {
+          for (final offer
+              in (data['clipboard'] as List).cast<Map<String, dynamic>>().where(
+                (c) => c['status'] == 'automatic',
+              )) {
+            final accepted = await api.call({
+              'op': 'clipboard_accept',
+              'id': offer['id'],
+            });
+            await Clipboard.setData(
+              ClipboardData(text: accepted['text'] as String),
+            );
+          }
+        }
+        if (_foreground && !_restoredMedia && audio != null) {
+          _restoredMedia = true;
+          final grants = (data['automatic_permissions'] as Map?) ?? {};
+          if (grants.entries.any(
+            (e) =>
+                e.key.toString().endsWith('/audio.output') && e.value == true,
+          )) {
+            await audio.setEnabled(true);
+          }
+          if (grants.entries.any(
+            (e) =>
+                e.key.toString().endsWith('/camera.stream') && e.value == true,
+          )) {
+            await audio.setCameraEnabled(true);
+          }
+        }
         await audio?.tick(data);
       } catch (error) {
         _showError(error);
@@ -274,6 +366,18 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
             ],
           ),
           actions: [
+            IconButton(
+              tooltip: 'Settings',
+              icon: const Icon(Icons.settings_outlined),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (context) => StatefulBuilder(
+                    builder: (context, update) =>
+                        _settingsPage(context, refresh: () => update(() {})),
+                  ),
+                ),
+              ),
+            ),
             if (_online)
               Padding(
                 padding: const EdgeInsets.only(right: 16),
@@ -326,7 +430,11 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                                     style: Theme.of(context)
                                         .textTheme
                                         .bodyMedium
-                                        ?.copyWith(color: Colors.black54),
+                                        ?.copyWith(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                        ),
                                   ),
                                   const SizedBox(height: 24),
                                   if (_page != 1)
@@ -387,6 +495,409 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     return index == 1 && count > 0
         ? Badge.count(count: count, child: Icon(_icons[index]))
         : Icon(_icons[index]);
+  }
+
+  String _time(int seconds) {
+    final date = DateTime.fromMillisecondsSinceEpoch(seconds * 1000).toLocal();
+    return '${date.day}/${date.month} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  Widget _settingsPage(BuildContext context, {VoidCallback? refresh}) {
+    final settings = AppSettingsScope.of(context);
+    return Scaffold(
+      appBar: AppBar(title: const Text('Settings')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Text('Appearance', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 12),
+          SegmentedButton<ThemeMode>(
+            segments: const [
+              ButtonSegment(
+                value: ThemeMode.system,
+                icon: Icon(Icons.brightness_auto),
+                label: Text('Device'),
+              ),
+              ButtonSegment(
+                value: ThemeMode.light,
+                icon: Icon(Icons.light_mode_outlined),
+                label: Text('Light'),
+              ),
+              ButtonSegment(
+                value: ThemeMode.dark,
+                icon: Icon(Icons.dark_mode_outlined),
+                label: Text('Dark'),
+              ),
+            ],
+            selected: {settings.mode},
+            onSelectionChanged: (m) async {
+              try {
+                await settings.change(m.single);
+              } catch (e) {
+                _showError(e);
+              }
+            },
+          ),
+          const Padding(
+            padding: EdgeInsets.only(top: 12, bottom: 24),
+            child: Text(
+              'Device follows your system appearance. Your choice is saved on this device.',
+            ),
+          ),
+          if (_online) ...[
+            _section('Shared folder'),
+            const Text(
+              'Only files placed in this folder are available to peers with file browsing permission. Private Narad data is never exposed by browsing.',
+            ),
+            const SizedBox(height: 12),
+            _button('Add file to Shared folder', _addSharedFile),
+            const SizedBox(height: 12),
+            _button('View Shared folder', _localSharedFiles),
+            _section('Command presets'),
+            const Text(
+              'Devices with command permission can run only the presets configured here. Commands run as your user on Linux and inside Narad’s app sandbox on Android.',
+            ),
+            for (final raw in (_data['commands'] as List? ?? []))
+              ListTile(
+                title: Text(raw['label'] as String),
+                subtitle: const Text('Available to permitted devices'),
+                trailing: IconButton(
+                  tooltip: 'Remove command',
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: () async {
+                    await _run(
+                      () => _command({'op': 'command_remove', 'id': raw['id']}),
+                    );
+                    if (context.mounted) refresh?.call();
+                  },
+                ),
+              ),
+            _button('Add command preset', () async {
+              await _addCommand();
+              refresh?.call();
+            }),
+            _section('Connection details'),
+            SelectableText(
+              'This device: ${_data['device']['device_name']}\nLocal address: ${_data['device']['address']}\n${_paired.length} paired devices',
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _addCommand() async {
+    final label = await _input(
+      'Command name',
+      'A recognizable name, for example “Disk space”',
+    );
+    if (label == null) return;
+    final script = await _input(
+      'Command preset',
+      'Shell command to run on this device',
+      multiline: true,
+    );
+    if (script == null) return;
+    await _command({'op': 'command_set', 'label': label, 'script': script});
+    await _refresh();
+    _notice('Command preset saved. Grant access in Device settings.');
+  }
+
+  Future<void> _addSharedFile() async {
+    final entry = await FilePicker.pickFile();
+    if (entry == null) return;
+    final name = entry.name;
+    if (name.isEmpty ||
+        name.contains('/') ||
+        name.contains('\\') ||
+        name.contains('\u0000') ||
+        name == '.' ||
+        name == '..') {
+      throw StateError('Invalid file name');
+    }
+    final root = Directory(_data['shared_directory'] as String);
+    await root.create(recursive: true);
+    var target = File('${root.path}/$name');
+    if (await target.exists()) {
+      target = File(
+        '${root.path}/${DateTime.now().millisecondsSinceEpoch}-$name',
+      );
+    }
+    await File(entry.path!).copy(target.path);
+    _notice('Added to Shared folder');
+  }
+
+  Future<void> _localSharedFiles() async {
+    final root = Directory(_data['shared_directory'] as String);
+    await root.create(recursive: true);
+    final names = await root
+        .list()
+        .map((f) => f.path.split(Platform.pathSeparator).last)
+        .toList();
+    names.sort();
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Shared folder'),
+        content: SizedBox(
+          width: 420,
+          child: SingleChildScrollView(
+            child: Text(
+              names.isEmpty
+                  ? 'No shared files yet. Add a file to make it available.'
+                  : names.join('\n'),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _runCommand(Map<String, dynamic> peer) async {
+    final response = await _api!.call({
+      'op': 'list_commands',
+      'peer_id': peer['device_id'],
+    });
+    final commands = (response['commands'] as List)
+        .cast<Map<String, dynamic>>();
+    if (!mounted) return;
+    final chosen = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: Text('Commands · ${peer['device_name']}'),
+        children: [
+          if (commands.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Text('No command presets configured on that device.'),
+            ),
+          for (final command in commands)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, command),
+              child: Text(command['label'] as String),
+            ),
+        ],
+      ),
+    );
+    if (chosen == null) return;
+    final result = await _api!.call({
+      'op': 'run_command',
+      'peer_id': peer['device_id'],
+      'id': chosen['id'],
+    });
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(chosen['label'] as String),
+        content: SizedBox(
+          width: 600,
+          child: SingleChildScrollView(
+            child: SelectableText(
+              'Exit code: ${result['exit_code']}\n\n${result['stdout']}${result['stderr']}\n${result['truncated'] == true ? 'Output shortened.' : ''}',
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deviceAction(String peer, String kind) async {
+    var result = await _api!.call({
+      'op': 'device_action',
+      'peer_id': peer,
+      'kind': kind,
+    });
+    final id = result['id'];
+    if (id != null) {
+      for (
+        var attempt = 0;
+        attempt < 8 && ['pending', 'dispatched'].contains(result['status']);
+        attempt++
+      ) {
+        await Future<void>.delayed(const Duration(seconds: 2));
+        result = await _api!.call({
+          'op': 'device_action_status',
+          'peer_id': peer,
+          'id': id,
+        });
+      }
+      if (result['status'] == 'failed') {
+        throw StateError(result['message'] as String);
+      }
+      _notice(
+        (result['message'] as String?)?.isNotEmpty == true
+            ? result['message'] as String
+            : 'Device request sent',
+      );
+    } else {
+      if (result['exit_code'] != 0) {
+        throw StateError(
+          result['stderr'] as String? ?? 'Device control unavailable',
+        );
+      }
+      _notice(
+        kind == 'lock'
+            ? 'Lock request sent'
+            : 'Unlock requested. The device may require authentication.',
+      );
+    }
+  }
+
+  Future<void> _viewCamera(String peer) async {
+    await _audio!.startCamera(peer);
+    if (mounted) setState(() => _page = 3);
+    _notice(
+      'Camera requested. The other app must have camera sharing enabled.',
+    );
+  }
+
+  Future<void> _browseFiles(Map<String, dynamic> peer) async {
+    var path = '';
+    var result = await _api!.call({
+      'op': 'browse_peer',
+      'peer_id': peer['device_id'],
+      'path': path,
+    });
+    var downloading = false;
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: Text('Shared files · ${peer['device_name']}'),
+          content: SizedBox(
+            width: 600,
+            height: 420,
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    IconButton(
+                      tooltip: 'Parent folder',
+                      onPressed: path.isEmpty || downloading
+                          ? null
+                          : () async {
+                              final parts = path.split('/')..removeLast();
+                              path = parts.join('/');
+                              try {
+                                final next = await _api!.call({
+                                  'op': 'browse_peer',
+                                  'peer_id': peer['device_id'],
+                                  'path': path,
+                                });
+                                if (context.mounted) {
+                                  update(() => result = next);
+                                }
+                              } catch (e) {
+                                _showError(e);
+                              }
+                            },
+                      icon: const Icon(Icons.arrow_upward),
+                    ),
+                    Expanded(
+                      child: Text(path.isEmpty ? 'Shared folder' : path),
+                    ),
+                  ],
+                ),
+                if (downloading) const LinearProgressIndicator(),
+                Expanded(
+                  child: ListView(
+                    children: [
+                      if (result['truncated'] == true)
+                        const ListTile(
+                          title: Text(
+                            'Showing the first files in this large folder.',
+                          ),
+                        ),
+                      if ((result['entries'] as List).isEmpty)
+                        const ListTile(title: Text('This folder is empty')),
+                      for (final entry in result['entries'] as List)
+                        ListTile(
+                          leading: Icon(
+                            entry['directory'] == true
+                                ? Icons.folder_outlined
+                                : Icons.insert_drive_file_outlined,
+                          ),
+                          title: Text(entry['name'] as String),
+                          subtitle: entry['directory'] == true
+                              ? null
+                              : Text(_bytes(entry['size'] as int)),
+                          trailing: entry['directory'] == true
+                              ? const Icon(Icons.chevron_right)
+                              : const Icon(Icons.download),
+                          onTap: downloading
+                              ? null
+                              : () async {
+                                  try {
+                                    if (entry['directory'] == true) {
+                                      final next = await _api!.call({
+                                        'op': 'browse_peer',
+                                        'peer_id': peer['device_id'],
+                                        'path': entry['path'],
+                                      });
+                                      if (context.mounted) {
+                                        update(() {
+                                          path = entry['path'] as String;
+                                          result = next;
+                                        });
+                                      }
+                                    } else {
+                                      update(() => downloading = true);
+                                      final download = await _api!.call({
+                                        'op': 'download_shared',
+                                        'peer_id': peer['device_id'],
+                                        'path': entry['path'],
+                                      });
+                                      if (_android != null) {
+                                        await _android!.saveFile(
+                                          download['id'] as String,
+                                          download['name'] as String,
+                                        );
+                                      } else {
+                                        _notice(
+                                          'Downloaded to ${download['path']}',
+                                        );
+                                      }
+                                      await _refresh();
+                                    }
+                                  } catch (e) {
+                                    _showError(e);
+                                  } finally {
+                                    if (context.mounted) {
+                                      update(() => downloading = false);
+                                    }
+                                  }
+                                },
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: downloading ? null : () => Navigator.pop(context),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _subtitle() => switch (_page) {
@@ -513,14 +1024,16 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       padding: const EdgeInsets.all(28),
       child: Column(
         children: [
-          Icon(icon, size: 36, color: Colors.black38),
+          Icon(icon, size: 36, color: Theme.of(context).colorScheme.outline),
           const SizedBox(height: 12),
           Text(title, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
           Text(
             detail,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.black54),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),
@@ -555,7 +1068,9 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                     const SizedBox(height: 4),
                     Text(
                       subtitle,
-                      style: const TextStyle(color: Colors.black54),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),
@@ -577,42 +1092,76 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     String text,
     Future<void> Function() action, {
     bool primary = false,
+    bool enabled = true,
+    bool showProgress = true,
   }) => primary
       ? FilledButton(
-          onPressed: _busy ? null : () => _run(action),
+          onPressed: _busy || !enabled
+              ? null
+              : () => showProgress
+                    ? _run(action)
+                    : action().catchError(_showError),
           child: Text(text),
         )
       : OutlinedButton(
-          onPressed: _busy ? null : () => _run(action),
+          onPressed: _busy || !enabled
+              ? null
+              : () => showProgress
+                    ? _run(action)
+                    : action().catchError(_showError),
           child: Text(text),
         );
 
+  bool _isOnline(String id) =>
+      (_data['presence'] as Map?)?[id]?['online'] == true;
+  String _presenceText(String id) {
+    final presence = (_data['presence'] as Map?)?[id] as Map?;
+    if (presence == null) return 'Checking connection';
+    if (presence['online'] == true) return 'Online';
+    final seen = presence['last_seen'] as int?;
+    return seen == null ? 'Offline' : 'Offline · Last seen ${_time(seen)}';
+  }
+
+  List<Map<String, dynamic>> get _pairedPeers =>
+      _paired.values
+          .map((r) => (r as Map)['peer'] as Map<String, dynamic>)
+          .toList()
+        ..sort(
+          (a, b) => (a['device_name'] as String).toLowerCase().compareTo(
+            (b['device_name'] as String).toLowerCase(),
+          ),
+        );
   List<Widget> _devices() => [
-    _card(
-      Icons.computer_rounded,
-      _data['device']['device_name'] as String,
-      '${_data['device']['platform']} · This device',
-      [
-        _button('Create invitation', _invitation, primary: true),
-        _button('Enter invitation', _enterInvitation),
-        if (_android != null) _button('Scan invitation', _scanInvitation),
-        if (_android != null) _button('Rename device', _renameDevice),
-      ],
-    ),
-    _section('Paired devices'),
-    if (_paired.isEmpty)
-      _empty(
-        'No paired devices yet',
-        'Send a pairing request to a nearby device, or use an invitation.',
-        Icons.link,
+    Card(
+      child: ExpansionTile(
+        leading: const Icon(Icons.hub_rounded),
+        title: Text(_data['device']['device_name'] as String),
+        subtitle: const Text('This device'),
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _button('Create invitation', _invitation),
+                _button('Enter invitation', _enterInvitation),
+                if (_android != null)
+                  _button('Scan invitation', _scanInvitation),
+                if (_android != null) _button('Rename device', _renameDevice),
+              ],
+            ),
+          ),
+        ],
       ),
-    for (final record in _paired.values)
-      _pairedCard((record as Map)['peer'] as Map<String, dynamic>),
+    ),
     _section('Nearby devices'),
-    if (_items('discovered').isEmpty)
+    if (_items(
+      'discovered',
+    ).where((p) => !_paired.containsKey(p['device_id'])).isEmpty)
       _empty(
         'Looking on your local network',
-        'Both devices need Narad running on the same LAN. Invitations also work when discovery is unavailable.',
+        'Open Narad on both devices using the same Wi-Fi. Invitations also work when discovery is unavailable.',
         Icons.radar,
       ),
     for (final peer in _items('discovered'))
@@ -620,7 +1169,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         _card(
           Icons.devices_other,
           peer['device_name'] as String,
-          '${peer['platform']} · Discovered, awaiting pairing',
+          '${peer['platform']} · Ready to pair',
           [
             if (_items('pairings').any(
               (p) =>
@@ -638,25 +1187,73 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
               ),
           ],
         ),
-  ];
-  Widget _pairedCard(Map<String, dynamic> peer) => _card(
-    Icons.verified_user_outlined,
-    peer['device_name'] as String,
-    '${peer['platform']} · Paired',
-    [
-      _button(
-        'Send file',
-        () => _sendFile(peer['device_id'] as String),
-        primary: true,
+    _section('Paired devices'),
+    if (_paired.isEmpty)
+      _empty(
+        'No paired devices yet',
+        'Send a pairing request to a nearby device, or use an invitation.',
+        Icons.link,
       ),
-      _button(
-        'Send clipboard',
-        () => _sendClipboard(peer['device_id'] as String),
+    if (_paired.isNotEmpty) ...[
+      _section(
+        'Online (${_pairedPeers.where((p) => _isOnline(p['device_id'] as String)).length})',
       ),
-      _button('Permissions', () => _permissions(peer)),
-      _button('Unpair', () => _unpair(peer)),
+      if (!_pairedPeers.any((p) => _isOnline(p['device_id'] as String)))
+        const Padding(
+          padding: EdgeInsets.only(bottom: 12),
+          child: Text('No paired devices online'),
+        ),
+      for (final peer in _pairedPeers.where(
+        (p) => _isOnline(p['device_id'] as String),
+      ))
+        _pairedCard(peer),
+      _section(
+        'Offline (${_pairedPeers.where((p) => !_isOnline(p['device_id'] as String)).length})',
+      ),
+      if (_pairedPeers.every((p) => _isOnline(p['device_id'] as String)))
+        const Padding(
+          padding: EdgeInsets.only(bottom: 12),
+          child: Text('No paired devices offline'),
+        ),
+      for (final peer in _pairedPeers.where(
+        (p) => !_isOnline(p['device_id'] as String),
+      ))
+        _pairedCard(peer),
     ],
-  );
+  ];
+  Widget _pairedCard(Map<String, dynamic> peer) {
+    final id = peer['device_id'] as String;
+    final online = _isOnline(id);
+    return _card(
+      online ? Icons.check_circle_outline : Icons.cloud_off_outlined,
+      peer['device_name'] as String,
+      '${peer['platform']} · ${_presenceText(id)}',
+      [
+        _button(
+          'Send file',
+          () => _sendFile(id),
+          primary: true,
+          enabled: online,
+        ),
+        _button('Send clipboard', () => _sendClipboard(id), enabled: online),
+        _button('View camera', () => _viewCamera(id), enabled: online),
+        _button('Browse files', () => _browseFiles(peer), enabled: online),
+        _button('Run command', () => _runCommand(peer), enabled: online),
+        _button('Lock', () => _deviceAction(id, 'lock'), enabled: online),
+        _button(
+          'Request unlock',
+          () => _deviceAction(id, 'unlock'),
+          enabled: online,
+        ),
+        _button(
+          'Device settings',
+          () => _permissions(peer),
+          showProgress: false,
+        ),
+        _button('Unpair', () => _unpair(peer)),
+      ],
+    );
+  }
 
   Future<void> _requestPairing(Map<String, dynamic> peer) async {
     await _api!.call({'op': 'pair_nearby', 'peer': peer});
@@ -692,8 +1289,8 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                 const SizedBox(height: 16),
                 QrImageView(
                   data: invitation,
-                  size: 240,
                   backgroundColor: Colors.white,
+                  size: 240,
                 ),
                 const SizedBox(height: 12),
                 const Text(
@@ -827,6 +1424,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, update) => AlertDialog(
+          scrollable: true,
           title: Text('Permissions · ${peer['device_name']}'),
           content: SizedBox(
             width: 440,
@@ -834,28 +1432,58 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text(
-                  'File and audio sessions still require approval. Clipboard permission allows offers; each payload needs acceptance.',
+                  'Allow what this paired device can do on this device. Enabled permissions are saved and communication proceeds without repeated approval prompts.',
                 ),
                 for (final entry in {
-                  'file.transfer': 'Receive files',
-                  'clipboard.sync': 'Receive clipboard offers',
+                  'file.transfer': 'Receive files automatically',
+                  'clipboard.sync': 'Apply shared clipboard automatically',
                   'audio.output': 'Play shared audio',
+                  'camera.stream': 'Share this device’s camera',
+                  'file.browse': 'Browse and download from Shared folder',
+                  'command.run': 'Run configured command presets',
+                  'device.lock': 'Lock this device',
+                  'device.unlock':
+                      'Request unlock (device authentication required)',
                 }.entries)
                   SwitchListTile(
                     title: Text(entry.value),
                     value:
-                        ((_data['permissions']
+                        ((_data['automatic_permissions']
                                     as Map?)?['${peer['device_id']}/${entry.key}'] ??
                                 false)
                             as bool,
                     onChanged: (allow) async {
                       try {
+                        if (allow &&
+                            entry.key == 'camera.stream' &&
+                            _android != null &&
+                            !await _android!.ensureCameraPermission()) {
+                          _notice(
+                            'Camera permission is required to share this camera.',
+                          );
+                          return;
+                        }
+                        if (allow &&
+                            entry.key == 'device.lock' &&
+                            _android != null &&
+                            !await _android!.ensureDeviceAdmin()) {
+                          _notice(
+                            'Device administrator access is required to lock Android.',
+                          );
+                          return;
+                        }
                         await _command({
                           'op': 'permission',
                           'peer_id': peer['device_id'],
                           'capability': entry.key,
                           'allow': allow,
                         });
+                        if (allow && entry.key == 'audio.output') {
+                          await _audio?.setEnabled(true);
+                        }
+                        if (allow && entry.key == 'camera.stream') {
+                          await _audio?.setCameraEnabled(true);
+                        }
                         await _refresh();
                         if (context.mounted) update(() {});
                       } catch (error) {
@@ -897,11 +1525,13 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     final files = _items('transfers').where((t) => t['status'] == 'pending');
     final media = _items('sessions').where(
       (s) =>
-          s['capability'] == 'audio.output' &&
+          ['audio.output', 'camera.stream'].contains(s['capability']) &&
           s['state'] == 'requested' &&
           !(_audio?.links[s['id']]?.outgoing ?? false),
     );
-    final clipboard = _items('clipboard');
+    final clipboard = _items(
+      'clipboard',
+    ).where((c) => c['status'] != 'automatic');
     if (pairings.isEmpty &&
         endedRequests.isEmpty &&
         files.isEmpty &&
@@ -1005,7 +1635,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       for (final s in media)
         _card(
           Icons.speaker_outlined,
-          'Audio from ${_peerName(s['peer_id'] as String)}',
+          '${s['capability'] == 'camera.stream' ? 'Camera request' : 'Audio'} from ${_peerName(s['peer_id'] as String)}',
           'Allow this device’s microphone to play through your speakers?',
           [
             _button(
@@ -1183,11 +1813,33 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   ];
 
   List<Widget> _audioPage() => [
+    SwitchListTile(
+      title: const Text('Camera sharing'),
+      subtitle: const Text(
+        'Available while this app is open, only to devices you allowed.',
+      ),
+      value: _audio?.cameraEnabled ?? false,
+      onChanged: (value) => _run(() async {
+        await _audio!.setCameraEnabled(value);
+        setState(() {});
+      }),
+    ),
+    for (final link
+        in _audio?.links.values.where((l) => l.camera && l.renderer != null) ??
+            <AudioLink>[])
+      SizedBox(
+        height: 320,
+        child: RTCVideoView(
+          link.renderer!,
+          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+        ),
+      ),
+
     Card(
       child: SwitchListTile(
         title: const Text('Enable audio on this device'),
         subtitle: const Text(
-          'Audio sessions require approval. Microphone capture starts after the other device accepts.',
+          'Permitted devices connect automatically. Microphone capture starts only for an authorized session.',
         ),
         value: _audio?.enabled ?? false,
         onChanged: _busy
@@ -1214,15 +1866,17 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
           [
             _button('Request audio', () async {
               await _audio!.start(record['peer']['device_id'] as String);
-              _notice('Audio requested. Waiting for approval.');
+              _notice(
+                'Connecting audio using the receiving device’s permissions.',
+              );
             }, primary: true),
           ],
         ),
     ],
-    _section('Audio sessions'),
+    _section('Audio and camera sessions'),
     for (final s in _items('sessions').where(
       (s) =>
-          s['capability'] == 'audio.output' &&
+          ['audio.output', 'camera.stream'].contains(s['capability']) &&
           !['closed', 'denied', 'failed'].contains(s['state']),
     ))
       _card(
@@ -1245,29 +1899,122 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       ),
   ];
 
-  List<Widget> _activity() => [
-    _card(
-      Icons.lan_outlined,
-      'Connection',
-      'Control TLS :${_data['device']['port']} · file TLS :${(_data['device']['port'] as int) + 1}',
-      [],
-      extra: SelectableText(
-        'Device ${_short(_data['device']['device_id'] as String)}\nAddress ${_data['device']['address']}\nProtocol v${_data['device']['protocol_version']}\n${_paired.length} paired devices\nPrivate keys and clipboard contents stay out of the activity log.',
-      ),
-    ),
-    _section('Recent activity'),
-    for (final e in _items('events'))
-      _card(
-        Icons.history,
-        (e['type'] as String).replaceAll('.', ' · '),
-        DateTime.fromMillisecondsSinceEpoch(
-          (e['timestamp'] as int) * 1000,
-        ).toLocal().toString().split('.').first,
-        [],
-        extra: Text(
-          jsonEncode(e['detail']),
-          style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+  String _activityCategory(String kind) {
+    if (kind.startsWith('file.')) return 'Files';
+    if (kind.startsWith('clipboard.')) return 'Clipboard';
+    if (kind.startsWith('media.') || kind.startsWith('camera.')) {
+      return 'Audio and camera';
+    }
+    if (kind.startsWith('permission.')) return 'Permissions';
+    if (kind.startsWith('command.')) return 'Commands';
+    if (kind.startsWith('browse.')) return 'Shared files';
+    if (['device.requested', 'device.completed'].contains(kind)) {
+      return 'Device controls';
+    }
+    return 'Connections';
+  }
+
+  String _activityMessage(Map<String, dynamic> event) {
+    final detail = event['detail'] as Map? ?? {};
+    final peer = detail['peer_id'] is String
+        ? _peerName(detail['peer_id'] as String)
+        : 'Device';
+    return switch (event['type']) {
+      'device.online' => '$peer is online',
+      'device.offline' => '$peer went offline',
+      'pairing.requested' => 'Pairing request received',
+      'pairing.sent' => 'Pairing request sent',
+      'pairing.approved' => 'Pairing approved',
+      'pairing.completed' => '$peer connected',
+      'device.unpaired' => 'Device unpaired',
+      'permission.changed' =>
+        '${detail['capability'].toString().replaceAll('.', ' ')} ${detail['allow'] == true ? 'allowed' : 'disabled'} for $peer',
+      'file.offered' => 'File transfer offered',
+      'file.accepted' => 'File transfer accepted',
+      'file.completed' => 'File transfer completed',
+      'file.progress' =>
+        'Transferring ${_bytes(detail['sent'] as int? ?? 0)} of ${_bytes(detail['total'] as int? ?? 0)}',
+      'clipboard.offered' => 'Clipboard text received',
+      'clipboard.accepted' => 'Clipboard accepted',
+      'clipboard.applied' => 'Clipboard updated automatically',
+      'clipboard.failed' => 'System clipboard update was blocked',
+      'media.requested' => 'Media connection requested',
+      'browse.opened' => '$peer browsed the Shared folder',
+      'browse.downloaded' => 'Downloaded ${detail['name'] ?? 'shared file'}',
+      'command.completed' => 'Command finished on this device',
+      'device.requested' => '$peer requested ${detail['kind']}',
+      'device.completed' => 'Device control completed',
+      'daemon.started' => 'Narad started',
+      'daemon.stopped' => 'Narad stopped',
+      'request.rejected' => 'A request was blocked',
+      _ => (event['type'] as String).replaceAll('.', ' '),
+    };
+  }
+
+  List<Widget> _activity() {
+    final groups = <String, List<Map<String, dynamic>>>{};
+    final progress = <String>{};
+    final today = DateTime.now();
+    for (final event in _items('events')) {
+      final kind = event['type'] as String;
+      if (kind == 'file.progress' &&
+          !progress.add((event['detail'] as Map)['id'].toString())) {
+        continue;
+      }
+      final date = DateTime.fromMillisecondsSinceEpoch(
+        (event['timestamp'] as int) * 1000,
+      ).toLocal();
+      final day = DateTime(date.year, date.month, date.day);
+      final difference = DateTime(
+        today.year,
+        today.month,
+        today.day,
+      ).difference(day).inDays;
+      final label = difference == 0
+          ? 'Today'
+          : difference == 1
+          ? 'Yesterday'
+          : '${date.day}/${date.month}/${date.year}';
+      groups
+          .putIfAbsent('$label|${_activityCategory(kind)}', () => [])
+          .add(event);
+    }
+    if (groups.isEmpty) {
+      return [
+        _empty(
+          'No activity yet',
+          'Connections and shared activity will appear here.',
+          Icons.history,
         ),
-      ),
-  ];
+      ];
+    }
+    String? previousDay;
+    final widgets = <Widget>[];
+    for (final group in groups.entries) {
+      final parts = group.key.split('|');
+      if (parts[0] != previousDay) {
+        widgets.add(_section(parts[0]));
+        previousDay = parts[0];
+      }
+      widgets.add(
+        Card(
+          child: ExpansionTile(
+            title: Text(parts[1]),
+            subtitle: Text(
+              '${group.value.length} ${group.value.length == 1 ? 'event' : 'events'}',
+            ),
+            children: [
+              for (final event in group.value)
+                ListTile(
+                  leading: const Icon(Icons.history, size: 20),
+                  title: Text(_activityMessage(event)),
+                  subtitle: Text(_time(event['timestamp'] as int)),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+    return widgets;
+  }
 }

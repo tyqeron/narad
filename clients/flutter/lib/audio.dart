@@ -3,10 +3,11 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'api.dart';
 
 class AudioLink {
-  AudioLink(this.id, this.peer, this.outgoing);
+  AudioLink(this.id, this.peer, this.outgoing, {this.camera = false});
   final String id;
   final String peer;
   final bool outgoing;
+  final bool camera;
   RTCPeerConnection? connection;
   MediaStream? microphone;
   RTCVideoRenderer? renderer;
@@ -21,16 +22,49 @@ class AudioController {
   final void Function(Object) onError;
   final Map<String, AudioLink> links = {};
   bool enabled = false;
+  bool cameraEnabled = false;
 
   Future<void> setEnabled(bool value) async {
     if (!value) {
       enabled = false;
-      for (final id in links.keys.toList()) {
-        await stop(id, notify: false);
+      for (final link in links.values.where((l) => !l.camera).toList()) {
+        await stop(link.id, notify: false);
       }
     }
-    await api.call({'op': 'media_ready', 'ready': value});
+    await api.call({
+      'op': 'media_ready',
+      'ready': value || cameraEnabled,
+      'audio_ready': value,
+      'camera_ready': cameraEnabled,
+    });
     enabled = value;
+  }
+
+  Future<void> setCameraEnabled(bool value) async {
+    cameraEnabled = value;
+    if (!value) {
+      for (final link in links.values.where((l) => l.camera).toList()) {
+        await stop(link.id, notify: false);
+      }
+    }
+    await api.call({
+      'op': 'media_ready',
+      'ready': enabled || cameraEnabled,
+      'audio_ready': enabled,
+      'camera_ready': cameraEnabled,
+    });
+  }
+
+  Future<String> startCamera(String peer) async {
+    if (!cameraEnabled) await setCameraEnabled(true);
+    final result = await api.call({
+      'op': 'media_start',
+      'peer_id': peer,
+      'kind': 'camera',
+    });
+    final id = result['id'] as String;
+    links[id] = AudioLink(id, peer, true, camera: true);
+    return id;
   }
 
   Future<String> start(String peer) async {
@@ -42,8 +76,13 @@ class AudioController {
   }
 
   Future<void> tick(Map<String, dynamic> status) async {
-    if (!enabled) return;
-    await api.call({'op': 'media_ready', 'ready': true});
+    if (!enabled && !cameraEnabled) return;
+    await api.call({
+      'op': 'media_ready',
+      'ready': true,
+      'audio_ready': enabled,
+      'camera_ready': cameraEnabled,
+    });
     final sessions = (status['sessions'] as List).cast<Map<String, dynamic>>();
     final byId = {for (final s in sessions) s['id']: s};
     for (final link in links.values.toList()) {
@@ -87,7 +126,12 @@ class AudioController {
       }
       final link = links.putIfAbsent(
         id,
-        () => AudioLink(id, signal['peer_id'] as String, false),
+        () => AudioLink(
+          id,
+          signal['peer_id'] as String,
+          false,
+          camera: session['capability'] == 'camera.stream',
+        ),
       );
       try {
         await _receive(link, signal['data'] as Map<String, dynamic>);
@@ -102,27 +146,34 @@ class AudioController {
     try {
       await _connect(link);
       if (!links.containsKey(link.id)) return;
-      final stream = await navigator.mediaDevices.getUserMedia({
-        'audio': true,
-        'video': false,
-      });
-      // A permission dialog can outlive a cancelled session.
-      if (!links.containsKey(link.id)) {
-        for (final track in stream.getTracks()) {
-          await track.stop();
+      if (!link.camera) {
+        final stream = await navigator.mediaDevices.getUserMedia({
+          'audio': true,
+          'video': false,
+        });
+        // A permission dialog can outlive a cancelled session.
+        if (!links.containsKey(link.id)) {
+          for (final track in stream.getTracks()) {
+            await track.stop();
+          }
+          await stream.dispose();
+          return;
         }
-        await stream.dispose();
-        return;
-      }
-      link.microphone = stream;
-      await api.call({'op': 'session_touch', 'id': link.id});
-      for (final track in stream.getAudioTracks()) {
-        await link.connection!.addTrack(track, stream);
+        link.microphone = stream;
+        await api.call({'op': 'session_touch', 'id': link.id});
+        for (final track in stream.getAudioTracks()) {
+          await link.connection!.addTrack(track, stream);
+        }
+      } else {
+        await link.connection!.addTransceiver(
+          kind: RTCRtpMediaType.RTCRtpMediaTypeVideo,
+          init: RTCRtpTransceiverInit(direction: TransceiverDirection.RecvOnly),
+        );
       }
       if (!links.containsKey(link.id)) return;
       final offer = await link.connection!.createOffer({
         'offerToReceiveAudio': false,
-        'offerToReceiveVideo': false,
+        'offerToReceiveVideo': link.camera,
       });
       await link.connection!.setLocalDescription(offer);
       await _signal(link, {'type': 'offer', 'sdp': offer.sdp});
@@ -234,6 +285,25 @@ class AudioController {
       await link.connection!.setRemoteDescription(
         RTCSessionDescription(data['sdp'] as String, 'offer'),
       );
+      if (link.camera) {
+        if (!cameraEnabled) throw StateError('Camera sharing is disabled');
+        final stream = await navigator.mediaDevices.getUserMedia({
+          'audio': false,
+          'video': {'facingMode': 'environment'},
+        });
+        if (!links.containsKey(link.id)) {
+          for (final track in stream.getTracks()) {
+            await track.stop();
+          }
+          await stream.dispose();
+          return;
+        }
+        link.microphone = stream;
+        await api.call({'op': 'session_touch', 'id': link.id});
+        for (final track in stream.getVideoTracks()) {
+          await link.connection!.addTrack(track, stream);
+        }
+      }
       link.remoteReady = true;
       await _drain(link);
       final answer = await link.connection!.createAnswer();
@@ -298,6 +368,7 @@ class AudioController {
 
   Future<void> dispose() async {
     enabled = false;
+    cameraEnabled = false;
     for (final id in links.keys.toList()) {
       await stop(id, notify: false);
     }

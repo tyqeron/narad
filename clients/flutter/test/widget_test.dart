@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:narad_client/api.dart';
 import 'package:narad_client/main.dart';
+import 'package:narad_client/app_settings.dart';
 
 class FakeApi implements NaradApi {
   final calls = <Map<String, dynamic>>[];
@@ -26,6 +27,15 @@ class FakeApi implements NaradApi {
       },
     },
     'permissions': {},
+    'automatic_permissions': {},
+    'presence': {
+      'peer': {
+        'online': true,
+        'last_seen': 1792044000,
+        'checked_at': 1792044000,
+      },
+    },
+    'commands': [],
     'discovered': [],
     'pairings': [],
     'transfers': [],
@@ -67,13 +77,11 @@ void main() {
     await tester.pumpWidget(NaradApp(api: api));
     await tester.pumpAndSettle();
     expect(find.text('My laptop'), findsOneWidget);
+    expect(find.text('Looking on your local network'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('My phone'), 150);
+    await tester.pumpAndSettle();
     expect(find.text('My phone'), findsOneWidget);
     expect(find.text('Send file'), findsOneWidget);
-    await tester.scrollUntilVisible(
-      find.text('Looking on your local network'),
-      200,
-    );
-    expect(find.text('Looking on your local network'), findsOneWidget);
     expect(
       api.calls.any((c) => c['op'] == 'media_ready' && c['ready'] == true),
       false,
@@ -237,6 +245,168 @@ void main() {
         api.calls.any((c) => c['op'] == 'pair_deny' && c['id'] == 'nearby'),
         isTrue,
       );
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets(
+    'paired online and offline devices are separated and offline controls are disabled',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final api = FakeApi();
+      (api.status['paired'] as Map)['offline'] = {
+        'peer': {
+          'device_id': 'offline',
+          'device_name': 'Sleeping laptop',
+          'platform': 'linux',
+        },
+      };
+      (api.status['presence'] as Map)['offline'] = {
+        'online': false,
+        'last_seen': 1792044000,
+        'checked_at': 1792044001,
+      };
+      await tester.pumpWidget(NaradApp(api: api));
+      await tester.pumpAndSettle();
+      expect(find.text('Online (1)'), findsOneWidget);
+      expect(find.text('Offline (1)'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('Sleeping laptop'), 150);
+      await tester.pumpAndSettle();
+      final card = find.ancestor(
+        of: find.text('Sleeping laptop'),
+        matching: find.byType(Card),
+      );
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.descendant(of: card, matching: find.byType(FilledButton)),
+            )
+            .onPressed,
+        isNull,
+      );
+      final settings = find.descendant(
+        of: card,
+        matching: find.widgetWithText(OutlinedButton, 'Device settings'),
+      );
+      expect(tester.widget<OutlinedButton>(settings).onPressed, isNotNull);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets('theme defaults to device appearance and saves a user override', (
+    tester,
+  ) async {
+    tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+    addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+    final preferences = MemoryThemePreferences();
+    await tester.pumpWidget(NaradApp(api: FakeApi(), preferences: preferences));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<MaterialApp>(find.byType(MaterialApp)).themeMode,
+      ThemeMode.system,
+    );
+    expect(
+      Theme.of(tester.element(find.text('Narad'))).brightness,
+      Brightness.dark,
+    );
+    await tester.tap(find.byTooltip('Settings'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Light'));
+    await tester.pumpAndSettle();
+    expect(preferences.mode, ThemeMode.light);
+    expect(
+      tester.widget<MaterialApp>(find.byType(MaterialApp)).themeMode,
+      ThemeMode.light,
+    );
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(NaradApp(api: FakeApi(), preferences: preferences));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<MaterialApp>(find.byType(MaterialApp)).themeMode,
+      ThemeMode.light,
+    );
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets(
+    'device settings expose all capability grants and save them per peer',
+    (tester) async {
+      final api = FakeApi();
+      await tester.pumpWidget(NaradApp(api: api));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('Device settings'), 150);
+      await Scrollable.ensureVisible(
+        tester.element(find.text('Device settings')),
+        alignment: 0.5,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Device settings'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SwitchListTile), findsNWidgets(8));
+      expect(find.text('Share this device’s camera'), findsOneWidget);
+      await tester.tap(find.text('Receive files automatically'));
+      await tester.pumpAndSettle();
+      expect(
+        api.calls.any(
+          (c) =>
+              c['op'] == 'permission' &&
+              c['peer_id'] == 'peer' &&
+              c['capability'] == 'file.transfer' &&
+              c['allow'] == true,
+        ),
+        isTrue,
+      );
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets(
+    'activity groups friendly summaries and collapses repeated transfer progress',
+    (tester) async {
+      final api = FakeApi();
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      api.status['events'] = [
+        {
+          'type': 'file.completed',
+          'timestamp': now,
+          'detail': {'id': 'transfer'},
+        },
+        {
+          'type': 'file.progress',
+          'timestamp': now,
+          'detail': {'id': 'transfer', 'sent': 20000, 'total': 30000},
+        },
+        {
+          'type': 'file.progress',
+          'timestamp': now,
+          'detail': {'id': 'transfer', 'sent': 10000, 'total': 30000},
+        },
+        {
+          'type': 'clipboard.applied',
+          'timestamp': now,
+          'detail': {'peer_id': 'peer'},
+        },
+      ];
+      await tester.pumpWidget(NaradApp(api: api));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Activity'));
+      await tester.pumpAndSettle();
+      expect(find.text('Today'), findsOneWidget);
+      expect(find.text('Files'), findsOneWidget);
+      expect(find.text('Clipboard'), findsOneWidget);
+      await tester.tap(find.text('Files'));
+      await tester.pumpAndSettle();
+      expect(find.text('File transfer completed'), findsOneWidget);
+      expect(find.textContaining('Transferring'), findsOneWidget);
+      expect(find.textContaining('{"'), findsNothing);
       await tester.pumpWidget(const SizedBox());
       await tester.pumpAndSettle();
     },

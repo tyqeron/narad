@@ -264,3 +264,15 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - Validation: 19 Rust tests and strict Clippy pass; all 13 real-daemon scenarios
   pass, covering online/offline/reconnect, migration, seamless grants, traversal
   rejection, scoped downloads, preset execution and immediate command revocation.
+
+## 20. Device dashboard, persistent themes and grouped activity
+
+- Separated nearby devices from paired online/offline groups, with authenticated
+  status and disabled offline communication controls.
+- Added per-device settings for eight persistent capabilities, shared-folder and
+  command-preset controls, and camera viewing through the Media adapter.
+- Grouped readable activity summaries by day/category and collapsed repeated
+  transfer progress. Device appearance is the default, with saved Light/Dark
+  overrides in Settings.
+- Validation: Flutter analysis and all 15 tests pass, including theme persistence,
+  permission switches, online/offline controls, grouped activity and phone layout.

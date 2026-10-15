@@ -49,6 +49,12 @@ class AndroidBackend {
     await channel.invokeMethod<void>('setDeviceName', {'name': name});
   }
 
+  Future<bool> ensureCameraPermission() async =>
+      await channel.invokeMethod<bool>('ensureCameraPermission') ?? false;
+
+  Future<bool> ensureDeviceAdmin() async =>
+      await channel.invokeMethod<bool>('ensureDeviceAdmin') ?? false;
+
   Future<bool> saveFile(String id, String name) async =>
       await channel.invokeMethod<bool>('saveReceivedFile', {
         'id': id,
