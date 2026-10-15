@@ -344,3 +344,16 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   above. Full MSVC/Flutter Windows release build and physical Windows QA remain
   unverified on this Linux host. Wine initialization stalled and was stopped;
   no Wine result is counted as a successful Windows runtime test.
+
+## 26. Linux bundle launcher and per-user installer
+
+- Replaced the Linux packaging drafts with a native-host Rust/Flutter bundle build,
+  per-user installation and a shared launcher. State lives outside the installation
+  so upgrades preserve identity, grants and downloads.
+- The menu shortcut starts backend and GUI together. The launcher waits for the
+  authenticated API, cleans up its own daemon on GUI exit, and leaves a reused
+  daemon running. Fixed debug output paths and removed the trap-bypassing exec.
+- Added a checksummed self-extracting .run builder, release/debug modes and optional
+  wrapping of an existing bundle. It requires no root, package manager or FUSE.
+- Validation: full Linux x64 release build succeeds and produces the installer;
+  shell syntax and emitted SHA-256 checks pass.

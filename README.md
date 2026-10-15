@@ -34,6 +34,11 @@ menu shortcut. See [Windows setup and testing](docs/WINDOWS.md).
 
 ## Run on Linux
 
+Build a per-user Linux installer with `./scripts/build-linux-installer.sh`.
+Run the resulting `dist/narad-linux-x64-release.run` (or `arm64`) to install
+Narad and its application-menu shortcut. See [Linux installer details](docs/LINUX.md).
+
+
 Prerequisites: Rust 1.88+, Flutter 3.44.8 (Dart 3.12.2), Python 3 for integration tests, and
 Flutter's Linux native build dependencies (Clang, CMake, Ninja, pkg-config,
 GTK 3 and PulseAudio development libraries). The WebRTC plugin downloads its
