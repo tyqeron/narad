@@ -140,3 +140,14 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - Validation: ARM64 debug APK compiled successfully. Updated the NDK pin to r28
   installed during the build, matching the Flutter plugins' required version.
   Physical installation is pending the tablet's install-via-USB setting.
+
+## 12. Standalone Android interface
+
+- Android starts its private backend automatically instead of asking for a desktop
+  daemon path; startup errors and retry remain visible to the user.
+- Added offline QR invitation scanning, device naming, and received-file export
+  using Android's document picker without broad storage access.
+- Retry can reselect an evicted source file while retaining its transfer ID.
+- Audio capture is disabled when Android leaves the foreground.
+- Validation: eight Flutter tests and static analysis pass, including readiness,
+  authenticated startup, shutdown waiting and identity-error propagation.

@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'api.dart';
 import 'audio.dart';
+import 'android_backend.dart';
+import 'pairing_scanner.dart';
 
 void main() => runApp(const NaradApp());
 
@@ -38,11 +40,13 @@ class Dashboard extends StatefulWidget {
   State<Dashboard> createState() => _DashboardState();
 }
 
-class _DashboardState extends State<Dashboard> {
+class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   late final TextEditingController _directory;
   final _port = TextEditingController(
     text: Platform.environment['NARAD_API_PORT'] ?? '45700',
   );
+  AndroidBackend? _android;
+  bool _starting = false;
   NaradApi? _api;
   AudioController? _audio;
   Map<String, dynamic> _data = {};
@@ -63,13 +67,52 @@ class _DashboardState extends State<Dashboard> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _directory = TextEditingController(
       text: Platform.environment['NARAD_STATE'] ?? '../../.narad',
     );
     if (widget.api != null) {
       _attach(widget.api!);
+    } else if (Platform.isAndroid) {
+      _android = AndroidBackend();
+      unawaited(_startAndroid());
     } else {
       unawaited(_autoConnect());
+    }
+  }
+
+  Future<void> _startAndroid() async {
+    if (_starting) return;
+    setState(() => _starting = true);
+    try {
+      final api = await _android!.start();
+      if (!mounted) return;
+      _directory.text = api.stateDirectory;
+      _port.text = api.port.toString();
+      _attach(api);
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _starting = false);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_android == null) return;
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      // Background availability is for control/files. Microphone capture stays foreground-only.
+      if (_audio != null) {
+        unawaited(
+          _audio!.setEnabled(false).catchError((Object error) {
+            if (mounted) _showError(error);
+          }),
+        );
+      }
+    }
+    if (state == AppLifecycleState.resumed && !_online && !_starting) {
+      unawaited(_startAndroid());
     }
   }
 
@@ -203,6 +246,7 @@ class _DashboardState extends State<Dashboard> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     if (_audio != null) unawaited(_audio!.dispose());
     _directory.dispose();
@@ -329,64 +373,114 @@ class _DashboardState extends State<Dashboard> {
     _ => 'Connection details and recent decisions, kept on this device.',
   };
 
-  Widget _connection() => Center(
-    child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 540),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Icon(Icons.hub_rounded, size: 52, color: Color(0xff286458)),
-            const SizedBox(height: 20),
-            Text(
-              'Your devices, connected locally.',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Start the Narad daemon, then connect this app to its local state directory. Devices communicate directly over your network.',
-            ),
-            const SizedBox(height: 20),
-            const SelectableText(
-              'cargo run -p narad -- serve --name "My laptop"',
-              style: TextStyle(fontFamily: 'monospace'),
-            ),
-            const SizedBox(height: 24),
-            TextField(
-              controller: _directory,
-              decoration: const InputDecoration(
-                labelText: 'Daemon state directory',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _port,
-              decoration: const InputDecoration(
-                labelText: 'Local API port',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Text(
-                  _error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+  Widget _connection() => _android != null
+      ? Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.hub_rounded,
+                  size: 56,
+                  color: Color(0xff286458),
                 ),
-              ),
-            FilledButton.icon(
-              onPressed: _connect,
-              icon: const Icon(Icons.link),
-              label: const Text('Connect to Narad'),
+                const SizedBox(height: 20),
+                Text(
+                  _starting ? 'Starting Narad…' : 'Connect your devices',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Use the same Wi-Fi network on each device. Narad keeps your identity and files privately on this device.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                if (_starting) const CircularProgressIndicator(),
+                if (_error != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Text(
+                      _error!,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                if (!_starting)
+                  FilledButton(
+                    onPressed: () => _startAndroid(),
+                    child: const Text('Start Narad'),
+                  ),
+              ],
             ),
-          ],
-        ),
-      ),
-    ),
-  );
+          ),
+        )
+      : Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 540),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.hub_rounded,
+                    size: 52,
+                    color: Color(0xff286458),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Your devices, connected locally.',
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Start the Narad daemon, then connect this app to its local state directory. Devices communicate directly over your network.',
+                  ),
+                  const SizedBox(height: 20),
+                  const SelectableText(
+                    'cargo run -p narad -- serve --name "My laptop"',
+                    style: TextStyle(fontFamily: 'monospace'),
+                  ),
+                  const SizedBox(height: 24),
+                  TextField(
+                    controller: _directory,
+                    decoration: const InputDecoration(
+                      labelText: 'Daemon state directory',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _port,
+                    decoration: const InputDecoration(
+                      labelText: 'Local API port',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (_error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text(
+                        _error!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ),
+                  FilledButton.icon(
+                    onPressed: _connect,
+                    icon: const Icon(Icons.link),
+                    label: const Text('Connect to Narad'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
 
   Widget _empty(String title, String detail, IconData icon) => Card(
     child: Padding(
@@ -475,6 +569,8 @@ class _DashboardState extends State<Dashboard> {
       [
         _button('Create invitation', _invitation, primary: true),
         _button('Enter invitation', _enterInvitation),
+        if (_android != null) _button('Scan invitation', _scanInvitation),
+        if (_android != null) _button('Rename device', _renameDevice),
       ],
     ),
     _section('Paired devices'),
@@ -522,6 +618,11 @@ class _DashboardState extends State<Dashboard> {
   );
 
   Future<void> _invitation() async {
+    if (_android != null && _data['device']['address'] == '127.0.0.1') {
+      throw StateError(
+        'Connect to Wi-Fi or a local hotspot before creating an invitation.',
+      );
+    }
     final result = await _api!.call({'op': 'invite'});
     final invitation = jsonEncode(result['invitation']);
     if (!mounted) return;
@@ -569,13 +670,25 @@ class _DashboardState extends State<Dashboard> {
     );
   }
 
-  Future<void> _enterInvitation() async {
-    final text = await _input(
-      'Enter invitation',
-      'Paste the invitation from your other device',
-      multiline: true,
+  Future<void> _scanInvitation() async {
+    final text = await Navigator.of(
+      context,
+    ).push<String>(MaterialPageRoute(builder: (_) => const PairingScanner()));
+    if (text != null) await _pairText(text);
+  }
+
+  Future<void> _renameDevice() async {
+    final name = await _input(
+      'Device name',
+      'Choose a name for this device',
+      initial: _data['device']['device_name'] as String,
     );
-    if (text == null) return;
+    if (name == null) return;
+    await _command({'op': 'device_name', 'name': name});
+    await _android!.setDeviceName(name);
+  }
+
+  Future<void> _pairText(String text) async {
     final raw = jsonDecode(text) as Map<String, dynamic>;
     final result = await _api!.call({
       'op': 'pair',
@@ -585,6 +698,16 @@ class _DashboardState extends State<Dashboard> {
       'Compare code ${result['code']} on both devices, then approve in Inbox.',
     );
     if (mounted) setState(() => _page = 1);
+  }
+
+  Future<void> _enterInvitation() async {
+    final text = await _input(
+      'Enter invitation',
+      'Paste the invitation from your other device',
+      multiline: true,
+    );
+    if (text == null) return;
+    await _pairText(text);
   }
 
   Future<String?> _input(
@@ -831,6 +954,10 @@ class _DashboardState extends State<Dashboard> {
       ? '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB'
       : '${(bytes / 1024).toStringAsFixed(1)} KB';
   Future<void> _sendFile(String peer, {String? path, String? id}) async {
+    if (path != null && !await File(path).exists()) {
+      path = null;
+      _notice('Select the original file again to resume the transfer.');
+    }
     if (path == null) {
       final result = await FilePicker.pickFile();
       path = result?.path;
@@ -935,15 +1062,27 @@ class _DashboardState extends State<Dashboard> {
               () => _command({'op': 'file_cancel', 'id': t['id']}),
             ),
           if (t['status'] == 'completed')
-            _button('Copy saved path', () async {
-              await Clipboard.setData(
-                ClipboardData(
-                  text:
-                      '${_directory.text}/downloads/${t['id']}/${t['file_name']}',
-                ),
-              );
-              _notice('Saved path copied');
-            }),
+            _button(
+              _android != null ? 'Save to device' : 'Copy saved path',
+              () async {
+                if (_android != null) {
+                  if (await _android!.saveFile(
+                    t['id'] as String,
+                    t['file_name'] as String,
+                  )) {
+                    _notice('File saved');
+                  }
+                  return;
+                }
+                await Clipboard.setData(
+                  ClipboardData(
+                    text:
+                        '${_directory.text}/downloads/${t['id']}/${t['file_name']}',
+                  ),
+                );
+                _notice('Saved path copied');
+              },
+            ),
           if (['completed', 'cancelled'].contains(t['status']))
             _button(
               'Archive',
