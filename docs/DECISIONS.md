@@ -51,10 +51,27 @@ these hashes do not substitute for signatures or TLS authentication.
 
 ## Explicit productivity actions
 
-Clipboard sending and receiving are manual. File acceptance is per offer,
-independent of global pairing. Audio capture begins only after receiver
-approval and stops locally before waiting for remote teardown. No background
-clipboard monitoring is enabled implicitly.
+Pairing grants no capabilities. Each peer has explicit encrypted persistent
+permissions for files, clipboard, audio, camera, scoped browsing, command presets,
+lock and unlock. A separate automatic-grant map avoids migrating old per-offer
+approvals into broad access. Newly enabled device settings remove repeated app
+approval; revocation closes matching sessions and queued actions. Clipboard
+sending remains manual; no background clipboard monitoring is enabled.
+
+Presence comes from signed, pinned-TLS heartbeats, not mDNS announcements. Camera
+and audio need foreground native adapters and OS permission. Browsing exposes
+only the dedicated Shared folder, rejects traversal/symlinks and uses bounded
+chunks. Commands select locally configured encrypted presets; remote payloads
+cannot introduce arbitrary shell scripts. Execution bounds time/output and kills
+its process group on timeout/revocation. Scripts and output are excluded from
+activity logs.
+
+Android lock uses optional force-lock device-admin activation. Unlock opens a
+minimal notification-driven Activity for system authentication, keeping private
+Flutter content off the lock screen. Linux uses session-specific `loginctl`
+controls; desktop support determines behavior. Neither path bypasses credentials.
+The existing Material hub mark is reused for launcher/notification/desktop icons;
+its Apache license and reproducible generation script are included.
 
 ## Reproducible development
 

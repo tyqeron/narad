@@ -24,6 +24,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--serial', required=True, help='adb device serial')
     parser.add_argument('--pairing', choices=['invitation', 'nearby'], default='invitation')
+    parser.add_argument('--controls', action='store_true', help='Also test persistent grants, shared files and command presets')
     args = parser.parse_args()
     adb = ['adb', '-s', args.serial]
 
@@ -196,10 +197,50 @@ def main():
                     assert 'permission denied' in str(error)
                 else:
                     raise AssertionError('Clipboard must require permission')
-                phone(op='permission', peer_id=host_id, capability='clipboard.sync', allow=True)
+                phone(op='permission', peer_id=host_id, capability='clipboard.sync', allow=True, automatic=False)
                 clipboard = desktop(op='send_clipboard', peer_id=phone_id, text='Narad generated test')
                 assert phone(op='clipboard_accept', id=clipboard['id'])['text'] == 'Narad generated test'
                 print('PASS Android clipboard permission and acceptance (system clipboard untouched)')
+                if args.controls:
+                    deadline = time.monotonic() + 20
+                    while not (phone(op='status')['presence'].get(host_id, {}).get('online') and desktop(op='status')['presence'].get(phone_id, {}).get('online')):
+                        if time.monotonic() > deadline:
+                            raise RuntimeError('Authenticated presence did not become online')
+                        time.sleep(0.2)
+                    print('PASS Android/Linux authenticated online presence')
+                    phone(op='permission', peer_id=host_id, capability='file.transfer', allow=True)
+                    automatic = desktop(op='send_file', peer_id=phone_id, path=str(source))
+                    assert automatic['status'] == 'completed'
+                    assert run('exec-out', 'run-as', PACKAGE, 'cat', f"no_backup/narad/downloads/{automatic['id']}/{source.name}") == data
+                    def cleanup_automatic():
+                        phone(op='archive_transfer', id=automatic['id'])
+                        run('shell', 'run-as', PACKAGE, 'rm', '-rf', f"no_backup/narad/downloads/{automatic['id']}")
+                    cleanup.append(cleanup_automatic)
+                    print('PASS Persistent Android file grant transfers without another approval')
+                    shared_name = f'narad-e2e-{uuid.uuid4()}.bin'
+                    run('shell', 'run-as', PACKAGE, 'mkdir', '-p', 'no_backup/narad/shared')
+                    shared_path = f'{app_root}/no_backup/narad/shared/{shared_name}'
+                    subprocess.run(adb + ['shell', '-T', 'run-as', PACKAGE, 'tee', shared_path], input=data, stdout=subprocess.DEVNULL, check=True)
+                    cleanup.append(lambda: run('shell', 'run-as', PACKAGE, 'rm', '-f', shared_path))
+                    phone(op='permission', peer_id=host_id, capability='file.browse', allow=True)
+                    entries = desktop(op='browse_peer', peer_id=phone_id, path='')['entries']
+                    assert any(e['name'] == shared_name for e in entries)
+                    download = desktop(op='download_shared', peer_id=phone_id, path=shared_name)
+                    assert Path(download['path']).read_bytes() == data
+                    print('PASS Android Shared folder browse and byte-for-byte download')
+                    preset = phone(op='command_set', label='Narad generated test', script='printf narad-android-fixture')
+                    cleanup.append(lambda: phone(op='command_remove', id=preset['id']))
+                    phone(op='permission', peer_id=host_id, capability='command.run', allow=True)
+                    assert any(c['id'] == preset['id'] for c in desktop(op='list_commands', peer_id=phone_id)['commands'])
+                    result = desktop(op='run_command', peer_id=phone_id, id=preset['id'])
+                    assert result['stdout'] == 'narad-android-fixture', result
+                    host_preset = desktop(op='command_set', label='Narad generated test', script='printf narad-linux-fixture')
+                    desktop(op='permission', peer_id=phone_id, capability='command.run', allow=True)
+                    assert phone(op='run_command', peer_id=host_id, id=host_preset['id'])['stdout'] == 'narad-linux-fixture'
+                    print('PASS Preset command execution on both Android and Linux')
+                    # Remove generated records while this temporary pairing is valid.
+                    cleanup_automatic()
+                    phone(op='command_remove', id=preset['id'])
                 phone(op='unpair', peer_id=host_id)
                 cleanup.pop(0)
                 try:

@@ -123,12 +123,18 @@ Every command uses a JSON payload containing `op` plus the fields below.
 | `pair_request` | — | `{id,nonce,code,expires_at}`; signed nearby request, no trust granted |
 | `pair_cancel` | `id` | withdraw pending nearby request; signed request owner only |
 | `ping` | — | local `device`; trusted peer only |
-| `file_offer` | `id,file_name,file_size,checksum` | `transfer`; trusted peer, per-offer acceptance |
-| `clipboard_offer` | `text` | new `id`; receive permission, bounded text, fresh user acceptance |
-| `media_offer` | `id` | creates requested audio session; trusted peer and live adapter |
+| `file_offer` | `id,file_name,file_size,checksum` | `transfer`; trusted peer, persistent auto-grant or per-offer acceptance |
+| `clipboard_offer` | `text` | new `id`; receive permission, bounded text, automatic delivery if persistently granted |
+| `media_offer` | `id`, optional `kind:"camera"` | audio.output or camera.stream session; trusted peer and live adapter, auto-authorized with persistent grant |
 | `media_status` | `id` | `session`; owner only |
-| `media_signal` | `id,data` | queue SDP/ICE; audio permission and authorized owned session |
+| `media_signal` | `id,data` | queue SDP/ICE; matching audio/camera permission and authorized owned session |
 | `session_close` | `id` | owner-only teardown |
+| `browse` | `path` | file.browse; Shared-folder entries, max 256 / 60 KiB |
+| `shared_read` | `path,offset` | file.browse; max 48 KiB base64 chunk, size and offset |
+| `command_list` | — | command.run; preset IDs and labels, no scripts |
+| `command` | `id` | command.run; configured preset, 10s limit, stdout/stderr max 8 KiB each |
+| `device_action` | `kind` | device.lock or device.unlock; native action or Linux loginctl |
+| `device_action_status` | `id` | owner-only Android action status |
 
 | File-plane command | Fields | Gate |
 | --- | --- | --- |
@@ -152,8 +158,8 @@ expire after two minutes. Logs contain IDs and decisions, not clipboard text.
 
 Media `data` is an object of at most 64 KiB. Flutter uses `type: offer` or
 `answer` with `sdp`, and `type: candidate` with `candidate`, `sdpMid`, and
-`sdpMLineIndex`. The signaling queue is bounded to 256 messages. Audio sessions
-require explicit approval; the adapter lease is 15 seconds and renewed every
+`sdpMLineIndex`. The signaling queue is bounded to 256 messages. Audio/camera sessions
+require approval or the matching persistent grant; the adapter lease is 15 seconds and renewed every
 two seconds. Session inactivity closes after two minutes.
 
 ## Local API
@@ -170,13 +176,13 @@ or copy the token to peers.
 
 | Operation | Required fields | Purpose |
 | --- | --- | --- |
-| `status` | optional `offset` | device, discovered/paired peers, permissions, requests, transfers, sessions, clipboard previews, activity |
+| `status` | optional `offset` | device, discovered/paired peers, permissions, automatic_permissions, presence, shared_directory, local commands, requests, transfers, sessions, clipboard previews, activity |
 | `invite` | — | create out-of-band invitation |
 | `pair` | `invitation` | initiate invitation pairing |
 | `pair_nearby` | `peer` | explicitly request nearby pairing; auto-completes after receiver approval |
 | `pair_approve`, `pair_confirm` | `id,code` | receiver approval / requester confirmation |
 | `pair_deny` | `id` | reject pending pairing |
-| `permission` | `peer_id,capability,allow` | grant/revoke capability; revocation closes matching sessions |
+| `permission` | `peer_id,capability,allow`, optional `automatic` (default true) | grant/revoke capability; revocation closes matching sessions |
 | `unpair` | `peer_id` | remove trust, permissions and active state |
 | `send_file` | `peer_id,path`, optional `id` | offer or retry/resume an outgoing transfer |
 | `file_accept`, `file_resume`, `file_cancel` | `id` | explicit receiver transfer decisions |
@@ -184,15 +190,31 @@ or copy the token to peers.
 | `send_clipboard` | `peer_id,text` | offer clipboard text |
 | `clipboard_accept`, `clipboard_deny` | `id` | return accepted text once / discard it |
 | `ping_peer` | `peer_id` | check a paired endpoint |
-| `media_ready` | `ready` | register/renew/release native audio adapter |
-| `media_start` | `peer_id` | request new audio session |
-| `media_accept`, `media_deny` | `id` | receiver audio decision |
+| `media_ready` | `ready` or `audio_ready,camera_ready` | renew/release separate native adapter leases |
+| `media_start` | `peer_id`, optional `kind:"camera"` | request new audio/camera session |
+| `media_accept`, `media_deny` | `id` | receiver media decision |
 | `media_poll` | `peer_id,id` | read peer session decision |
 | `media_send` | `peer_id,id,data` | send authorized signaling |
 | `media_events` | — | consume local signaling queue |
 | `media_state` | `id,state` | update guarded media lifecycle |
 | `session_touch` | `id` | keep an existing nonterminal session live |
 | `session_stop` | `peer_id,id` | close local session, request peer teardown |
+
+Additional local operations: `browse_peer(peer_id,path)`,
+`read_shared(peer_id,path,offset)`, `download_shared(peer_id,path)` (new private
+UUID download, max 1 GiB), `command_set(label,script,id?)`, `command_remove(id)`,
+`list_commands(peer_id)`, `run_command(peer_id,id)`,
+`device_action(peer_id,kind)` and `device_action_status(peer_id,id)`.
+The private native adapter uses `platform_events`, `platform_validate(id)` and
+`platform_result(id,success,message)`; actions expire after 60 seconds and are
+rechecked against current permissions before execution. Automatic clipboard
+items are consumed by `platform_events` on Android and by the Flutter client on
+desktop. No clipboard contents or preset scripts/output are activity-logged.
+
+Presence is checked over authenticated TLS every five seconds with a three-second
+network timeout. Status includes online, checked_at and optional last_seen for
+each paired peer; mDNS alone never establishes online status. Automatic permissions
+are keyed like permissions; old trust records default to an empty automatic map.
 
 The CLI `call '<json>'` exposes all operations. Status history pages contain
 at most 32 entries per collection. Increase `offset` by 32 while `has_more` is

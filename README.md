@@ -1,8 +1,8 @@
 # Narad
 
 Local-first device discovery, pairing, file transfer, clipboard sharing and
-permissioned audio. A portable Rust core owns trust and protocol decisions; a
-Flutter client provides the interface and native WebRTC audio adapter. No
+permissioned audio/camera sharing and device controls. A portable Rust core owns trust and protocol decisions; a
+Flutter client provides the interface and native WebRTC media adapter. No
 account, cloud signaling, STUN or TURN service is required.
 
 This is a development implementation of the [product plan](PRD.md). Linux and
@@ -58,14 +58,26 @@ on TCP 45700 binds only to loopback and requires a private token.
    open **Inbox**, recognize the device and compare the displayed code, then
    select **Accept request**. Both devices pair automatically. No code entry or
    QR scan is needed. Invitations and QR remain available as a fallback.
-2. Send a file. The receiver accepts it; the sender selects **Send / resume**.
-   Completed files appear under `.narad/downloads/<transfer-id>/<file-name>`.
-3. Grant clipboard permission on the receiver, then review and send text from
-   the sender. Each received payload still needs acceptance before the system
-   clipboard changes.
-4. Enable Audio on both clients, request audio from the sender, and approve it
-   in the receiver's Inbox. Capture begins after approval. Stop or revoke access
-   to end the stream.
+2. Paired devices are grouped into **Online** and **Offline** using authenticated
+   connection checks. Open **Device settings** on a paired device to allow what
+   that device may do on this one: files, clipboard, audio, camera, browsing,
+   command presets, locking and unlocking. Grants persist across restarts;
+   enabled capabilities do not ask for another app approval on each request.
+3. Without a persistent file grant, accept a file in Inbox and retry **Send / resume**.
+   With the grant, the first send transfers automatically. Completed files appear
+   under `.narad/downloads/<transfer-id>/<file-name>`; Android has **Save to device**.
+4. Use **Settings → Shared folder** to add files that permitted peers can browse
+   and download. This folder is separate from private identity and settings data.
+   Configure command presets in Settings on the target device; peers can execute
+   those presets, with a ten-second limit, rather than submitting arbitrary commands.
+5. Enable the required adapter in **Media** for audio or camera, grant the peer
+   access, and keep both clients foregrounded. Stop or revoke to end a stream.
+   Clipboard sending is manual; granted deliveries are applied automatically.
+6. Android locking needs optional device-admin activation. Unlock requests open
+   a notification leading to system authentication; a PIN/password is never bypassed.
+   Linux session controls use `loginctl` and depend on the desktop session.
+7. **Settings → Appearance** defaults to **Device**; choose **Light** or **Dark**
+   for a saved override. **Activity** groups readable events by day and category.
 
 Invitations expire after five minutes. Discovery is optional: invitation entry
 works when multicast is blocked. Android supports camera QR scanning; desktop

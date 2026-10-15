@@ -289,3 +289,17 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   desktop and phone previews render without overflow and were visually inspected.
 - Camera capture quality and real lock/unlock behavior remain physical manual QA;
   automated checks do not activate cameras or lock the user's devices.
+
+## 22. Physical device controls and multi-device delivery
+
+- Extended the generated-fixture Android/Linux harness with optional --controls:
+  authenticated presence, automatic file grants, scoped browsing/downloads, and
+  command presets executed in both directions. Existing checks cover discovery,
+  acceptance, restart, bidirectional files, clipboard gates, revocation and pairing
+  while the Android UI is backgrounded.
+- All twelve updated checks pass on the Android 15 tablet. No personal files or
+  clipboard contents were read, and no camera, microphone or lock was activated.
+- Updated setup, protocol, decisions and implementation-status documentation for
+  persistent grants, theme settings, scoped controls and OS authentication limits.
+- Universal 0.1.0+4 release APK passes signature, SHA-256, ZIP alignment and all
+  16 packaged 64-bit native-library alignment checks; three backend ABIs included.

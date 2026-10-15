@@ -20,12 +20,25 @@ armeabi-v7a and x86_64. Each installation creates its own Keystore-wrapped ident
    **Accept request**. Both devices connect automatically; no invitation, code
    entry or camera is required. **Decline** leaves them unpaired. Requests expire
    in five minutes. Update Narad on both devices to use nearby requests.
-5. Send a small file from B. Accept it in A's Inbox, then choose **Send / resume**
-   on B. In A's Transfers view, select **Save to device** and choose a destination.
-   Repeat in the other direction, then try a larger file and a network interruption.
-6. To test clipboard sharing, allow the peer's clipboard permission on the
-   receiver. Each text offer still needs acceptance. Audio needs **Enable Audio**
-   on both devices plus receiver approval; keep both apps in the foreground.
+5. Devices lists **Nearby**, then paired **Online** and **Offline** groups. Open
+   **Device settings** on A's entry for B to allow what B may do on A. Permissions
+   persist across restarts. Enable **File transfer**, then send a small file from B:
+   it transfers without another acceptance prompt. Without that grant, accept in
+   A's Inbox and retry **Send / resume** on B. Use **Save to device** to export it.
+6. Enable **Clipboard** for automatic delivery of manually sent text. Enable
+   **Audio** and/or **Camera** grants and the relevant adapter in **Media**; allow
+   the Android microphone/camera prompt and keep the apps foregrounded. **View
+   camera** requests the other device's camera without capturing your own microphone.
+7. In Settings, add files to **Shared folder** for permitted peers to browse and
+   download. Browsing is restricted to this app-managed folder. Configure command
+   presets on the target; permitted peers can run only those presets, within the
+   app's Android sandbox, with a ten-second deadline and bounded output.
+8. Granting **Lock device** offers Android's device-admin activation screen (only
+   force-lock is requested). **Request unlock** posts a notification on the target;
+   tap it and authenticate with Android. Notifications must be allowed. Secure
+   credentials are never bypassed. Revoke the grant to block subsequent requests.
+9. Settings offers **Device / Light / Dark** appearance; Device is the default.
+   Activity groups events by day and type. The launcher uses the in-app hub icon.
 
 Repeat these steps for each device pair: A–B and A–C do not automatically pair
 B–C. If multicast discovery is blocked, use **Create invitation** on one device
@@ -37,7 +50,7 @@ To test Android against Linux, start the desktop daemon and Flutter client using
 Only pair devices you control and compare codes before approval.
 
 The foreground service keeps control and file listeners available while the UI
-is backgrounded. It does not keep microphone capture running. **Stop Narad** in
+is backgrounded. It does not keep microphone or camera capture running. **Stop Narad** in
 its notification stops the service; reopen/retry in the app to start it again.
 Android or manufacturer battery management can still terminate the process.
 Accepted transfer checkpoints persist; reopen both apps and use **Send / resume**.
@@ -84,7 +97,7 @@ flutter test integration_test/android_smoke_test.dart -d DEVICE_SERIAL
 cd ../..
 cargo build --workspace --locked
 # Launch the debug app, then run generated-fixture Android/Linux checks:
-python3 tests/android_e2e.py --serial DEVICE_SERIAL --pairing nearby
+python3 tests/android_e2e.py --serial DEVICE_SERIAL --pairing nearby --controls
 # Retain the invitation compatibility regression too:
 python3 tests/android_e2e.py --serial DEVICE_SERIAL --pairing invitation
 ```
@@ -100,7 +113,9 @@ fresh temporary desktop identity, restarts the Android process to check identity
 trust and file approval persistence, sends generated files in both directions,
 checks bytes and clipboard permission/acceptance, then removes its temporary
 pairing and fixtures. In nearby mode it also verifies Android-initiated pairing while the app is
-backgrounded. It never reads the system clipboard or personal files.
+backgrounded. With `--controls`, it additionally checks authenticated presence,
+automatic file delivery, Shared-folder browsing/downloads, and preset commands
+on both Android and Linux. It never locks a device or captures media. It never reads the system clipboard or personal files.
 It requires the debug APK (`run-as`) and reachable IPv4 addresses on the LAN.
 
 If discovery is empty, QR/pasted invitations still work. Guest Wi-Fi/client
@@ -108,3 +123,17 @@ isolation can block peer connections; use a network that allows devices to talk.
 For a desktop firewall, allow TCP 45678/45679 and UDP 5353. Invitations expire
 in five minutes; recreate one after switching Wi-Fi networks. VPN routing and
 IPv6-only networks are outside the current tested scope.
+
+## Platform permission boundaries
+
+Persistent Narad grants remove repeated app-level acceptance. Android still owns
+camera/microphone permissions, foreground capture, notifications and device-admin
+activation. OS restrictions may reject background clipboard updates; failures are
+reported in Activity. Files added to Shared folder are copied into app storage;
+remove that copy to stop exposing it, or revoke browsing. Linux presets run as the
+current daemon user; Android presets run as the app UID. Configure only commands
+you intend a granted peer to trigger.
+
+See Android's [device locking API](https://developer.android.com/reference/android/app/admin/DevicePolicyManager#lockNow())
+and [keyguard dismissal API](https://developer.android.com/reference/android/app/KeyguardManager#requestDismissKeyguard(android.app.Activity,%20android.app.KeyguardManager.KeyguardDismissCallback))
+for the system-enforced lock and authentication requirements.
