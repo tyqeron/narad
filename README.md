@@ -5,10 +5,19 @@ permissioned audio. A portable Rust core owns trust and protocol decisions; a
 Flutter client provides the interface and native WebRTC audio adapter. No
 account, cloud signaling, STUN or TURN service is required.
 
-This is an initial desktop implementation of the [product plan](PRD.md), not a
-production release. Linux builds and integration tests are validated. Windows
-needs a platform test pass; Android/iOS daemon embedding and native key stores
-remain on the roadmap. See [implementation status](docs/IMPLEMENTATION_STATUS.md).
+This is a development implementation of the [product plan](PRD.md). Linux and
+Android builds are available; Windows and iOS still need platform work.
+See [implementation status](docs/IMPLEMENTATION_STATUS.md).
+
+## Run on Android
+
+Build an installable APK with `./scripts/build-android.sh`, then install
+`dist/narad-android-release.apk` on each Android 8.0+ phone or tablet. The backend
+starts inside the app. Pair devices on the same Wi-Fi by scanning an invitation
+and comparing the code on both screens.
+
+See [Android setup and multi-device testing](docs/ANDROID.md) for build requirements,
+installation, device checks, and troubleshooting.
 
 ## Run on Linux
 
@@ -57,8 +66,9 @@ on TCP 45700 binds only to loopback and requires a private token.
    to end the stream.
 
 Invitations expire after five minutes. Discovery is optional: invitation entry
-works when multicast is blocked. QR display is available; camera QR scanning
-and standalone short-code discovery are not yet implemented.
+works when multicast is blocked. Android supports camera QR scanning; desktop
+supports pasted invitations.
+Standalone short-code discovery is not yet implemented.
 
 ## CLI
 

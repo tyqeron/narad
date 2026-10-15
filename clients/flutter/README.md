@@ -1,6 +1,9 @@
 # Narad client
 
-Flutter desktop UI for the Rust daemon. Run the daemon from the repository root:
+Flutter UI for Linux and Android. Android embeds the Rust backend and starts it
+automatically; see [Android instructions](../../docs/ANDROID.md).
+
+For desktop, run the daemon from the repository root:
 
 ```sh
 cargo run -p narad -- serve --name "My laptop"
@@ -26,8 +29,8 @@ be pasted into the interface.
 5. Enable Audio on both devices. Request audio on the sender and allow it in
    the receiver's Inbox. Capture begins after approval.
 
-QR display is available; desktop invitation entry uses pasted JSON. Automatic
-clipboard monitoring and QR camera scanning are not implemented.
+QR display is available; desktop invitation entry uses pasted JSON. Android
+also supports camera QR scanning. Automatic clipboard monitoring is not implemented.
 
 ## Checks
 
@@ -39,7 +42,6 @@ flutter test tools/preview.dart
 ```
 
 Preview rendering writes PNGs to `/tmp` and optionally uses
-`NARAD_PREVIEW_FONT` for a readable font. Linux is the currently validated
-native build. Windows needs a platform build/test pass. Android scaffolding
-is present, but embedding the Rust daemon and managing its background lifecycle
-are pending; it is not a working phone client yet.
+`NARAD_PREVIEW_FONT` for a readable font. Linux and Android native builds are
+available. Windows needs a platform build/test pass. Android has an embedded backend, foreground service and
+Keystore identity storage; see the Android guide for device test commands.

@@ -181,3 +181,21 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - Physical testing exposed and verified the hard-link fix in step 13. Camera QR
   scanning, Android document export, real microphone audio quality, more Android
   models and physical 16 KiB-page devices still need manual device QA.
+
+## 15. Universal APK delivery and repeatable multi-device setup
+
+- Added a one-command Android build script, APK ABI/ELF validator and checksum
+  output. Gradle tracks the NDK version as an input to its native build task.
+- Built the universal release-mode development APK (113.7 MB) with NDK r28 and
+  the normal Flutter entry point; it includes ARM64, ARMv7 and x86_64 backends.
+- Verified its APK signature, SHA-256, 16 KiB ZIP alignment and all 16 packaged
+  64-bit ELF libraries. This is an internally signed development artifact.
+- Added build/install, Android/Linux pairing, multi-phone test steps, permissions,
+  storage, background behavior and troubleshooting documentation.
+- Added an Android CI artifact job; local equivalent builds pass, hosted execution
+  is not claimed. Public OSV check covered 171 packages with no matched advisories.
+- Installed the release APK on the tablet, confirmed its foreground service,
+  and visually checked the working Devices dashboard. Temporary test peers and
+  fixture records were removed before handoff.
+- APKs remain outside Git under ignored dist/; the implementation, reproducible
+  build instructions, test harnesses and development journal are committed.

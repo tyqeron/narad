@@ -67,6 +67,7 @@ val buildRustAndroid by tasks.registering(Exec::class) {
     inputs.files(fileTree(repoRoot.resolve("crates")) { include("**/*.rs", "**/Cargo.toml") })
     inputs.files(repoRoot.resolve("Cargo.lock"), repoRoot.resolve("Cargo.toml"), repoRoot.resolve("rust-toolchain.toml"), repoRoot.resolve("scripts/build-android-rust.py"))
     inputs.property("abis",rustAbis.joinToString(","))
+    inputs.property("ndkVersion", android.ndkVersion ?: "")
     outputs.dirs(rustAbis.map { file("build/generated/rustJniLibs/$it") })
 }
 android.sourceSets.getByName("main").jniLibs.srcDir("build/generated/rustJniLibs")

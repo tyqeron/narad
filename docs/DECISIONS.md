@@ -7,8 +7,9 @@ rules and recoverable file storage. `narad` owns mDNS, pinned TLS listeners,
 command routing and the CLI. Flutter calls a token-authenticated loopback API.
 
 This gives the initial desktop client a usable boundary without coupling UI
-code to Rust memory layout. Mobile will need an embedded daemon/runtime bridge
-and platform lifecycle integration before it is functional.
+code to Rust memory layout. Android embeds the same daemon through a JNI lifecycle host. The native
+foreground service owns its runtime; Flutter talks to the private localhost API.
+iOS still needs its platform bridge.
 
 ## Trust before capabilities
 
@@ -25,8 +26,9 @@ command checks the trusted key and certificate pin before authorization.
 
 Unix state directories use mode 0700 and atomic identity/token writes use 0600.
 ChaCha20-Poly1305 encrypts trust and transfer metadata with a domain-separated,
-identity-derived key. Identity secrets currently use protected files, pending
-OS keystore integration. An exclusive file lock prevents two daemons from
+identity-derived key. Desktop identity secrets use protected files. Android wraps its identity with
+a non-exportable Android Keystore AES-GCM key and stores only ciphertext in
+no-backup app storage; private material crosses JNI only in memory. An exclusive file lock prevents two daemons from
 using one identity directory concurrently.
 
 ## Three transport responsibilities
