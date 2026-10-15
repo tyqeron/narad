@@ -81,6 +81,9 @@ void main() {
     await tester.scrollUntilVisible(find.text('My phone'), 150);
     await tester.pumpAndSettle();
     expect(find.text('My phone'), findsOneWidget);
+    expect(find.text('Send file'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('actions-peer')));
+    await tester.pumpAndSettle();
     expect(find.text('Send file'), findsOneWidget);
     expect(
       api.calls.any((c) => c['op'] == 'media_ready' && c['ready'] == true),
@@ -276,23 +279,21 @@ void main() {
       expect(find.text('Offline (1)'), findsOneWidget);
       await tester.scrollUntilVisible(find.text('Sleeping laptop'), 150);
       await tester.pumpAndSettle();
-      final card = find.ancestor(
-        of: find.text('Sleeping laptop'),
-        matching: find.byType(Card),
-      );
+      final settings = find.byKey(const ValueKey('settings-offline'));
+      expect(tester.widget<IconButton>(settings).onPressed, isNotNull);
+      await tester.tap(find.byKey(const ValueKey('actions-offline')));
+      await tester.pumpAndSettle();
       expect(
         tester
-            .widget<FilledButton>(
-              find.descendant(of: card, matching: find.byType(FilledButton)),
+            .widget<PopupMenuItem<String>>(
+              find.ancestor(
+                of: find.text('Send file'),
+                matching: find.byType(PopupMenuItem<String>),
+              ),
             )
-            .onPressed,
-        isNull,
+            .enabled,
+        isFalse,
       );
-      final settings = find.descendant(
-        of: card,
-        matching: find.widgetWithText(OutlinedButton, 'Device settings'),
-      );
-      expect(tester.widget<OutlinedButton>(settings).onPressed, isNotNull);
       await tester.pumpWidget(const SizedBox());
       await tester.pumpAndSettle();
     },
@@ -341,13 +342,13 @@ void main() {
       final api = FakeApi();
       await tester.pumpWidget(NaradApp(api: api));
       await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(find.text('Device settings'), 150);
+      await tester.scrollUntilVisible(find.byTooltip('Device settings'), 150);
       await Scrollable.ensureVisible(
-        tester.element(find.text('Device settings')),
+        tester.element(find.byTooltip('Device settings')),
         alignment: 0.5,
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Device settings'));
+      await tester.tap(find.byTooltip('Device settings'));
       await tester.pumpAndSettle();
       expect(find.byType(SwitchListTile), findsNWidgets(8));
       expect(find.text('Share this device’s camera'), findsOneWidget);
@@ -419,6 +420,8 @@ void main() {
     await tester.pumpWidget(NaradApp(api: api));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('My phone'), 150);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('actions-peer')));
     await tester.pumpAndSettle();
     expect(find.text('Lock'), findsOneWidget);
     expect(find.text('Request unlock'), findsNothing);

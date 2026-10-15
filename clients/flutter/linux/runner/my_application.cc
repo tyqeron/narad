@@ -1,4 +1,5 @@
 #include "my_application.h"
+#include "desktop_integration.h"
 
 #include <flutter_linux/flutter_linux.h>
 #ifdef GDK_WINDOWING_X11
@@ -10,18 +11,51 @@
 struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
+  gboolean start_hidden;
+  GtkStatusIcon* tray;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
-  gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
+  if(!self->start_hidden)gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
 }
+
+// Keep the Flutter engine and authenticated IPC alive when the window closes.
+static gboolean hide_on_close(GtkWidget* window,GdkEvent*,gpointer) {
+  gtk_widget_hide(window);return TRUE;
+}
+static void open_narad(GtkMenuItem*,gpointer app) {g_application_activate(G_APPLICATION(app));}
+static void quit_narad(GtkMenuItem*,gpointer app) {g_application_quit(G_APPLICATION(app));}
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+static void tray_open(GtkStatusIcon*,gpointer app) {g_application_activate(G_APPLICATION(app));}
+static void tray_menu(GtkStatusIcon* icon,guint button,guint time,gpointer app) {
+  GtkWidget* menu=gtk_menu_new();
+  GtkWidget* open=gtk_menu_item_new_with_label("Open Narad");
+  GtkWidget* quit=gtk_menu_item_new_with_label("Quit Narad");
+  g_signal_connect(open,"activate",G_CALLBACK(open_narad),app);
+  g_signal_connect(quit,"activate",G_CALLBACK(quit_narad),app);
+  gtk_menu_shell_append(GTK_MENU_SHELL(menu),open);gtk_menu_shell_append(GTK_MENU_SHELL(menu),quit);
+  g_signal_connect_swapped(menu,"selection-done",G_CALLBACK(gtk_widget_destroy),menu);
+  gtk_widget_show_all(menu);
+  gtk_menu_popup(GTK_MENU(menu),nullptr,nullptr,gtk_status_icon_position_menu,icon,button,time);
+}
+static void create_tray(MyApplication* self,const gchar* icon) {
+  self->tray=gtk_status_icon_new_from_file(icon);
+  gtk_status_icon_set_tooltip_text(self->tray,"Narad · available nearby");
+  g_signal_connect(self->tray,"activate",G_CALLBACK(tray_open),self);
+  g_signal_connect(self->tray,"popup-menu",G_CALLBACK(tray_menu),self);
+}
+#pragma GCC diagnostic pop
 
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
+  GList* windows=gtk_application_get_windows(GTK_APPLICATION(application));
+  GtkWindow* existing=windows?GTK_WINDOW(windows->data):nullptr;
+  if(existing){self->start_hidden=FALSE;gtk_window_present(existing);return;}
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
 
@@ -53,13 +87,18 @@ static void my_application_activate(GApplication* application) {
   }
 
   gtk_window_set_default_size(window, 1280, 720);
+  g_signal_connect(window,"delete-event",G_CALLBACK(hide_on_close),self);
   g_autofree gchar* executable = g_file_read_link("/proc/self/exe", nullptr);
   if (executable != nullptr) {
     g_autofree gchar* directory = g_path_get_dirname(executable);
     g_autofree gchar* icon = g_build_filename(directory, "data", "narad.png", nullptr);
     gtk_window_set_icon_from_file(window, icon, nullptr);
+    create_tray(self,icon);
   }
 
+  // Realize the native parent even for hidden startup: Flutter needs its scale
+  // and rendering context before the first frame. Realization does not map it.
+  gtk_widget_realize(GTK_WIDGET(window));
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
       project, self->dart_entrypoint_arguments);
@@ -80,6 +119,7 @@ static void my_application_activate(GApplication* application) {
   gtk_widget_realize(GTK_WIDGET(view));
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
+  narad_register_desktop(view,GTK_APPLICATION(application));
 
   gtk_widget_grab_focus(GTK_WIDGET(view));
 }
@@ -89,6 +129,8 @@ static gboolean my_application_local_command_line(GApplication* application,
                                                   gchar*** arguments,
                                                   int* exit_status) {
   MyApplication* self = MY_APPLICATION(application);
+  self->start_hidden=FALSE;
+  for(gchar** arg=*arguments+1;*arg!=nullptr;++arg)if(g_strcmp0(*arg,"--background")==0)self->start_hidden=TRUE;
   // Strip out the first argument as it is the binary name.
   self->dart_entrypoint_arguments = g_strdupv(*arguments + 1);
 
@@ -127,6 +169,7 @@ static void my_application_shutdown(GApplication* application) {
 static void my_application_dispose(GObject* object) {
   MyApplication* self = MY_APPLICATION(object);
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
+  g_clear_object(&self->tray);
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
 
@@ -150,5 +193,5 @@ MyApplication* my_application_new() {
 
   return MY_APPLICATION(g_object_new(my_application_get_type(),
                                      "application-id", APPLICATION_ID, "flags",
-                                     G_APPLICATION_NON_UNIQUE, nullptr));
+                                     static_cast<GApplicationFlags>(0), nullptr));
 }

@@ -17,14 +17,30 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // plugins.
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
+  // One desktop window per signed-in session; a second launch restores it.
+  HANDLE singleton = CreateMutexW(nullptr, FALSE, L"Local\\NaradDesktopWindow");
+  if (!singleton)
+    return EXIT_FAILURE;
+  if (GetLastError() == ERROR_ALREADY_EXISTS) {
+    HWND existing = FindWindowW(L"FLUTTER_RUNNER_WIN32_WINDOW", L"Narad");
+    if (existing)
+      PostMessageW(existing, WM_APP + 11, 0, 0);
+    CloseHandle(singleton);
+    CoUninitialize();
+    return EXIT_SUCCESS;
+  }
   flutter::DartProject project(L"data");
 
-  std::vector<std::string> command_line_arguments =
-      GetCommandLineArguments();
+  std::vector<std::string> command_line_arguments = GetCommandLineArguments();
 
+  bool start_hidden = false;
+  for (const auto &arg : command_line_arguments)
+    if (arg == "--background")
+      start_hidden = true;
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 
   FlutterWindow window(project);
+  window.SetStartHidden(start_hidden);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
   if (!window.Create(L"Narad", origin, size)) {
@@ -38,6 +54,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     ::DispatchMessage(&msg);
   }
 
+  CloseHandle(singleton);
   ::CoUninitialize();
   return EXIT_SUCCESS;
 }

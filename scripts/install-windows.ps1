@@ -24,5 +24,19 @@ $Shortcut.TargetPath = Join-Path $Destination 'narad_client.exe'
 $Shortcut.WorkingDirectory = $Destination
 $Shortcut.IconLocation = "$Destination\narad_client.exe,0"
 $Shortcut.Save()
+# Enable first-install startup, while preserving an explicit Settings opt-out.
+$Prefs = 'HKCU:\Software\Narad'
+$Run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$Saved = Get-ItemProperty -Path $Prefs -Name StartAtLogin -ErrorAction SilentlyContinue
+$Enabled = !$Saved -or $Saved.StartAtLogin -ne 0
+New-Item -Path $Prefs -Force | Out-Null
+New-Item -Path $Run -Force | Out-Null
+if ($Enabled) {
+    $Command = '"' + (Join-Path $Destination 'narad_client.exe') + '" --background'
+    New-ItemProperty -Path $Run -Name Narad -Value $Command -PropertyType String -Force | Out-Null
+} else {
+    Remove-ItemProperty -Path $Run -Name Narad -ErrorAction SilentlyContinue
+}
+New-ItemProperty -Path $Prefs -Name StartAtLogin -Value ([int]$Enabled) -PropertyType DWord -Force | Out-Null
 Write-Host "Installed Narad: $Destination"
 Write-Host 'Open Narad from Start. Account data remains in %LOCALAPPDATA%\Narad\state.'

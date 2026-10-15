@@ -12,6 +12,7 @@ import 'app_settings.dart';
 import 'audio.dart';
 import 'android_backend.dart';
 import 'windows_backend.dart';
+import 'desktop_integration.dart';
 import 'pairing_scanner.dart';
 
 void main() => runApp(const NaradApp());
@@ -97,6 +98,8 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   );
   AndroidBackend? _android;
   WindowsBackend? _windows;
+  DesktopIntegration? _desktop;
+  bool? _autostart;
   bool _starting = false;
   bool _foreground = true;
   bool _restoredMedia = false;
@@ -124,6 +127,19 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     _directory = TextEditingController(
       text: Platform.environment['NARAD_STATE'] ?? '../../.narad',
     );
+    if (widget.api == null && (Platform.isLinux || Platform.isWindows)) {
+      _desktop = DesktopIntegration();
+      unawaited(
+        _desktop!
+            .autostart()
+            .then((enabled) {
+              if (mounted) setState(() => _autostart = enabled);
+            })
+            .catchError((Object e) {
+              _showError(e);
+            }),
+      );
+    }
     if (widget.api != null) {
       _attach(widget.api!);
     } else if (Platform.isAndroid) {
@@ -569,6 +585,35 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
               'Device follows your system appearance. Your choice is saved on this device.',
             ),
           ),
+          if (_desktop != null) ...[
+            _section('Background operation'),
+            const Text(
+              'Closing the window keeps Narad connected in the background. Reopen it from the application menu or tray. Use Quit Narad to stop it.',
+            ),
+            SwitchListTile(
+              title: const Text('Start after login'),
+              subtitle: const Text('Run quietly after reboot when you sign in'),
+              value: _autostart ?? false,
+              onChanged: _autostart == null
+                  ? null
+                  : (enabled) async {
+                      try {
+                        await _desktop!.setAutostart(enabled);
+                        if (mounted) setState(() => _autostart = enabled);
+                        refresh?.call();
+                      } catch (e) {
+                        _showError(e);
+                      }
+                    },
+            ),
+            _button('Quit Narad', () => _desktop!.quit()),
+          ],
+          if (_android != null) ...[
+            _section('Home-screen commands'),
+            const Text(
+              'Long-press your Android home screen, choose Widgets → Narad Command, then select a paired device and one of its command presets. Add multiple widgets for quick access. The target must grant command permission.',
+            ),
+          ],
           if (_online) ...[
             _section('Shared folder'),
             const Text(
@@ -1249,35 +1294,67 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   Widget _pairedCard(Map<String, dynamic> peer) {
     final id = peer['device_id'] as String;
     final online = _isOnline(id);
-    return _card(
-      online ? Icons.check_circle_outline : Icons.cloud_off_outlined,
-      peer['device_name'] as String,
-      '${peer['platform']} · ${_presenceText(id)}',
-      [
-        _button(
-          'Send file',
-          () => _sendFile(id),
-          primary: true,
-          enabled: online,
+    final actions = <String, (IconData, Future<void> Function())>{
+      'Send file': (Icons.upload_file, () => _sendFile(id)),
+      'Send clipboard': (Icons.content_paste, () => _sendClipboard(id)),
+      'Send audio': (
+        Icons.mic_outlined,
+        () async {
+          await _audio!.start(id);
+          if (mounted) setState(() => _page = 3);
+        },
+      ),
+      'View camera': (Icons.videocam_outlined, () => _viewCamera(id)),
+      'Browse files': (Icons.folder_open, () => _browseFiles(peer)),
+      'Run command': (Icons.terminal, () => _runCommand(peer)),
+      'Lock': (Icons.lock_outline, () => _deviceAction(id, 'lock')),
+      if (peer['platform'] != 'windows')
+        'Request unlock': (Icons.lock_open, () => _deviceAction(id, 'unlock')),
+      'Unpair': (Icons.link_off, () => _unpair(peer)),
+    };
+    return Card(
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Icon(
+          online ? Icons.check_circle_outline : Icons.cloud_off_outlined,
         ),
-        _button('Send clipboard', () => _sendClipboard(id), enabled: online),
-        _button('View camera', () => _viewCamera(id), enabled: online),
-        _button('Browse files', () => _browseFiles(peer), enabled: online),
-        _button('Run command', () => _runCommand(peer), enabled: online),
-        _button('Lock', () => _deviceAction(id, 'lock'), enabled: online),
-        if (peer['platform'] != 'windows')
-          _button(
-            'Request unlock',
-            () => _deviceAction(id, 'unlock'),
-            enabled: online,
-          ),
-        _button(
-          'Device settings',
-          () => _permissions(peer),
-          showProgress: false,
+        title: Text(peer['device_name'] as String),
+        subtitle: Text('${peer['platform']} · ${_presenceText(id)}'),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              key: ValueKey('settings-$id'),
+              tooltip: 'Device settings',
+              icon: const Icon(Icons.settings_outlined),
+              onPressed: _busy
+                  ? null
+                  : () => _permissions(peer).catchError(_showError),
+            ),
+            PopupMenuButton<String>(
+              key: ValueKey('actions-$id'),
+              tooltip: 'Device actions',
+              enabled: !_busy,
+              icon: const Icon(Icons.more_vert),
+              onSelected: (name) => _run(actions[name]!.$2),
+              itemBuilder: (_) => [
+                for (final entry in actions.entries)
+                  PopupMenuItem(
+                    value: entry.key,
+                    enabled: online || entry.key == 'Unpair',
+                    child: Row(
+                      children: [
+                        Icon(entry.value.$1, size: 20),
+                        const SizedBox(width: 12),
+                        Text(entry.key),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ],
         ),
-        _button('Unpair', () => _unpair(peer)),
-      ],
+      ),
     );
   }
 

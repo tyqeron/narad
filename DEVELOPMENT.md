@@ -368,3 +368,16 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - All six packaging scenarios pass. CI builds a Linux debug installer and runs the
   same checks; workflow YAML validation passes. Runtime media quality remains
   outside packaging checks.
+
+## 28. Compact device action menus and desktop background controls
+
+- Reduced paired-device rows to identity/status, a Settings icon and a menu of
+  actions with icons. Offline communication actions remain disabled.
+- Added desktop Settings for login startup and explicit Quit, Linux GTK window
+  hiding/tray/reopen behavior, and Windows notification-area/single-window controls.
+- Installers enable per-user hidden startup after login and preserve an explicit
+  opt-out through upgrades; no system/pre-login service is created.
+- Validation so far: 22 Flutter tests, analysis and phone/desktop previews pass;
+  Linux release compiles and updated Windows tray/preferences/runner sources
+  cross-compile against official Flutter headers. Final native runtime and
+  artifact checks are recorded in the following milestone.

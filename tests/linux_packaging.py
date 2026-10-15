@@ -40,7 +40,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix='narad-package-test-') as directory:
         root = Path(directory)
         prefix = root / 'Apps with spaces' / 'Narad'
-        env = dict(os.environ, XDG_DATA_HOME=str(root / 'user data'))
+        env = dict(os.environ, XDG_DATA_HOME=str(root / 'user data'), XDG_CONFIG_HOME=str(root / 'user config'))
         run('bash', str(installer), '--help', env=env)
         run('bash', str(installer), '--prefix', str(prefix), env=env)
         assert (prefix / '.narad-install').is_file()
@@ -49,7 +49,11 @@ def main():
         assert str(prefix / 'narad-linux') in desktop.read_text()
         if shutil.which('desktop-file-validate'):
             run('desktop-file-validate', str(desktop))
-        print('PASS per-user installation and desktop entry with spaces')
+        startup = root / 'user config/autostart/dev.narad.narad_client.desktop'
+        assert ' --background' in startup.read_text()
+        if shutil.which('desktop-file-validate'):
+            run('desktop-file-validate', str(startup))
+        print('PASS per-user installation, desktop entry and background login startup with spaces')
         state = root / 'user data/narad'
         state.mkdir()
         sentinel = state / 'generated-preservation-fixture'
@@ -59,6 +63,12 @@ def main():
         assert sentinel.read_text() == 'preserve this generated test data'
         assert not (prefix / 'obsolete-fixture').exists()
         print('PASS upgrade replaces application files and preserves separate state')
+        disabled = root / 'user config/narad/autostart-disabled'
+        disabled.parent.mkdir(parents=True, exist_ok=True)
+        disabled.touch()
+        run('bash', str(installer), '--prefix', str(prefix), env=env)
+        assert not startup.exists()
+        print('PASS upgrade preserves the disabled login-start preference')
         foreign = root / 'unrelated directory'
         foreign.mkdir()
         fixture = foreign / 'keep'

@@ -97,6 +97,19 @@ if [[ -e "$prefix" ]]; then
 fi
 mv -- "$stage" "$prefix"
 install -m 644 "$prefix/narad.desktop" "$data_home/applications/dev.narad.narad_client.desktop"
+config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+mkdir -p -- "$config_home/autostart"
+if [[ ! -e "$config_home/narad/autostart-disabled" ]]; then
+  python3 - "$prefix/narad.desktop" "$config_home/autostart/dev.narad.narad_client.desktop" <<'PY_STARTUP'
+import sys
+from pathlib import Path
+lines = Path(sys.argv[1]).read_text().splitlines()
+lines = [line + ' --background' if line.startswith('Exec=') else line for line in lines]
+Path(sys.argv[2]).write_text('\n'.join(lines) + '\nX-GNOME-Autostart-enabled=true\n')
+PY_STARTUP
+else
+  rm -f -- "$config_home/autostart/dev.narad.narad_client.desktop"
+fi
 if [[ -n "$backup" ]]; then rm -rf -- "$backup"; backup=""; fi
 if command -v update-desktop-database >/dev/null; then
   update-desktop-database "$data_home/applications" >/dev/null 2>&1 || true
