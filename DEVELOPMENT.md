@@ -151,3 +151,16 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - Audio capture is disabled when Android leaves the foreground.
 - Validation: eight Flutter tests and static analysis pass, including readiness,
   authenticated startup, shutdown waiting and identity-error propagation.
+
+## 13. Android file publication compatibility
+
+- Physical tablet testing established the connected-device service and completed
+  Android/Linux TLS pairing, then exposed Android's rejection of hard-link
+  publication at the end of an incoming file transfer.
+- Linux/Android now publish verified files using atomic `renameat2` with
+  `RENAME_NOREPLACE`; no partially copied file or overwrite is permitted.
+  The direct syscall avoids requiring Android 11's bionic symbol on Android 8.
+- Added a regression proving an existing destination and verified source both
+  survive a refused publication, followed by successful retry.
+- Validation: 14 Rust tests, strict Clippy and all seven desktop integration
+  scenarios pass. Tablet revalidation follows with a rebuilt APK.

@@ -19,3 +19,6 @@ rcgen = "=0.13.1"
 
 [dev-dependencies]
 tempfile.workspace = true
+
+[target.'cfg(any(target_os = "android", target_os = "linux"))'.dependencies]
+libc = "=0.2.190"

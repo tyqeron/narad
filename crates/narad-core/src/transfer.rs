@@ -130,14 +130,17 @@ impl Transfer {
         let destination = downloads.join(&self.id);
         crate::storage::private_dir(&destination)?;
         let out = destination.join(&self.file_name);
-        // Hard-link publication is atomic and refuses to replace an existing file.
-        fs::hard_link(self.path(dir), &out)?;
+        // Android app sandboxes reject hard links. Publish by atomic no-replace
+        // rename on Linux/Android; keep the original path until publication succeeds.
+        publish_completed(&self.path(dir), &out)?;
         #[cfg(unix)]
         {
             File::open(&destination)?.sync_all()?;
             File::open(downloads)?.sync_all()?;
         }
-        fs::remove_file(self.path(dir))?;
+        if self.path(dir).exists() {
+            fs::remove_file(self.path(dir))?;
+        }
         self.status = "completed".into();
         self.updated_at = now();
         self.persist(dir, key)?;
@@ -156,6 +159,35 @@ impl Transfer {
         }
         Ok(())
     }
+}
+
+/// Atomically publish a verified file without replacing another transfer's data.
+#[cfg(any(target_os = "android", target_os = "linux"))]
+fn publish_completed(source: &Path, destination: &Path) -> Result<()> {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+    let source = CString::new(source.as_os_str().as_bytes())?;
+    let destination = CString::new(destination.as_os_str().as_bytes())?;
+    // SAFETY: both C strings remain alive for the syscall. AT_FDCWD interprets
+    // these paths normally and RENAME_NOREPLACE refuses an existing destination.
+    // A direct syscall also supports Android before bionic exposed renameat2.
+    let result = unsafe {
+        libc::syscall(
+            libc::SYS_renameat2,
+            libc::AT_FDCWD,
+            source.as_ptr(),
+            libc::AT_FDCWD,
+            destination.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    };
+    if result != 0 {
+        return Err(std::io::Error::last_os_error()).context("publish completed transfer");
+    }
+    Ok(())
+}
+#[cfg(not(any(target_os = "android", target_os = "linux")))]
+fn publish_completed(source: &Path, destination: &Path) -> Result<()> {
+    fs::hard_link(source, destination).context("publish completed transfer")
 }
 
 pub fn hash_file(path: &Path) -> Result<String> {
@@ -249,6 +281,34 @@ mod tests {
         .unwrap();
         let out = t.finish(d.path(), &key, &downloads).unwrap();
         assert_eq!(fs::read(out).unwrap(), data);
+    }
+    #[test]
+    fn completion_never_overwrites_an_existing_destination() {
+        let directory = tempfile::tempdir().unwrap();
+        let downloads = directory.path().join("downloads");
+        let key = [3; 32];
+        let data = b"verified bytes";
+        let mut transfer = transfer(data);
+        transfer.approve(directory.path(), &key).unwrap();
+        transfer
+            .append(
+                directory.path(),
+                &key,
+                0,
+                data,
+                blake3::hash(data).to_hex().as_str(),
+            )
+            .unwrap();
+        let destination = downloads.join(&transfer.id);
+        fs::create_dir_all(&destination).unwrap();
+        let existing = destination.join(&transfer.file_name);
+        fs::write(&existing, b"keep existing file").unwrap();
+        assert!(transfer.finish(directory.path(), &key, &downloads).is_err());
+        assert_eq!(fs::read(&existing).unwrap(), b"keep existing file");
+        assert_eq!(fs::read(transfer.path(directory.path())).unwrap(), data);
+        fs::remove_file(existing).unwrap();
+        let completed = transfer.finish(directory.path(), &key, &downloads).unwrap();
+        assert_eq!(fs::read(completed).unwrap(), data);
     }
     #[test]
     fn reject_traversal_corruption_and_cancelled_writes() {
