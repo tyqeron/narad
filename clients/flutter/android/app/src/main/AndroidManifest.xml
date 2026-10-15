@@ -19,6 +19,13 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher">
+        <receiver android:name=".CommandWidget" android:exported="false" android:label="@string/command_widget_name">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /><action android:name="android.intent.action.CONFIGURATION_CHANGED" /><action android:name="android.intent.action.MY_PACKAGE_REPLACED" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/command_widget" />
+        </receiver>
+        <activity android:name=".WidgetConfigureActivity" android:exported="true" android:theme="@style/NormalTheme" android:label="Configure Narad Command">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" /></intent-filter>
+        </activity>
         <activity android:name=".UnlockActivity" android:exported="false" android:theme="@style/NormalTheme" android:excludeFromRecents="true" />
         <receiver android:name=".NaradDeviceAdmin" android:permission="android.permission.BIND_DEVICE_ADMIN" android:exported="true" android:label="Narad device locking">
             <meta-data android:name="android.app.device_admin" android:resource="@xml/device_admin" />

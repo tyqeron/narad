@@ -1,0 +1,6 @@
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="180dp" android:minHeight="110dp" android:targetCellWidth="3" android:targetCellHeight="2"
+    android:initialLayout="@layout/command_widget" android:previewLayout="@layout/command_widget"
+    android:updatePeriodMillis="0" android:resizeMode="horizontal|vertical" android:widgetCategory="home_screen"
+    android:widgetFeatures="reconfigurable" android:configure="dev.narad.narad_client.WidgetConfigureActivity"
+    android:description="@string/command_widget_description" />

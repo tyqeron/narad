@@ -1,0 +1,14 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:padding="12dp" android:background="@drawable/widget_background">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical">
+        <TextView android:id="@+id/widget_device" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+            android:text="Narad Command" android:textColor="@color/widget_text" android:maxLines="1" android:ellipsize="end" android:textStyle="bold" />
+        <ImageButton android:id="@+id/widget_configure" android:layout_width="40dp" android:layout_height="40dp"
+            android:src="@android:drawable/ic_menu_preferences" android:contentDescription="Configure command" android:background="@android:color/transparent" />
+    </LinearLayout>
+    <Button android:id="@+id/widget_run" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="Choose command" android:maxLines="1" android:ellipsize="end" />
+    <TextView android:id="@+id/widget_status" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="Tap to run" android:textColor="@color/widget_text" android:textSize="12sp" android:maxLines="2" android:ellipsize="end" />
+</LinearLayout>

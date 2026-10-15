@@ -33,6 +33,7 @@ class MainActivity : FlutterActivity() {
                         val theme=call.argument<String>("theme") ?: "system"
                         require(theme in listOf("system","light","dark")){"Invalid theme"}
                         check(getSharedPreferences("narad",MODE_PRIVATE).edit().putString("theme",theme).commit()){"Theme could not be saved"}
+                        CommandWidget.refreshAll(this)
                         result.success(null)
                     }
                     "ensureCameraPermission" -> {

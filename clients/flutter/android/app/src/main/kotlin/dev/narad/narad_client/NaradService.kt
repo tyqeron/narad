@@ -33,6 +33,7 @@ class NaradService : Service() {
         fun deviceName(context: Context): String = context.getSharedPreferences("narad",MODE_PRIVATE)
             .getString("device_name",null) ?: "${Build.MANUFACTURER} ${Build.MODEL}".take(80)
     }
+    private val widgetRequests=mutableSetOf<Int>()
     private var multicast: WifiManager.MulticastLock? = null
     private var callback: ConnectivityManager.NetworkCallback? = null
     @Volatile private var destroyed = false
@@ -62,6 +63,15 @@ class NaradService : Service() {
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == STOP) { stopSelf(); return START_NOT_STICKY }
+        val widgetId=if(intent?.action==CommandWidget.RUN)intent.getIntExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID,-1) else -1
+        if(widgetId>=0 && CommandWidget.valid(this,widgetId) && widgetRequests.add(widgetId)) {
+            // Queue after startup below; repeated taps while running are coalesced.
+            main.post {worker.execute {
+                try {LocalBackendClient.awaitReady(this);CommandWidget.execute(this,widgetId)}
+                catch(_:Exception){CommandWidget.update(this,widgetId,"Open Narad and retry")}
+                finally{main.post{widgetRequests.remove(widgetId)}}
+            }}
+        }
         if (state == "starting") return START_NOT_STICKY
         if (state == "running" && JSONObject(NativeBackend.status()).optBoolean("running")) return START_NOT_STICKY
         state="starting"; lastError=null

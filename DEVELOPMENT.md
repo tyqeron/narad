@@ -381,3 +381,17 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   Linux release compiles and updated Windows tray/preferences/runner sources
   cross-compile against official Flutter headers. Final native runtime and
   artifact checks are recorded in the following milestone.
+
+## 29. Android home-screen command widgets
+
+- Added a configurable native widget: select a paired device and one of its
+  permitted command presets, then run it directly from the home screen.
+- Widget taps start/reuse the existing foreground connection service and execute
+  authenticated preset IDs through normal receiver-side authorization. Duplicate
+  taps while running are coalesced; deleting/revoking presets prevents execution.
+- Each widget keeps only its selection/label/status, never scripts or command
+  output. Added reconfiguration, deletion cleanup, theme updates and app Settings
+  instructions. Bumped the development app to 0.1.0+5.
+- Validation: Android ARM64 debug compilation passes; the universal release and
+  metadata/signature checks are recorded in the final delivery milestone. No
+  physical Android device is connected, so launcher interaction is manual QA.
