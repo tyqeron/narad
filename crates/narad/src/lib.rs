@@ -116,6 +116,13 @@ pub async fn serve(
     let file_permits = Arc::new(Semaphore::new(16));
     let local_permits = Arc::new(Semaphore::new(8));
     let mut workers = tokio::task::JoinSet::new();
+    let pairing_state = shared.clone();
+    workers.spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            handler::refresh_nearby_pairings(pairing_state.clone()).await;
+        }
+    });
     if let Some(ready) = ready {
         let _ = ready.send(Ok(()));
     }

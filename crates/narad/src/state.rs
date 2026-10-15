@@ -21,6 +21,8 @@ pub struct Pairing {
     pub expires_at: u64,
     pub status: String,
     pub outgoing: bool,
+    #[serde(default)]
+    pub nearby: bool,
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ClipboardOffer {

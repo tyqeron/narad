@@ -199,3 +199,17 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   fixture records were removed before handoff.
 - APKs remain outside Git under ignored dist/; the implementation, reproducible
   build instructions, test harnesses and development journal are committed.
+
+## 16. Direct nearby pairing requests
+
+- Added signed, TLS-pinned nearby requests without an invitation nonce supplied
+  by the user. The receiver issues a fresh five-minute pairing transcript.
+- Sending a request records the initiator's consent; accepting on the receiver
+  allows a daemon-owned worker to complete pairing automatically on the sender.
+  This works independently of Flutter's foreground/background lifecycle.
+- Requests support decline, owner-checked cancellation, expiry and duplicate
+  prevention. Pairing still grants no file, clipboard or microphone permission.
+- Kept invitation/QR pairing compatible and retained a visible verification code.
+- Validation: 16 Rust tests, strict Clippy and nine real-daemon integration
+  scenarios pass, including mDNS-selected pairing, acceptance without sender
+  confirmation, decline, cancellation, persistence and permission boundaries.

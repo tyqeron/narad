@@ -44,6 +44,42 @@ pub fn remote(s: &mut State, peer: &Peer, p: &Value, file_plane: bool) -> Result
         file_plane == matches!(op, "file_chunk" | "file_finish"),
         "command sent on wrong transport plane"
     );
+    if op == "pair_request" {
+        ensure!(peer.device_id != s.own.device_id, "cannot pair with self");
+        ensure!(
+            !s.trust.peers.contains_key(&peer.device_id),
+            "device already paired"
+        );
+        ensure!(s.pairings.len() < 32, "too many pairing requests");
+        ensure!(
+            !s.pairings
+                .values()
+                .any(|p| p.peer.device_id == peer.device_id && p.status == "pending"),
+            "pairing request already pending"
+        );
+        let id = uuid::Uuid::new_v4().to_string();
+        let nonce = random_token();
+        let code = pairing_code(&s.own, peer, &nonce);
+        let expires_at = now() + 300;
+        s.pairings.insert(
+            id.clone(),
+            Pairing {
+                id: id.clone(),
+                peer: peer.clone(),
+                nonce: nonce.clone(),
+                code: code.clone(),
+                expires_at,
+                status: "pending".into(),
+                outgoing: false,
+                nearby: true,
+            },
+        );
+        s.event(
+            "pairing.requested",
+            json!({"id":id,"peer_id":peer.device_id,"nearby":true}),
+        );
+        return Ok(json!({"ok":true,"id":id,"nonce":nonce,"code":code,"expires_at":expires_at}));
+    }
     if op == "pair_begin" {
         let nonce = string(p, "nonce")?;
         let invitation = s
@@ -67,6 +103,7 @@ pub fn remote(s: &mut State, peer: &Peer, p: &Value, file_plane: bool) -> Result
                 expires_at: invitation.expires_at,
                 status: "pending".into(),
                 outgoing: false,
+                nearby: false,
             },
         );
         s.event(
@@ -74,6 +111,23 @@ pub fn remote(s: &mut State, peer: &Peer, p: &Value, file_plane: bool) -> Result
             json!({"id":id,"peer_id":peer.device_id}),
         );
         return Ok(json!({"ok":true,"id":id,"code":code}));
+    }
+    if op == "pair_cancel" {
+        let pair = s
+            .pairings
+            .get_mut(string(p, "id")?)
+            .context("pairing expired")?;
+        ensure!(
+            pair.nearby && !pair.outgoing && pair.status == "pending",
+            "pairing is not pending"
+        );
+        ensure!(
+            pair.peer.public_key == peer.public_key
+                && pair.peer.certificate_hash == peer.certificate_hash,
+            "pairing owner mismatch"
+        );
+        pair.status = "denied".into();
+        return Ok(ok());
     }
     if op == "pair_status" {
         let pair = s
@@ -85,7 +139,12 @@ pub fn remote(s: &mut State, peer: &Peer, p: &Value, file_plane: bool) -> Result
                 && pair.peer.certificate_hash == peer.certificate_hash,
             "pairing owner mismatch"
         );
-        return Ok(json!({"ok":true,"status":pair.status}));
+        let status = if pair.status == "approved" && !s.trust.peers.contains_key(&peer.device_id) {
+            "denied"
+        } else {
+            &pair.status
+        };
+        return Ok(json!({"ok":true,"status":status}));
     }
     s.trust.authenticate(peer)?;
     // Authenticated metadata can refresh the address after a network change.
@@ -231,6 +290,7 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
     if matches!(
         op.as_str(),
         "pair"
+            | "pair_nearby"
             | "pair_confirm"
             | "send_file"
             | "send_clipboard"
@@ -301,11 +361,29 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
             Ok(ok())
         }
         "pair_deny" => {
-            let pair = s
-                .pairings
-                .get_mut(string(&p, "id")?)
-                .context("unknown pairing")?;
-            pair.status = "denied".into();
+            let id = string(&p, "id")?;
+            let pair = s.pairings.get(id).context("unknown pairing")?.clone();
+            ensure!(pair.status == "pending", "pairing is not pending");
+            s.pairings.get_mut(id).unwrap().status = if pair.nearby && pair.outgoing {
+                "cancelled"
+            } else {
+                "denied"
+            }
+            .into();
+            if pair.nearby && pair.outgoing {
+                let identity = s.identity.clone();
+                let own = s.own.clone();
+                drop(s);
+                // Local withdrawal is final even if the other device went offline.
+                let _ = remote_call(
+                    &identity,
+                    &own,
+                    &pair.peer,
+                    false,
+                    json!({"op":"pair_cancel","id":id}),
+                )
+                .await;
+            }
             Ok(ok())
         }
         "permission" => {
@@ -528,7 +606,119 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
     }
 }
 
+/// Complete only explicitly sent nearby requests. A single daemon-owned worker
+/// polls bounded requests concurrently; Activity/Flutter lifecycle is irrelevant.
+pub async fn refresh_nearby_pairings(shared: Arc<Mutex<State>>) {
+    let pending = {
+        let mut s = shared.lock().await;
+        s.expire();
+        s.pairings
+            .values()
+            .filter(|p| p.nearby && p.outgoing && p.status == "pending")
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    let mut polls = tokio::task::JoinSet::new();
+    for pair in pending {
+        let shared = shared.clone();
+        polls.spawn(async move {
+            let (identity, own) = {
+                let s = shared.lock().await;
+                (s.identity.clone(), s.own.clone())
+            };
+            let Ok(response) = remote_call(
+                &identity,
+                &own,
+                &pair.peer,
+                false,
+                json!({"op":"pair_status","id":pair.id}),
+            )
+            .await
+            else {
+                return;
+            };
+            if response["status"] == "approved" {
+                // Rechecks expiry/cancellation after the network round trip.
+                let _ = outgoing(
+                    shared,
+                    "pair_confirm",
+                    &json!({"id":pair.id,"code":pair.code}),
+                )
+                .await;
+            } else if response["status"] == "denied" {
+                let mut s = shared.lock().await;
+                if let Some(current) = s.pairings.get_mut(&pair.id) {
+                    if current.status == "pending" {
+                        current.status = "denied".into();
+                    }
+                }
+            }
+        });
+    }
+    while polls.join_next().await.is_some() {}
+}
+
 async fn outgoing(shared: Arc<Mutex<State>>, op: &str, p: &Value) -> Result<Value> {
+    if op == "pair_nearby" {
+        let peer: Peer = serde_json::from_value(p["peer"].clone())?;
+        peer.validate()?;
+        let (identity, own) = {
+            let mut s = shared.lock().await;
+            s.expire();
+            ensure!(s.own.device_id != peer.device_id, "cannot pair with self");
+            ensure!(
+                !s.trust.peers.contains_key(&peer.device_id),
+                "device already paired"
+            );
+            ensure!(s.pairings.len() < 32, "too many pairing requests");
+            ensure!(
+                !s.pairings
+                    .values()
+                    .any(|p| p.peer.device_id == peer.device_id && p.status == "pending"),
+                "pairing request already pending"
+            );
+            (s.identity.clone(), s.own.clone())
+        };
+        let response =
+            remote_call(&identity, &own, &peer, false, json!({"op":"pair_request"})).await?;
+        let id = string(&response, "id")?.to_string();
+        ensure!(uuid::Uuid::parse_str(&id).is_ok(), "invalid pairing ID");
+        let nonce = string(&response, "nonce")?.to_string();
+        ensure!(nonce.len() == 64, "invalid pairing nonce");
+        let code = pairing_code(&own, &peer, &nonce);
+        ensure!(
+            code == string(&response, "code")?,
+            "pairing transcript mismatch"
+        );
+        let expires_at = number(&response, "expires_at")?;
+        ensure!(
+            expires_at > now() && expires_at <= now() + 360,
+            "invalid pairing expiry"
+        );
+        let mut s = shared.lock().await;
+        ensure!(s.pairings.len() < 32, "too many pairing requests");
+        ensure!(
+            !s.pairings
+                .values()
+                .any(|p| p.peer.device_id == peer.device_id && p.status == "pending"),
+            "pairing request already pending"
+        );
+        s.pairings.insert(
+            id.clone(),
+            Pairing {
+                id: id.clone(),
+                peer,
+                nonce,
+                code: code.clone(),
+                expires_at,
+                status: "pending".into(),
+                outgoing: true,
+                nearby: true,
+            },
+        );
+        s.event("pairing.sent", json!({"id":id,"nearby":true}));
+        return Ok(json!({"ok":true,"id":id,"code":code}));
+    }
     if op == "pair" {
         let invitation: Invitation = serde_json::from_value(p["invitation"].clone())?;
         invitation.validate()?;
@@ -559,6 +749,7 @@ async fn outgoing(shared: Arc<Mutex<State>>, op: &str, p: &Value) -> Result<Valu
                 expires_at: invitation.expires_at,
                 status: "pending".into(),
                 outgoing: true,
+                nearby: false,
             },
         );
         return Ok(json!({"ok":true,"id":id,"code":code}));
@@ -842,6 +1033,105 @@ mod tests {
         assert!(local(shared, json!({"op":"clipboard_accept","id":r["id"]}))
             .await
             .is_err());
+    }
+    #[tokio::test]
+    async fn nearby_requests_need_explicit_acceptance_and_cannot_bypass_ownership() {
+        let (_d, mut s, peer) = setup();
+        s.trust.peers.clear();
+        let request = remote(&mut s, &peer, &json!({"op":"pair_request"}), false).unwrap();
+        assert!(s.trust.peers.is_empty());
+        let id = request["id"].as_str().unwrap();
+        assert!(s.pairings[id].nearby);
+        assert_eq!(
+            request["code"],
+            pairing_code(&s.own, &peer, request["nonce"].as_str().unwrap())
+        );
+        assert!(remote(&mut s, &peer, &json!({"op":"pair_request"}), false).is_err());
+        let stranger = narad_core::identity::Identity::generate().unwrap().peer(
+            "Other".into(),
+            "127.0.0.1".into(),
+            46200,
+        );
+        assert!(remote(
+            &mut s,
+            &stranger,
+            &json!({"op":"pair_status","id":id}),
+            false
+        )
+        .is_err());
+        assert!(remote(&mut s, &peer, &json!({"op":"ping"}), false).is_err());
+        let shared = Arc::new(Mutex::new(s));
+        assert!(local(
+            shared.clone(),
+            json!({"op":"pair_approve","id":id,"code":"wrong"})
+        )
+        .await
+        .is_err());
+        local(
+            shared.clone(),
+            json!({"op":"pair_approve","id":id,"code":request["code"]}),
+        )
+        .await
+        .unwrap();
+        assert!(shared
+            .lock()
+            .await
+            .trust
+            .peers
+            .contains_key(&peer.device_id));
+        assert!(shared.lock().await.trust.permissions.is_empty());
+        assert!(local(shared.clone(), json!({"op":"pair_deny","id":id}))
+            .await
+            .is_err());
+        local(
+            shared.clone(),
+            json!({"op":"unpair","peer_id":peer.device_id}),
+        )
+        .await
+        .unwrap();
+        let mut s = shared.lock().await;
+        assert_eq!(
+            remote(&mut s, &peer, &json!({"op":"pair_status","id":id}), false).unwrap()["status"],
+            "denied"
+        );
+    }
+    #[tokio::test]
+    async fn nearby_decline_and_expiry_never_grant_trust() {
+        let (_d, mut s, peer) = setup();
+        s.trust.peers.clear();
+        let request = remote(&mut s, &peer, &json!({"op":"pair_request"}), false).unwrap();
+        let shared = Arc::new(Mutex::new(s));
+        local(shared.clone(), json!({"op":"pair_deny","id":request["id"]}))
+            .await
+            .unwrap();
+        assert!(local(
+            shared.clone(),
+            json!({"op":"pair_approve","id":request["id"],"code":request["code"]})
+        )
+        .await
+        .is_err());
+        assert!(shared.lock().await.trust.peers.is_empty());
+        let request = remote(
+            &mut *shared.lock().await,
+            &peer,
+            &json!({"op":"pair_request"}),
+            false,
+        )
+        .unwrap();
+        shared
+            .lock()
+            .await
+            .pairings
+            .get_mut(request["id"].as_str().unwrap())
+            .unwrap()
+            .expires_at = now() - 1;
+        assert!(local(
+            shared.clone(),
+            json!({"op":"pair_approve","id":request["id"],"code":request["code"]})
+        )
+        .await
+        .is_err());
+        assert!(shared.lock().await.trust.peers.is_empty());
     }
     #[test]
     fn pairing_nonce_is_one_time_and_codes_are_required() {

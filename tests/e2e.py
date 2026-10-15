@@ -100,6 +100,50 @@ class NaradIntegration(unittest.TestCase):
         self.b.call(op="pair_approve", id=pair["id"], code=pair["code"])
         self.a.call(op="pair_confirm", id=pair["id"], code=pair["code"])
 
+    def test_nearby_request_auto_connects_only_after_acceptance(self):
+        peer = self.b.call(op="status")["device"]
+        request = self.a.call(op="pair_nearby", peer=peer)
+        self.assertFalse(self.a.call(op="status")["paired"])
+        self.assertFalse(self.b.call(op="status")["paired"])
+        incoming = self.b.call(op="status")["pairings"][0]
+        self.assertTrue(incoming["nearby"])
+        self.assertEqual(incoming["code"], request["code"])
+        with self.assertRaisesRegex(RuntimeError, "already pending"):
+            self.a.call(op="pair_nearby", peer=peer)
+        self.b.call(op="pair_approve", id=request["id"], code=request["code"])
+        # No invitation or sender-side pair_confirm call is used.
+        deadline = time.monotonic() + 10
+        while self.bid not in self.a.call(op="status")["paired"]:
+            self.assertLess(time.monotonic(), deadline, "nearby request did not auto-connect")
+            time.sleep(0.1)
+        self.assertIn(self.aid, self.b.call(op="status")["paired"])
+        self.a.call(op="ping_peer", peer_id=self.bid)
+        with self.assertRaisesRegex(RuntimeError, "permission denied"):
+            self.a.call(op="send_clipboard", peer_id=self.bid, text="still requires permission")
+        self.a.stop()
+        self.b.stop()
+        self.a.start()
+        self.b.start()
+        self.a.call(op="ping_peer", peer_id=self.bid)
+
+    def test_nearby_decline_and_sender_cancel_never_connect(self):
+        peer = self.b.call(op="status")["device"]
+        request = self.a.call(op="pair_nearby", peer=peer)
+        self.b.call(op="pair_deny", id=request["id"])
+        deadline = time.monotonic() + 10
+        while next(p for p in self.a.call(op="status")["pairings"] if p["id"] == request["id"])["status"] != "denied":
+            self.assertLess(time.monotonic(), deadline)
+            time.sleep(0.1)
+        self.assertFalse(self.a.call(op="status")["paired"])
+        self.assertFalse(self.b.call(op="status")["paired"])
+        request = self.a.call(op="pair_nearby", peer=peer)
+        self.a.call(op="pair_deny", id=request["id"])
+        with self.assertRaisesRegex(RuntimeError, "not awaiting approval"):
+            self.b.call(op="pair_approve", id=request["id"], code=request["code"])
+        time.sleep(2.2)
+        self.assertFalse(self.a.call(op="status")["paired"])
+        self.assertFalse(self.b.call(op="status")["paired"])
+
     def test_pairing_permissions_clipboard_revocation_and_restart(self):
         self.pair()
         with self.assertRaisesRegex(RuntimeError, "permission denied"):
@@ -208,6 +252,13 @@ class NaradIntegration(unittest.TestCase):
             time.sleep(0.1)
         else:
             self.fail("live audio capability not advertised")
+        peer = next(p for p in discovered if p["device_id"] == self.bid)
+        request = self.a.call(op="pair_nearby", peer=peer)
+        self.b.call(op="pair_approve", id=request["id"], code=request["code"])
+        deadline = time.monotonic() + 10
+        while self.bid not in self.a.call(op="status")["paired"]:
+            self.assertLess(time.monotonic(), deadline)
+            time.sleep(0.1)
 
     def test_bad_local_token_expired_invite_and_wrong_certificate_pin(self):
         with self.assertRaisesRegex(RuntimeError, "authentication failed"):
