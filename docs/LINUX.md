@@ -64,3 +64,14 @@ Nearby devices and configure per-device permissions. Allow TCP 45678/45679 and
 UDP 5353 in your firewall if needed; the token-authenticated API on 45700 remains
 loopback-only. Actual microphone/camera permissions and desktop session locking
 remain subject to your desktop environment.
+
+Validate a built installer without installing into your account:
+
+```sh
+python3 tests/linux_packaging.py dist/narad-linux-x64-release.run
+```
+
+This uses temporary prefixes/generated data and checks installation, upgrade
+preservation, desktop entries with spaces, invalid destinations, corrupted payloads,
+and real backend ownership/reuse with a headless GUI fixture. CI repeats the
+same checks against its debug bundle.

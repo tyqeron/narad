@@ -357,3 +357,14 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   wrapping of an existing bundle. It requires no root, package manager or FUSE.
 - Validation: full Linux x64 release build succeeds and produces the installer;
   shell syntax and emitted SHA-256 checks pass.
+
+## 27. Repeatable Linux installer checks
+
+- Added temporary-directory packaging checks for installation/desktop entries with
+  spaces, upgrade preservation, unrelated/symlink destination rejection and corrupt
+  payload rejection. Desktop-entry validation passes.
+- Exercised the actual packaged backend with a headless GUI fixture: owned daemon
+  stops on GUI exit, and an authenticated existing daemon is reused and retained.
+- All six packaging scenarios pass. CI builds a Linux debug installer and runs the
+  same checks; workflow YAML validation passes. Runtime media quality remains
+  outside packaging checks.
