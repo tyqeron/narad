@@ -1,6 +1,10 @@
 package dev.narad.narad_client
 
 import android.app.*
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -33,6 +37,13 @@ class NaradService : Service() {
     private var callback: ConnectivityManager.NetworkCallback? = null
     @Volatile private var destroyed = false
     private val main = Handler(Looper.getMainLooper())
+    private val platformPoll=object:Runnable {
+        override fun run() {
+            if(destroyed)return
+            if(state=="running")worker.execute {pollPlatformEvents()}
+            main.postDelayed(this,3000)
+        }
+    }
     override fun onBind(intent: Intent?) = null
     override fun onCreate() {
         super.onCreate()
@@ -41,12 +52,13 @@ class NaradService : Service() {
         val open = PendingIntent.getActivity(this,0,Intent(this,MainActivity::class.java),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val stop = PendingIntent.getService(this,1,Intent(this,NaradService::class.java).setAction(STOP),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val notification = Notification.Builder(this,CHANNEL).setContentTitle("Narad is available nearby")
-            .setContentText("Pairing and incoming transfers require your approval.")
-            .setSmallIcon(android.R.drawable.stat_sys_upload_done).setContentIntent(open).setOngoing(true)
+            .setContentText("Your per-device permissions control incoming connections.")
+            .setSmallIcon(R.drawable.ic_narad_notification).setContentIntent(open).setOngoing(true)
             .addAction(Notification.Action.Builder(null,"Stop Narad",stop).build()).build()
         if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIFICATION,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
         else startForeground(NOTIFICATION,notification)
         acquireMulticast()
+        main.postDelayed(platformPoll,3000)
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == STOP) { stopSelf(); return START_NOT_STICKY }
@@ -72,6 +84,62 @@ class NaradService : Service() {
         }
         // A killed process resumes when the user opens Narad; never restart capture silently.
         return START_NOT_STICKY
+    }
+    private fun local(command:JSONObject):JSONObject {
+        val token=File(stateDirectory(this),"api-token").readText()
+        Socket("127.0.0.1",API_PORT).use { socket ->
+            socket.soTimeout=3000
+            socket.getOutputStream().write((JSONObject().put("token",token).put("command",command).toString()+"\n").toByteArray(Charsets.UTF_8))
+            return JSONObject(socket.getInputStream().bufferedReader().readLine() ?: error("Backend disconnected"))
+        }
+    }
+    private fun pollPlatformEvents() {
+        if(destroyed || state!="running")return
+        try {
+            val response=local(JSONObject().put("op","platform_events"))
+            if(!response.optBoolean("ok"))return
+            val clipboard=response.getJSONArray("clipboard")
+            if(clipboard.length()>0) {
+                val text=clipboard.getJSONObject(clipboard.length()-1).getString("text")
+                main.post {
+                    if(!destroyed)try {getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Narad",text))}
+                    catch(_:Exception){worker.execute {try{local(JSONObject().put("op","platform_error").put("kind","clipboard.failed"))}catch(_:Exception){}}}
+                }
+            }
+            val actions=response.getJSONArray("actions")
+            for(index in 0 until actions.length()) {
+                val action=actions.getJSONObject(index)
+                val id=action.getString("id")
+                var success=true
+                var message=""
+                try {
+                    val validation=local(JSONObject().put("op","platform_validate").put("id",id))
+                    check(validation.optBoolean("ok")){"Permission was revoked"}
+                    when(action.getString("kind")) {
+                        "lock" -> {
+                            val manager=getSystemService(DevicePolicyManager::class.java)
+                            check(manager.isAdminActive(ComponentName(this,NaradDeviceAdmin::class.java))){"Enable device administrator access in Narad device settings first"}
+                            manager.lockNow();message="Device locked"
+                        }
+                        "unlock" -> {
+                            if(!getSystemService(KeyguardManager::class.java).isDeviceLocked)message="Device is already unlocked"
+                            else {
+                                check(getSystemService(NotificationManager::class.java).areNotificationsEnabled()){"Enable Narad notifications to receive unlock requests"}
+                                val open=PendingIntent.getActivity(this,82,Intent(this,UnlockActivity::class.java),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                                val notification=Notification.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_narad_notification)
+                                    .setContentTitle("Unlock requested by your paired device")
+                                    .setContentText("Tap to authenticate and unlock this device.")
+                                    .setContentIntent(open).setAutoCancel(true).setVisibility(Notification.VISIBILITY_PRIVATE).build()
+                                getSystemService(NotificationManager::class.java).notify(82,notification)
+                                message="Unlock requested. Authenticate on this device."
+                            }
+                        }
+                        else -> error("Unsupported device action")
+                    }
+                }catch(error:Exception){success=false;message=error.message ?: "Device action failed"}
+                local(JSONObject().put("op","platform_result").put("id",id).put("success",success).put("message",message))
+            }
+        }catch(_:Exception){ /* Retry transient API failures without logging clipboard contents. */ }
     }
     private fun acquireMulticast() {
         val wifi=applicationContext.getSystemService(WIFI_SERVICE) as? WifiManager ?: return
@@ -127,6 +195,7 @@ class NaradService : Service() {
     }
     override fun onDestroy() {
         destroyed=true
+        main.removeCallbacks(platformPoll)
         if(state!="error")state="stopping"
         callback?.let {try {getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(it)} catch(_:Exception){}}
         callback=null

@@ -276,3 +276,16 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   overrides in Settings.
 - Validation: Flutter analysis and all 15 tests pass, including theme persistence,
   permission switches, online/offline controls, grouped activity and phone layout.
+
+## 21. Native Android controls and shared app branding
+
+- Added native automatic clipboard delivery, permission-validated device-action
+  dispatch, optional force-lock device-admin activation, and notification-driven
+  system authentication for unlock requests. Camera permission setup is explicit.
+- Reused the in-app hub mark for Android adaptive/legacy/monochrome launchers and
+  notification icon, Linux window/desktop assets and the Windows icon resource.
+  Included its license and reproducible asset-generation script.
+- Validation: Android ARM64 debug and Linux native debug builds pass. Light/dark
+  desktop and phone previews render without overflow and were visually inspected.
+- Camera capture quality and real lock/unlock behavior remain physical manual QA;
+  automated checks do not activate cameras or lock the user's devices.

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Narad
+Comment=Connect and control your trusted nearby devices
+Exec=narad_client
+Icon=dev.narad.narad_client
+Type=Application
+Terminal=false
+Categories=Network;Utility;

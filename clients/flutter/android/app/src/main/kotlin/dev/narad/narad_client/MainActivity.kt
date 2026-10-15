@@ -2,6 +2,8 @@ package dev.narad.narad_client
 
 import android.Manifest
 import android.app.Activity
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -15,6 +17,8 @@ import java.util.UUID
 import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
+    private var cameraResult:MethodChannel.Result?=null
+    private var adminResult:MethodChannel.Result?=null
     private var exportResult:MethodChannel.Result?=null
     private var exportSource:File?=null
     private val io=Executors.newSingleThreadExecutor()
@@ -24,6 +28,29 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger,"dev.narad/android").setMethodCallHandler {call,result ->
             try {
                 when(call.method) {
+                    "getTheme" -> result.success(getSharedPreferences("narad",MODE_PRIVATE).getString("theme","system"))
+                    "setTheme" -> {
+                        val theme=call.argument<String>("theme") ?: "system"
+                        require(theme in listOf("system","light","dark")){"Invalid theme"}
+                        check(getSharedPreferences("narad",MODE_PRIVATE).edit().putString("theme",theme).commit()){"Theme could not be saved"}
+                        result.success(null)
+                    }
+                    "ensureCameraPermission" -> {
+                        if(checkSelfPermission(Manifest.permission.CAMERA)==PackageManager.PERMISSION_GRANTED)result.success(true)
+                        else {check(cameraResult==null){"Camera permission request already open"};cameraResult=result;requestPermissions(arrayOf(Manifest.permission.CAMERA),1904)}
+                    }
+                    "ensureDeviceAdmin" -> {
+                        val manager=getSystemService(DevicePolicyManager::class.java)
+                        val component=ComponentName(this,NaradDeviceAdmin::class.java)
+                        if(manager.isAdminActive(component))result.success(true)
+                        else {
+                            check(adminResult==null){"Device admin setup already open"}
+                            adminResult=result
+                            startActivityForResult(Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
+                                .putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN,component)
+                                .putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION,"Allow only the paired devices you authorize to lock this device."),1903)
+                        }
+                    }
                     "start" -> {
                         if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
                             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),1901)
@@ -54,9 +81,18 @@ class MainActivity : FlutterActivity() {
             }catch(error:Throwable){result.error("android_backend",error.message ?: "Android operation failed",null)}
         }
     }
+    override fun onRequestPermissionsResult(requestCode:Int,permissions:Array<out String>,grantResults:IntArray) {
+        super.onRequestPermissionsResult(requestCode,permissions,grantResults)
+        if(requestCode==1904){val pending=cameraResult;cameraResult=null;pending?.success(grantResults.isNotEmpty() && grantResults[0]==PackageManager.PERMISSION_GRANTED)}
+    }
     @Deprecated("Activity result API retained for the FlutterActivity host")
     override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?) {
         super.onActivityResult(requestCode,resultCode,data)
+        if(requestCode==1903){
+            val pending=adminResult;adminResult=null
+            pending?.success(getSystemService(DevicePolicyManager::class.java).isAdminActive(ComponentName(this,NaradDeviceAdmin::class.java)))
+            return
+        }
         if(requestCode!=1902)return
         val result=exportResult ?: return;val source=exportSource;exportResult=null;exportSource=null
         val uri=data?.data
@@ -70,6 +106,8 @@ class MainActivity : FlutterActivity() {
         }
     }
     override fun onDestroy() {
+        cameraResult?.error("cancelled","Camera permission cancelled",null);cameraResult=null
+        adminResult?.error("cancelled","Device admin setup cancelled",null);adminResult=null
         exportResult?.error("cancelled","Save cancelled",null);exportResult=null;exportSource=null
         io.shutdown()
         super.onDestroy()
