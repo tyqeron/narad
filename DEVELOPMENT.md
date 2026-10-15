@@ -115,3 +115,15 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - Set client version 0.1.0 and included the workspace MIT license.
 - Original PRD, architecture, roadmap, backlog and technical specification stay
   preserved as the planning baseline; cross-platform release criteria remain open.
+
+## 10. Embeddable backend and Android JNI foundation
+
+- Extracted the daemon into a reusable library with caller-owned shutdown and
+  startup readiness signaling; the desktop CLI uses the same implementation.
+- Added the Android JNI runtime host and in-memory identity generation so Android
+  can wrap private identity bytes with Keystore without writing a plaintext key.
+- Added NDK builds for arm64-v8a, armeabi-v7a and x86_64 with 16 KiB page alignment.
+- Added local metadata operations for device naming and Wi-Fi address updates.
+- Validation: 13 Rust tests and strict Clippy pass; ARM64 native library builds
+  against installed NDK r27. Embedded start/stop/restart preserves identity and
+  releases sockets without depending on process signals.

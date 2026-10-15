@@ -66,8 +66,21 @@ pub struct State {
     pub events: Vec<Value>,
 }
 impl State {
+    #[cfg(test)]
     pub fn load(dir: PathBuf, name: String, address: String, port: u16) -> Result<Self> {
-        let identity = Identity::load_or_create(&dir)?;
+        Self::load_with_identity(dir, name, address, port, None)
+    }
+    pub fn load_with_identity(
+        dir: PathBuf,
+        name: String,
+        address: String,
+        port: u16,
+        identity: Option<Identity>,
+    ) -> Result<Self> {
+        let identity = match identity {
+            Some(identity) => identity,
+            None => Identity::load_or_create(&dir)?,
+        };
         let own = identity.peer(name, address, port);
         own.validate()?;
         let path = dir.join("trust.enc");

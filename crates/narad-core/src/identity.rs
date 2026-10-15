@@ -42,15 +42,19 @@ impl Identity {
         if path.exists() {
             return Ok(serde_json::from_slice(&std::fs::read(path)?)?);
         }
+        let identity = Self::generate()?;
+        atomic_write(&path, &serde_json::to_vec(&identity)?)?;
+        Ok(identity)
+    }
+    /// Generate in memory so platform keystores can persist wrapped identity bytes.
+    pub fn generate() -> Result<Self> {
         let key = SigningKey::generate(&mut OsRng);
         let cert = rcgen::generate_simple_self_signed(vec!["narad.local".into()])?;
-        let identity = Self {
+        Ok(Self {
             secret: key.to_bytes(),
             certificate: cert.cert.der().to_vec(),
             tls_key: cert.key_pair.serialize_der(),
-        };
-        atomic_write(&path, &serde_json::to_vec(&identity)?)?;
-        Ok(identity)
+        })
     }
     pub fn public_key(&self) -> String {
         hex(SigningKey::from_bytes(&self.secret)

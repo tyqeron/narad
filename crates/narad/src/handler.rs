@@ -252,6 +252,20 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
                 json!({"ok":true,"device":s.own,"paired":s.trust.peers.iter().skip(offset).take(32).collect::<std::collections::BTreeMap<_,_>>(),"permissions":s.trust.permissions.iter().skip(offset).take(96).collect::<std::collections::BTreeMap<_,_>>(),"pairings":s.pairings.values().skip(offset).take(32).collect::<Vec<_>>(),"transfers":s.transfers.values().skip(offset).take(32).collect::<Vec<_>>(),"sessions":s.sessions.values().skip(offset).take(32).collect::<Vec<_>>(),"clipboard":clipboard,"events":s.events.iter().rev().take(20).collect::<Vec<_>>(),"outbound":s.outbound.values().skip(offset).take(32).collect::<Vec<_>>(),"media_ready":s.media_ready,"offset":offset,"has_more":([s.trust.peers.len(),s.pairings.len(),s.transfers.len(),s.sessions.len(),s.clipboard.len(),s.outbound.len()].into_iter().max().unwrap_or(0)>offset+32)}),
             )
         }
+        "network_address" => {
+            let mut peer = s.own.clone();
+            peer.address = string(&p, "address")?.into();
+            peer.validate()?;
+            s.own = peer;
+            Ok(ok())
+        }
+        "device_name" => {
+            let mut peer = s.own.clone();
+            peer.device_name = string(&p, "name")?.trim().into();
+            peer.validate()?;
+            s.own = peer;
+            Ok(ok())
+        }
         "invite" => {
             ensure!(s.invitations.len() < 16, "too many open invitations");
             let invitation = Invitation {

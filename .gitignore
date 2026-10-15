@@ -24,3 +24,7 @@ clients/flutter/android/app/release/
 **/*.json.enc
 **/*.part
 __pycache__/
+
+/dist/
+clients/flutter/android/app/build/
+**/identity.enc
