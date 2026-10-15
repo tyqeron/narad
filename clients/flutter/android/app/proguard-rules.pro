@@ -1,0 +1,1 @@
+-keep class dev.narad.narad_client.NativeBackend { *; }

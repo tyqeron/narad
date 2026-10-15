@@ -127,3 +127,16 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - Validation: 13 Rust tests and strict Clippy pass; ARM64 native library builds
   against installed NDK r27. Embedded start/stop/restart preserves identity and
   releases sockets without depending on process signals.
+
+## 11. Android host, Keystore and foreground service
+
+- Added a connected-device foreground service that owns the Rust runtime, Wi-Fi
+  multicast lock and live LAN address updates independently of the Activity.
+- Wrapped each install's identity with Android Keystore AES-GCM, excluded private
+  state from backup, and surfaced authentication errors without replacing keys.
+- Added native startup/status/stop, device naming, and Storage Access Framework
+  export methods; notification offers an explicit service stop action.
+- Gradle builds and packages Rust automatically; Android 8.0+ is required.
+- Validation: ARM64 debug APK compiled successfully. Updated the NDK pin to r28
+  installed during the build, matching the Flutter plugins' required version.
+  Physical installation is pending the tablet's install-via-USB setting.
