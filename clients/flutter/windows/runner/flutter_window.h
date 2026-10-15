@@ -7,6 +7,9 @@
 #include <memory>
 
 #include "win32_window.h"
+#include "backend_host.h"
+#include <flutter/method_channel.h>
+#include <flutter/encodable_value.h>
 
 // A window that does nothing but host a Flutter view.
 class FlutterWindow : public Win32Window {
@@ -23,6 +26,8 @@ class FlutterWindow : public Win32Window {
                          LPARAM const lparam) noexcept override;
 
  private:
+  BackendHost backend_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> backend_channel_;
   // The project to run.
   flutter::DartProject project_;
 

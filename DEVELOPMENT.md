@@ -317,3 +317,14 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - Validation: Windows GNU backend and test executables cross-compile successfully;
   Windows-target strict Clippy passes. All 21 host Rust tests and 13 real-daemon
   regression scenarios pass. Windows-native execution remains a separate CI check.
+
+## 24. Windows desktop startup and shared interface
+
+- Added the native window-owned backend supervisor, suspended job assignment,
+  automatic per-user configuration, authenticated daemon reuse, readiness polling
+  and visible startup failures/retry. CMake builds and bundles narad.exe.
+- Preserved shared nearby pairing, device grants, files, clipboard, media, grouped
+  activity and theme settings. Windows peers omit unsupported remote-unlock UI.
+- Validation: all 20 Flutter tests and analysis pass. Both backend_host.cpp and
+  Flutter method-channel integration cross-compile against Windows/Flutter SDK
+  headers. Full Windows MSVC GUI linking/execution requires a Windows host.

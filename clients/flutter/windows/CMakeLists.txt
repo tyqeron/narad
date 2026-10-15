@@ -106,3 +106,15 @@ install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
 install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   CONFIGURATIONS Profile;Release
   COMPONENT Runtime)
+
+# The packaged Windows application owns an adjacent Rust daemon.
+find_program(NARAD_CARGO cargo REQUIRED)
+get_filename_component(NARAD_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../.." ABSOLUTE)
+add_custom_target(narad_backend ALL
+  COMMAND "${CMAKE_COMMAND}" "-DREPO_ROOT=${NARAD_REPO_ROOT}"
+    "-DCARGO=${NARAD_CARGO}" "-DCONFIG=$<CONFIG>"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/BuildBackend.cmake"
+  VERBATIM)
+add_dependencies(${BINARY_NAME} narad_backend)
+install(FILES "${NARAD_REPO_ROOT}/target/x86_64-pc-windows-msvc/$<IF:$<CONFIG:Debug>,debug,release>/narad.exe"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}" COMPONENT Runtime)

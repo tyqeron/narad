@@ -1,6 +1,8 @@
 #include "flutter_window.h"
 
 #include <optional>
+#include <flutter/standard_method_codec.h>
+#include "utils.h"
 
 #include "flutter/generated_plugin_registrant.h"
 
@@ -25,6 +27,23 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  backend_channel_ = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+      flutter_controller_->engine()->messenger(), "dev.narad/windows",
+      &flutter::StandardMethodCodec::GetInstance());
+  backend_channel_->SetMethodCallHandler([this](const auto& call, auto result) {
+    if (call.method_name() == "configuration") {
+      if (!backend_.Configure()) { result->Error("windows_backend", backend_.error()); return; }
+      result->Success(flutter::EncodableValue(flutter::EncodableMap{
+        {flutter::EncodableValue("stateDirectory"), flutter::EncodableValue(Utf8FromUtf16(backend_.state_directory().c_str()))},
+        {flutter::EncodableValue("apiPort"), flutter::EncodableValue(45700)}}));
+    } else if (call.method_name() == "start") {
+      if (backend_.Start()) result->Success();
+      else result->Error("windows_backend", backend_.error());
+    } else if (call.method_name() == "running") {
+      result->Success(flutter::EncodableValue(backend_.Running()));
+    } else { result->NotImplemented(); }
+  });
+
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
@@ -40,6 +59,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  backend_channel_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

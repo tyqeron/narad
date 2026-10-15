@@ -412,6 +412,20 @@ void main() {
     },
   );
 
+  testWidgets('Windows peers do not offer remote unlock', (tester) async {
+    final api = FakeApi();
+    ((api.status['paired'] as Map)['peer']['peer'] as Map)['platform'] =
+        'windows';
+    await tester.pumpWidget(NaradApp(api: api));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('My phone'), 150);
+    await tester.pumpAndSettle();
+    expect(find.text('Lock'), findsOneWidget);
+    expect(find.text('Request unlock'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('phone-sized navigation and inbox layout do not overflow', (
     tester,
   ) async {

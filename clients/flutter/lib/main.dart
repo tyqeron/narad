@@ -11,6 +11,7 @@ import 'api.dart';
 import 'app_settings.dart';
 import 'audio.dart';
 import 'android_backend.dart';
+import 'windows_backend.dart';
 import 'pairing_scanner.dart';
 
 void main() => runApp(const NaradApp());
@@ -95,6 +96,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     text: Platform.environment['NARAD_API_PORT'] ?? '45700',
   );
   AndroidBackend? _android;
+  WindowsBackend? _windows;
   bool _starting = false;
   bool _foreground = true;
   bool _restoredMedia = false;
@@ -127,8 +129,27 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     } else if (Platform.isAndroid) {
       _android = AndroidBackend();
       unawaited(_startAndroid());
+    } else if (Platform.isWindows) {
+      _windows = WindowsBackend();
+      unawaited(_startWindows());
     } else {
       unawaited(_autoConnect());
+    }
+  }
+
+  Future<void> _startWindows() async {
+    if (_starting) return;
+    setState(() => _starting = true);
+    try {
+      final api = await _windows!.start();
+      if (!mounted) return;
+      _directory.text = api.stateDirectory;
+      _port.text = api.port.toString();
+      _attach(api);
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _starting = false);
     }
   }
 
@@ -200,6 +221,10 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   }
 
   void _connect() {
+    if (_windows != null) {
+      unawaited(_startWindows());
+      return;
+    }
     final port = int.tryParse(_port.text);
     if (port == null || port <= 0 || port > 65535) {
       _showError('Enter a valid local API port.');
@@ -555,7 +580,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
             _button('View Shared folder', _localSharedFiles),
             _section('Command presets'),
             const Text(
-              'Devices with command permission can run only the presets configured here. Commands run as your user on Linux and inside Narad’s app sandbox on Android.',
+              'Devices with command permission can run only the presets configured here. Commands run as your user on Linux/Windows and inside Narad’s app sandbox on Android.',
             ),
             for (final raw in (_data['commands'] as List? ?? []))
               ListTile(
@@ -1240,11 +1265,12 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         _button('Browse files', () => _browseFiles(peer), enabled: online),
         _button('Run command', () => _runCommand(peer), enabled: online),
         _button('Lock', () => _deviceAction(id, 'lock'), enabled: online),
-        _button(
-          'Request unlock',
-          () => _deviceAction(id, 'unlock'),
-          enabled: online,
-        ),
+        if (peer['platform'] != 'windows')
+          _button(
+            'Request unlock',
+            () => _deviceAction(id, 'unlock'),
+            enabled: online,
+          ),
         _button(
           'Device settings',
           () => _permissions(peer),
@@ -1442,8 +1468,9 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                   'file.browse': 'Browse and download from Shared folder',
                   'command.run': 'Run configured command presets',
                   'device.lock': 'Lock this device',
-                  'device.unlock':
-                      'Request unlock (device authentication required)',
+                  if (_data['device']['platform'] != 'windows')
+                    'device.unlock':
+                        'Request unlock (device authentication required)',
                 }.entries)
                   SwitchListTile(
                     title: Text(entry.value),
