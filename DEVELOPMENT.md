@@ -247,3 +247,20 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   and all 16 packaged 64-bit native ELF alignment checks pass.
 - Installed and launched the universal release APK on the connected Android 16
   phone after testing, preserving app data. The connection service is active.
+
+## 19. Authenticated presence and persistent per-device grants
+
+- Added authenticated heartbeat checks and online/offline/last-seen metadata.
+- Added a separate encrypted automatic-grant map. Older one-off file approvals
+  remain one-off; they do not silently migrate into always-allowed access.
+- Explicit device grants enable automatic files, clipboard delivery, audio and
+  camera authorization. Revocation stops associated sessions and queued actions.
+- Added camera signaling, a scoped Shared folder with bounded downloads, and
+  encrypted local command presets. Peers cannot submit arbitrary shell commands.
+- Preset execution has bounded output, a ten-second deadline, process-group
+  cleanup, and permission rechecks while running. Scripts/output stay out of logs.
+- Added permissioned Linux session controls and Android platform-action queues
+  that recheck permission before executing through the native service.
+- Validation: 19 Rust tests and strict Clippy pass; all 13 real-daemon scenarios
+  pass, covering online/offline/reconnect, migration, seamless grants, traversal
+  rejection, scoped downloads, preset execution and immediate command revocation.

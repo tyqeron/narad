@@ -1,3 +1,4 @@
+mod controls;
 mod discovery;
 mod handler;
 mod state;
@@ -123,6 +124,72 @@ pub async fn serve(
             handler::refresh_nearby_pairings(pairing_state.clone()).await;
         }
     });
+    let presence_state = shared.clone();
+    let presence_discovery = discovered.clone();
+    workers.spawn(async move {
+        loop {
+            let candidates = presence_discovery
+                .lock()
+                .unwrap()
+                .values()
+                .map(|(p, _)| p.clone())
+                .collect::<Vec<_>>();
+            let (identity, own, peers) = {
+                let mut state = presence_state.lock().await;
+                for candidate in candidates {
+                    if let Some(record) = state.trust.peers.get_mut(&candidate.device_id) {
+                        if record.peer.public_key == candidate.public_key
+                            && record.peer.certificate_hash == candidate.certificate_hash
+                        {
+                            record.peer.address = candidate.address;
+                            record.peer.port = candidate.port;
+                        }
+                    }
+                }
+                (
+                    state.identity.clone(),
+                    state.own.clone(),
+                    state
+                        .trust
+                        .peers
+                        .values()
+                        .map(|r| r.peer.clone())
+                        .collect::<Vec<_>>(),
+                )
+            };
+            let mut checks = tokio::task::JoinSet::new();
+            for peer in peers {
+                let state = presence_state.clone();
+                let identity = identity.clone();
+                let own = own.clone();
+                checks.spawn(async move {
+                    let online = matches!(
+                        tokio::time::timeout(
+                            Duration::from_secs(3),
+                            transport::remote_call(
+                                &identity,
+                                &own,
+                                &peer,
+                                false,
+                                json!({"op":"ping"})
+                            )
+                        )
+                        .await,
+                        Ok(Ok(_))
+                    );
+                    let mut state = state.lock().await;
+                    if state.trust.peers.get(&peer.device_id).is_some_and(|r| {
+                        r.peer.public_key == peer.public_key
+                            && r.peer.certificate_hash == peer.certificate_hash
+                    }) {
+                        state.note_presence(&peer.device_id, online);
+                    }
+                });
+            }
+            while checks.join_next().await.is_some() {}
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+    });
     if let Some(ready) = ready {
         let _ = ready.send(Ok(()));
     }
@@ -184,25 +251,30 @@ fn spawn_remote(
         let result = tokio::time::timeout(Duration::from_secs(20), async {
             let mut stream = tls.accept(socket).await?;
             let frame: SignedFrame = read_frame(&mut stream).await?;
+            let mut sender = frame.sender.clone();
+            let verification = { frame.verify(&mut shared.lock().await.replay) };
+            if let Ok(ip) = &observed_ip {
+                sender.address = ip.clone();
+            }
+            let result = match verification {
+                Ok(()) => {
+                    controls::remote(shared.clone(), &sender, &frame.payload, file_plane).await
+                }
+                Err(error) => Err(error),
+            };
             let response = {
-                let mut s = shared.lock().await;
-                let result = (|| {
-                    frame.verify(&mut s.replay)?;
-                    let mut sender = frame.sender.clone();
-                    if let Ok(ip) = &observed_ip {
-                        sender.address = ip.clone();
-                    }
-                    handler::remote(&mut s, &sender, &frame.payload, file_plane)
-                })();
+                let mut state = shared.lock().await;
                 let value = match result {
-                    Ok(v) => v,
-                    Err(e) => {
-                        s.event("request.rejected", json!({"error":e.to_string()}));
-                        json!({"ok":false,"error":e.to_string()})
+                    Ok(value) => value,
+                    Err(error) => {
+                        state.event("request.rejected", json!({"error":error.to_string()}));
+                        json!({"ok":false,"error":error.to_string()})
                     }
                 };
-                s.identity
-                    .sign(&s.own, json!({"reply_to":frame.request_id,"result":value}))?
+                state.identity.sign(
+                    &state.own,
+                    json!({"reply_to":frame.request_id,"result":value}),
+                )?
             };
             write_frame(&mut stream, &response).await?;
             Ok::<_, anyhow::Error>(())

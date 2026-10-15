@@ -605,6 +605,7 @@ dependencies = [
  "blake3",
  "clap",
  "fs2",
+ "libc",
  "mdns-sd",
  "narad-core",
  "rand",

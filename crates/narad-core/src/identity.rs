@@ -75,7 +75,14 @@ impl Identity {
             certificate_hash: blake3::hash(&self.certificate).to_hex().to_string(),
             address,
             port,
-            capabilities: vec!["file.transfer".into(), "clipboard.sync".into()],
+            capabilities: vec![
+                "file.transfer".into(),
+                "clipboard.sync".into(),
+                "file.browse".into(),
+                "command.run".into(),
+                "device.lock".into(),
+                "device.unlock".into(),
+            ],
         }
     }
     pub fn sign(&self, peer: &Peer, payload: serde_json::Value) -> Result<SignedFrame> {

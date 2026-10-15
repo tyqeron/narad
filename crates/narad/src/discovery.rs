@@ -65,7 +65,17 @@ pub fn start(peer: &Peer, peers: Discovered) -> Result<ServiceDaemon> {
                         capabilities: get("capabilities")
                             .split(',')
                             .filter(|c| {
-                                ["file.transfer", "clipboard.sync", "audio.output"].contains(c)
+                                [
+                                    "file.transfer",
+                                    "clipboard.sync",
+                                    "audio.output",
+                                    "camera.stream",
+                                    "file.browse",
+                                    "command.run",
+                                    "device.lock",
+                                    "device.unlock",
+                                ]
+                                .contains(c)
                             })
                             .map(String::from)
                             .collect(),

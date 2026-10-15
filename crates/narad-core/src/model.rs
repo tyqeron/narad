@@ -150,6 +150,8 @@ pub struct TrustRecord {
 pub struct TrustState {
     pub peers: BTreeMap<String, TrustRecord>,
     pub permissions: BTreeMap<String, bool>,
+    #[serde(default)]
+    pub automatic: BTreeMap<String, bool>,
 }
 
 #[cfg(test)]

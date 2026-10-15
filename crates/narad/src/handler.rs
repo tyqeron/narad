@@ -28,7 +28,17 @@ fn number(v: &Value, key: &str) -> Result<u64> {
 fn capability(v: &Value) -> Result<&str> {
     let c = string(v, "capability")?;
     ensure!(
-        ["file.transfer", "clipboard.sync", "audio.output"].contains(&c),
+        [
+            "file.transfer",
+            "clipboard.sync",
+            "audio.output",
+            "camera.stream",
+            "file.browse",
+            "command.run",
+            "device.lock",
+            "device.unlock"
+        ]
+        .contains(&c),
         "unsupported capability"
     );
     Ok(c)
@@ -152,6 +162,7 @@ pub fn remote(s: &mut State, peer: &Peer, p: &Value, file_plane: bool) -> Result
         record.peer.address = peer.address.clone();
         record.peer.port = peer.port;
     }
+    s.note_presence(&peer.device_id, true);
     match op {
         "ping" => Ok(json!({"ok":true,"device":s.own})),
         "file_offer" => {
@@ -171,6 +182,13 @@ pub fn remote(s: &mut State, peer: &Peer, p: &Value, file_plane: bool) -> Result
                 s.transfers.len() < 256,
                 "transfer history full; archive completed transfers before receiving more"
             );
+            ensure!(
+                s.trust
+                    .permissions
+                    .get(&permission_key(&peer.device_id, "file.transfer"))
+                    != Some(&false),
+                "file transfer permission denied"
+            );
             let t = Transfer {
                 id: id.into(),
                 peer_id: peer.device_id.clone(),
@@ -183,9 +201,12 @@ pub fn remote(s: &mut State, peer: &Peer, p: &Value, file_plane: bool) -> Result
             };
             t.validate()?;
             t.persist(&s.dir.join("transfers"), &s.identity.storage_key())?;
-            s.transfers.insert(id.into(), t.clone());
+            s.transfers.insert(id.into(), t);
             s.event("file.offered", json!({"id":id,"peer_id":peer.device_id}));
-            Ok(json!({"ok":true,"transfer":t}))
+            if s.automatic(&peer.device_id, "file.transfer") {
+                s.approve_file(id)?;
+            }
+            Ok(json!({"ok":true,"transfer":s.transfers[id]}))
         }
         "file_chunk" | "file_finish" => {
             let id = string(p, "id")?;
@@ -227,7 +248,12 @@ pub fn remote(s: &mut State, peer: &Peer, p: &Value, file_plane: bool) -> Result
                     id: id.clone(),
                     peer_id: peer.device_id.clone(),
                     text: text.into(),
-                    status: "pending".into(),
+                    status: if s.automatic(&peer.device_id, "clipboard.sync") {
+                        "automatic"
+                    } else {
+                        "pending"
+                    }
+                    .into(),
                     expires_at: now() + 120,
                 },
             );
@@ -235,10 +261,29 @@ pub fn remote(s: &mut State, peer: &Peer, p: &Value, file_plane: bool) -> Result
             Ok(json!({"ok":true,"id":id}))
         }
         "media_offer" => {
-            ensure!(s.media_ready, "audio client is not connected");
+            let cap = if p["kind"] == "camera" {
+                "camera.stream"
+            } else {
+                "audio.output"
+            };
+            ensure!(
+                if cap == "camera.stream" {
+                    s.camera_ready
+                } else {
+                    s.media_ready
+                },
+                "media must be enabled on the receiving device"
+            );
+            ensure!(
+                s.trust
+                    .permissions
+                    .get(&permission_key(&peer.device_id, cap))
+                    != Some(&false),
+                "media permission denied"
+            );
             let id = string(p, "id")?;
             ensure!(uuid::Uuid::parse_str(id).is_ok(), "invalid session ID");
-            s.new_session(id, &peer.device_id, "audio.output", false)?;
+            s.new_session(id, &peer.device_id, cap, s.automatic(&peer.device_id, cap))?;
             s.event("media.requested", json!({"id":id,"peer_id":peer.device_id}));
             Ok(ok())
         }
@@ -254,9 +299,22 @@ pub fn remote(s: &mut State, peer: &Peer, p: &Value, file_plane: bool) -> Result
             Ok(json!({"ok":true,"session":session}))
         }
         "media_signal" => {
-            ensure!(s.media_ready, "audio client disconnected");
             let id = string(p, "id")?;
-            s.session(id, peer, "audio.output")?;
+            let cap = s
+                .sessions
+                .get(id)
+                .context("unknown session")?
+                .capability
+                .clone();
+            ensure!(
+                if cap == "camera.stream" {
+                    s.camera_ready
+                } else {
+                    s.media_ready
+                },
+                "media client disconnected"
+            );
+            s.session(id, peer, &cap)?;
             ensure!(
                 serde_json::to_vec(&p["data"])?.len() <= 65536 && p["data"].is_object(),
                 "invalid media signal"
@@ -299,6 +357,13 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
             | "media_send"
             | "session_stop"
             | "ping_peer"
+            | "browse_peer"
+            | "read_shared"
+            | "download_shared"
+            | "run_command"
+            | "list_commands"
+            | "device_action"
+            | "device_action_status"
     ) {
         return outgoing(shared, &op, &p).await;
     }
@@ -309,8 +374,95 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
             let offset = p["offset"].as_u64().unwrap_or(0) as usize;
             let clipboard=s.clipboard.values().skip(offset).take(32).map(|c|json!({"id":c.id,"peer_id":c.peer_id,"status":c.status,"preview":c.text.chars().take(160).collect::<String>(),"expires_at":c.expires_at})).collect::<Vec<_>>();
             Ok(
-                json!({"ok":true,"device":s.own,"paired":s.trust.peers.iter().skip(offset).take(32).collect::<std::collections::BTreeMap<_,_>>(),"permissions":s.trust.permissions.iter().skip(offset).take(96).collect::<std::collections::BTreeMap<_,_>>(),"pairings":s.pairings.values().skip(offset).take(32).collect::<Vec<_>>(),"transfers":s.transfers.values().skip(offset).take(32).collect::<Vec<_>>(),"sessions":s.sessions.values().skip(offset).take(32).collect::<Vec<_>>(),"clipboard":clipboard,"events":s.events.iter().rev().take(20).collect::<Vec<_>>(),"outbound":s.outbound.values().skip(offset).take(32).collect::<Vec<_>>(),"media_ready":s.media_ready,"offset":offset,"has_more":([s.trust.peers.len(),s.pairings.len(),s.transfers.len(),s.sessions.len(),s.clipboard.len(),s.outbound.len()].into_iter().max().unwrap_or(0)>offset+32)}),
+                json!({"ok":true,"device":s.own,"paired":s.trust.peers.iter().skip(offset).take(32).collect::<std::collections::BTreeMap<_,_>>(),"automatic_permissions":s.trust.automatic.iter().skip(offset).take(256).collect::<std::collections::BTreeMap<_,_>>(),"presence":s.presence,"shared_directory":s.dir.join("shared"),"commands":s.commands.values().collect::<Vec<_>>(),"permissions":s.trust.permissions.iter().skip(offset).take(96).collect::<std::collections::BTreeMap<_,_>>(),"pairings":s.pairings.values().skip(offset).take(32).collect::<Vec<_>>(),"transfers":s.transfers.values().skip(offset).take(32).collect::<Vec<_>>(),"sessions":s.sessions.values().skip(offset).take(32).collect::<Vec<_>>(),"clipboard":clipboard,"events":s.events.iter().rev().take(100).collect::<Vec<_>>(),"outbound":s.outbound.values().skip(offset).take(32).collect::<Vec<_>>(),"media_ready":s.media_ready,"camera_ready":s.camera_ready,"offset":offset,"has_more":([s.trust.peers.len(),s.pairings.len(),s.transfers.len(),s.sessions.len(),s.clipboard.len(),s.outbound.len()].into_iter().max().unwrap_or(0)>offset+32)}),
             )
+        }
+        "command_set" => {
+            ensure!(
+                s.commands.len() < 32
+                    || p["id"]
+                        .as_str()
+                        .is_some_and(|id| s.commands.contains_key(id)),
+                "maximum 32 command presets"
+            );
+            let id = p["id"]
+                .as_str()
+                .map(str::to_owned)
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+            ensure!(uuid::Uuid::parse_str(&id).is_ok(), "invalid command ID");
+            let label = string(&p, "label")?.trim();
+            let script = string(&p, "script")?;
+            ensure!(
+                !label.is_empty()
+                    && label.len() <= 80
+                    && !script.trim().is_empty()
+                    && script.len() <= 4096
+                    && !script.contains('\0'),
+                "invalid command preset"
+            );
+            let mut commands = s.commands.clone();
+            commands.insert(
+                id.clone(),
+                crate::state::SavedCommand {
+                    id: id.clone(),
+                    label: label.into(),
+                    script: script.into(),
+                },
+            );
+            narad_core::storage::save_encrypted(
+                &s.dir.join("commands.json.enc"),
+                &s.identity.storage_key(),
+                &commands,
+            )?;
+            s.commands = commands;
+            Ok(json!({"ok":true,"id":id}))
+        }
+        "command_remove" => {
+            let mut commands = s.commands.clone();
+            commands
+                .remove(string(&p, "id")?)
+                .context("unknown command")?;
+            narad_core::storage::save_encrypted(
+                &s.dir.join("commands.json.enc"),
+                &s.identity.storage_key(),
+                &commands,
+            )?;
+            s.commands = commands;
+            Ok(ok())
+        }
+        "platform_events" => crate::controls::platform_events(&mut s),
+        "platform_error" => {
+            ensure!(p["kind"] == "clipboard.failed", "unknown platform error");
+            s.event("clipboard.failed", json!({}));
+            Ok(ok())
+        }
+        "platform_validate" => {
+            let action = s
+                .platform_actions
+                .get(string(&p, "id")?)
+                .context("action expired")?;
+            ensure!(action.status == "dispatched", "action no longer pending");
+            s.trust
+                .authorize(&s.peer(&action.peer_id)?, &action.capability, true)?;
+            Ok(ok())
+        }
+        "platform_result" => {
+            let id = string(&p, "id")?;
+            let action = s.platform_actions.get_mut(id).context("action expired")?;
+            ensure!(action.status == "dispatched", "action not dispatched");
+            action.status = if p["success"] == true {
+                "completed"
+            } else {
+                "failed"
+            }
+            .into();
+            action.message = p["message"]
+                .as_str()
+                .unwrap_or("")
+                .chars()
+                .take(256)
+                .collect();
+            Ok(ok())
         }
         "network_address" => {
             let mut peer = s.own.clone();
@@ -394,8 +546,41 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
                 .as_bool()
                 .context("missing permission decision")?;
             s.trust.permissions.insert(permission_key(id, cap), allow);
+            let automatic = allow && p["automatic"].as_bool().unwrap_or(true);
+            s.trust.automatic.insert(permission_key(id, cap), automatic);
             s.save_trust()?;
+            if automatic && cap == "file.transfer" {
+                let pending = s
+                    .transfers
+                    .values()
+                    .filter(|t| t.peer_id == id && t.status == "pending")
+                    .map(|t| t.id.clone())
+                    .collect::<Vec<_>>();
+                for transfer in pending {
+                    s.approve_file(&transfer)?;
+                }
+            }
+            if automatic && ["audio.output", "camera.stream"].contains(&cap) {
+                for session in s.sessions.values_mut().filter(|t| {
+                    t.peer_id == id && t.capability == cap && t.state == SessionState::Requested
+                }) {
+                    session.transition(SessionState::Authorized)?;
+                }
+            }
+            if automatic && cap == "clipboard.sync" {
+                for offer in s.clipboard.values_mut().filter(|c| c.peer_id == id) {
+                    offer.status = "automatic".into();
+                }
+            }
             if !allow {
+                for action in s.platform_actions.values_mut().filter(|a| {
+                    a.peer_id == id
+                        && a.capability == cap
+                        && ["pending", "dispatched"].contains(&a.status.as_str())
+                }) {
+                    action.status = "failed".into();
+                    action.message = "Permission revoked".into();
+                }
                 for session in s.sessions.values_mut() {
                     if session.peer_id == id && session.capability == cap {
                         session.close();
@@ -418,6 +603,10 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
             s.trust
                 .permissions
                 .retain(|k, _| !k.starts_with(&format!("{id}/")));
+            s.trust
+                .automatic
+                .retain(|k, _| !k.starts_with(&format!("{id}/")));
+            s.presence.remove(id);
             s.save_trust()?;
             for session in s.sessions.values_mut() {
                 if session.peer_id == id {
@@ -437,19 +626,7 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
                 .permissions
                 .insert(permission_key(&peer.device_id, "file.transfer"), true);
             s.save_trust()?;
-            let dir = s.dir.join("transfers");
-            let key = s.identity.storage_key();
-            s.transfers.get_mut(id).unwrap().approve(&dir, &key)?;
-            s.new_session(id, &peer.device_id, "file.transfer", true)?;
-            let session = s.sessions.get_mut(id).unwrap();
-            for state in [
-                SessionState::Negotiating,
-                SessionState::Connected,
-                SessionState::Active,
-            ] {
-                session.transition(state)?;
-            }
-            s.event("file.accepted", json!({"id":id}));
+            s.approve_file(id)?;
             Ok(ok())
         }
         "archive_transfer" => {
@@ -514,7 +691,10 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
                 .clone();
             let peer = s.peer(&offer.peer_id)?;
             s.session(id, &peer, "clipboard.sync")?;
-            ensure!(offer.status == "pending", "clipboard already handled");
+            ensure!(
+                ["pending", "automatic"].contains(&offer.status.as_str()),
+                "clipboard already handled"
+            );
             s.clipboard.remove(id);
             s.sessions.get_mut(id).unwrap().close();
             s.event("clipboard.accepted", json!({"id":id}));
@@ -529,37 +709,47 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
             Ok(ok())
         }
         "media_ready" => {
-            s.media_ready = p["ready"].as_bool().context("missing ready flag")?;
+            s.media_ready = p["audio_ready"]
+                .as_bool()
+                .unwrap_or(p["ready"].as_bool().unwrap_or(false));
+            s.camera_ready = p["camera_ready"].as_bool().unwrap_or(false);
             s.media_seen = now();
-            if s.media_ready {
-                if !s.own.capabilities.iter().any(|c| c == "audio.output") {
-                    s.own.capabilities.push("audio.output".into());
+            for (cap, ready) in [
+                ("audio.output", s.media_ready),
+                ("camera.stream", s.camera_ready),
+            ] {
+                if ready && !s.own.capabilities.iter().any(|c| c == cap) {
+                    s.own.capabilities.push(cap.into());
                 }
-            } else {
-                s.own.capabilities.retain(|c| c != "audio.output");
-            }
-            if !s.media_ready {
-                for session in s.sessions.values_mut() {
-                    if session.capability == "audio.output" {
+                if !ready {
+                    s.own.capabilities.retain(|c| c != cap);
+                    for session in s.sessions.values_mut().filter(|s| s.capability == cap) {
                         session.close();
                     }
                 }
-                s.signals.clear();
             }
+            let active = s
+                .sessions
+                .iter()
+                .filter(|(_, s)| s.state != SessionState::Closed)
+                .map(|(id, _)| id.clone())
+                .collect::<Vec<_>>();
+            s.signals
+                .retain(|signal| active.contains(&signal.session_id));
             Ok(ok())
         }
         "media_accept" => {
-            ensure!(s.media_ready, "audio client is not connected");
             let id = string(&p, "id")?;
             let session = s.sessions.get(id).context("unknown session")?.clone();
             let peer = s.peer(&session.peer_id)?;
             ensure!(
-                session.capability == "audio.output" && session.state == SessionState::Requested,
+                ["audio.output", "camera.stream"].contains(&session.capability.as_str())
+                    && session.state == SessionState::Requested,
                 "media is not awaiting approval"
             );
             s.trust
                 .permissions
-                .insert(permission_key(&peer.device_id, "audio.output"), true);
+                .insert(permission_key(&peer.device_id, &session.capability), true);
             s.save_trust()?;
             s.sessions
                 .get_mut(id)
@@ -583,7 +773,7 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
             let next: SessionState = serde_json::from_value(p["state"].clone())?;
             let session = s.sessions.get(id).context("unknown session")?.clone();
             let peer = s.peer(&session.peer_id)?;
-            s.session(id, &peer, "audio.output")?;
+            s.session(id, &peer, &session.capability)?;
             s.sessions.get_mut(id).unwrap().transition(next)?;
             Ok(ok())
         }
@@ -797,6 +987,9 @@ async fn outgoing(shared: Arc<Mutex<State>>, op: &str, p: &Value) -> Result<Valu
         s.event("pairing.completed", json!({"peer_id":pair.peer.device_id}));
         return Ok(ok());
     }
+    if op == "download_shared" {
+        return crate::controls::download(shared, p).await;
+    }
     if op == "send_file" {
         return send_file(shared, p).await;
     }
@@ -811,7 +1004,15 @@ async fn outgoing(shared: Arc<Mutex<State>>, op: &str, p: &Value) -> Result<Valu
     let payload = match op {
         "send_clipboard" => json!({"op":"clipboard_offer","text":p["text"]}),
         "ping_peer" => json!({"op":"ping"}),
-        "media_start" => json!({"op":"media_offer","id":uuid::Uuid::new_v4().to_string()}),
+        "read_shared" => json!({"op":"shared_read","path":p["path"],"offset":p["offset"]}),
+        "browse_peer" => json!({"op":"browse","path":p["path"]}),
+        "list_commands" => json!({"op":"command_list"}),
+        "run_command" => json!({"op":"command","id":p["id"]}),
+        "device_action" => json!({"op":"device_action","kind":p["kind"]}),
+        "device_action_status" => json!({"op":"device_action_status","id":p["id"]}),
+        "media_start" => {
+            json!({"op":"media_offer","id":uuid::Uuid::new_v4().to_string(),"kind":p["kind"]})
+        }
         "media_poll" => json!({"op":"media_status","id":p["id"]}),
         "media_send" => json!({"op":"media_signal","id":p["id"],"data":p["data"]}),
         "session_stop" => json!({"op":"session_close","id":p["id"]}),
@@ -834,16 +1035,33 @@ async fn outgoing(shared: Arc<Mutex<State>>, op: &str, p: &Value) -> Result<Valu
     let mut s = shared.lock().await;
     if op == "media_start" {
         let id = string(&payload, "id")?;
-        s.new_session(id, peer_id, "audio.output", false)?;
+        let cap = if p["kind"] == "camera" {
+            "camera.stream"
+        } else {
+            "audio.output"
+        };
+        s.new_session(id, peer_id, cap, false)?;
         return Ok(json!({"ok":true,"id":id}));
     }
     if op == "media_poll" {
         let id = string(p, "id")?;
+        let expected_cap = s
+            .sessions
+            .get(id)
+            .context("unknown local session")?
+            .capability
+            .clone();
+        ensure!(
+            ["audio.output", "camera.stream"].contains(&expected_cap.as_str())
+                && result["session"]["capability"] == expected_cap
+                && result["session"]["id"] == id,
+            "media response does not match local session"
+        );
         let state: SessionState = serde_json::from_value(result["session"]["state"].clone())?;
         if state == SessionState::Authorized {
             s.trust
                 .permissions
-                .insert(permission_key(peer_id, "audio.output"), true);
+                .insert(permission_key(peer_id, &expected_cap), true);
             s.save_trust()?;
             if let Some(session) = s.sessions.get_mut(id) {
                 if session.state == SessionState::Requested {

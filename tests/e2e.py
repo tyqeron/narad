@@ -144,6 +144,96 @@ class NaradIntegration(unittest.TestCase):
         self.assertFalse(self.a.call(op="status")["paired"])
         self.assertFalse(self.b.call(op="status")["paired"])
 
+    def wait_for(self, predicate, message, timeout=15):
+        deadline = time.monotonic() + timeout
+        while not predicate():
+            self.assertLess(time.monotonic(), deadline, message)
+            time.sleep(0.1)
+
+    def test_authenticated_presence_detects_offline_and_reconnect(self):
+        self.pair()
+        self.wait_for(lambda: self.a.call(op="status")["presence"].get(self.bid, {}).get("online"), "peer not online")
+        self.b.stop()
+        self.wait_for(lambda: not self.a.call(op="status")["presence"][self.bid]["online"], "peer not offline")
+        self.assertIsNotNone(self.a.call(op="status")["presence"][self.bid]["last_seen"])
+        self.b.start()
+        self.wait_for(lambda: self.a.call(op="status")["presence"][self.bid]["online"], "peer not online after restart")
+
+    def test_persistent_grants_remove_file_clipboard_and_media_prompts(self):
+        self.pair()
+        source = self.root / "automatic.bin"
+        source.write_bytes(os.urandom(128 * 1024 + 7))
+        self.b.call(op="permission", peer_id=self.aid, capability="file.transfer", allow=True)
+        sent = self.a.call(op="send_file", peer_id=self.bid, path=str(source))
+        self.assertEqual(sent["status"], "completed")
+        self.assertEqual(Path(sent["path"]).read_bytes(), source.read_bytes())
+        self.b.stop()
+        self.b.start()
+        self.assertEqual(self.a.call(op="send_file", peer_id=self.bid, path=str(source))["status"], "completed")
+        self.b.call(op="permission", peer_id=self.aid, capability="clipboard.sync", allow=True)
+        self.a.call(op="send_clipboard", peer_id=self.bid, text="automatic clipboard fixture")
+        self.assertEqual(self.b.call(op="status")["clipboard"][0]["status"], "automatic")
+        self.assertEqual(self.b.call(op="platform_events")["clipboard"][0]["text"], "automatic clipboard fixture")
+        self.assertEqual(self.b.call(op="platform_events")["clipboard"], [])
+        self.a.call(op="media_ready", ready=True, audio_ready=True, camera_ready=True)
+        self.b.call(op="media_ready", ready=True, audio_ready=True, camera_ready=True)
+        for capability, kind in [("audio.output", "audio"), ("camera.stream", "camera")]:
+            self.b.call(op="permission", peer_id=self.aid, capability=capability, allow=True)
+            offer = self.a.call(op="media_start", peer_id=self.bid, kind=kind)
+            response = self.a.call(op="media_poll", peer_id=self.bid, id=offer["id"])
+            self.assertEqual(response["session"]["state"], "authorized")
+            self.assertEqual(response["session"]["capability"], capability)
+        self.b.call(op="permission", peer_id=self.aid, capability="file.transfer", allow=False)
+        with self.assertRaisesRegex(RuntimeError,"permission denied"):
+            self.a.call(op="send_file", peer_id=self.bid, path=str(source))
+
+    def test_shared_folder_is_scoped_and_downloads_without_prompts(self):
+        self.pair()
+        shared = self.b.state / "shared"
+        shared.mkdir()
+        (shared / "hello.txt").write_bytes(b"shared fixture")
+        (shared / "escape").symlink_to(self.b.state / "api-token")
+        with self.assertRaisesRegex(RuntimeError,"permission denied"):
+            self.a.call(op="browse_peer", peer_id=self.bid, path="")
+        self.b.call(op="permission", peer_id=self.aid, capability="file.browse", allow=True)
+        files = self.a.call(op="browse_peer", peer_id=self.bid, path="")["entries"]
+        self.assertEqual([f["name"] for f in files], ["hello.txt"])
+        for path in ["../api-token", "escape", "/etc/passwd"]:
+            with self.assertRaises(RuntimeError):
+                self.a.call(op="read_shared", peer_id=self.bid, path=path, offset=0)
+        result = self.a.call(op="download_shared", peer_id=self.bid, path="hello.txt")
+        self.assertEqual(Path(result["path"]).read_bytes(), b"shared fixture")
+        self.b.call(op="permission", peer_id=self.aid, capability="file.browse", allow=False)
+        with self.assertRaisesRegex(RuntimeError,"permission denied"):
+            self.a.call(op="browse_peer", peer_id=self.bid, path="")
+
+    def test_only_configured_command_presets_execute_and_revocation_stops_them(self):
+        self.pair()
+        with self.assertRaisesRegex(RuntimeError,"permission denied"):
+            self.a.call(op="list_commands", peer_id=self.bid)
+        preset = self.b.call(op="command_set", label="Fixture", script="printf narad-command-fixture")
+        self.b.call(op="permission", peer_id=self.aid, capability="command.run", allow=True)
+        commands = self.a.call(op="list_commands", peer_id=self.bid)["commands"]
+        self.assertEqual(commands, [{"id":preset["id"], "label":"Fixture"}])
+        result = self.a.call(op="run_command", peer_id=self.bid, id=preset["id"])
+        self.assertEqual(result["stdout"], "narad-command-fixture")
+        self.assertEqual(result["exit_code"], 0)
+        with self.assertRaisesRegex(RuntimeError,"unknown command"):
+            self.a.call(op="run_command", peer_id=self.bid, id="printf not-configured")
+        waiting = self.b.call(op="command_set", label="Wait", script="sleep 30")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            running = pool.submit(self.a.call, op="run_command", peer_id=self.bid, id=waiting["id"])
+            time.sleep(0.5)
+            self.b.call(op="permission", peer_id=self.aid, capability="command.run", allow=False)
+            with self.assertRaisesRegex(RuntimeError,"revoked"):
+                running.result(timeout=5)
+        self.b.stop()
+        self.b.start()
+        self.assertEqual(len(self.b.call(op="status")["commands"]),2)
+        for kind in ["lock", "unlock"]:
+            with self.assertRaisesRegex(RuntimeError,"permission denied"):
+                self.a.call(op="device_action",peer_id=self.bid,kind=kind)
+
     def test_pairing_permissions_clipboard_revocation_and_restart(self):
         self.pair()
         with self.assertRaisesRegex(RuntimeError, "permission denied"):
