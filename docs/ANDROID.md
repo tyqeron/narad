@@ -27,8 +27,9 @@ armeabi-v7a and x86_64. Each installation creates its own Keystore-wrapped ident
    A's Inbox and retry **Send / resume** on B. Use **Save to device** to export it.
 6. Enable **Clipboard** for automatic delivery of manually sent text. Enable
    **Audio** and/or **Camera** grants and the relevant adapter in **Media**; allow
-   the Android microphone/camera prompt and keep the apps foregrounded. **View
-   camera** requests the other device's camera without capturing your own microphone.
+   the Android microphone/camera prompt while Narad is visible. Sharing can then
+   continue in the background with an ongoing notification. **View camera** requests
+   the other device's camera without capturing your own microphone.
 7. In Settings, add files to **Shared folder** for permitted peers to browse and
    download. Browsing is restricted to this app-managed folder. Configure command
    presets on the target; permitted peers can run only those presets, within the
@@ -50,8 +51,10 @@ To test Android against Linux, start the desktop daemon and Flutter client using
 Only pair devices you control and compare codes before approval.
 
 The foreground service keeps control and file listeners available while the UI
-is backgrounded. It does not keep microphone or camera capture running. **Stop Narad** in
-its notification stops the service; reopen/retry in the app to start it again.
+is backgrounded. From build 11, camera/audio enabled while Narad is visible
+remain available through the camera/microphone foreground service and retained
+media engine. The notification reports background media availability. **Stop Narad**
+in its notification stops the service and media; reopen/retry in the app to start it again.
 Android or manufacturer battery management can still terminate the process.
 Accepted transfer checkpoints persist; reopen both apps and use **Send / resume**.
 Clearing app data or uninstalling removes its identity and requires fresh pairing.
@@ -127,7 +130,7 @@ IPv6-only networks are outside the current tested scope.
 ## Platform permission boundaries
 
 Persistent Narad grants remove repeated app-level acceptance. Android still owns
-camera/microphone permissions, foreground capture, notifications and device-admin
+camera/microphone permissions, foreground-service access, notifications and device-admin
 activation. OS restrictions may reject background clipboard updates; failures are
 reported in Activity. Files added to Shared folder are copied into app storage;
 remove that copy to stop exposing it, or revoke browsing. Linux presets run as the
@@ -182,20 +185,24 @@ audio capability and could show `Bad state: capability permission denied` even
 when camera access was allowed.
 
 On the phone, open the tablet's device settings and allow **Share this device’s
-camera**, including Android's camera permission. Keep Narad open on the phone.
+camera**, including Android's camera permission. Enable **Media → Camera sharing**
+while Narad is visible.
 On the tablet, select **View camera** for that phone; video appears in Media.
-Camera sharing stops when the source app is backgrounded.
+The source may then run in the background. After reboot or process termination,
+open Narad again to prepare camera access; it cannot silently start after boot.
+See [camera lifecycle and platform limits](CAMERA.md).
 
 To explicitly test native camera capture and rendering on one Android device:
 
 ```sh
-cd clients/flutter
-flutter test integration_test/android_camera_test.dart -d DEVICE_SERIAL --no-uninstall
+python3 tests/android_camera_tools.py --serial DEVICE_SERIAL --background
 ```
 
 This hardware test opens the camera, exchanges video between two local WebRTC
-connections, checks a rendered frame and stops capture. It never records video
-or sends it off the test device. It is separate from the default smoke tests.
+connections, checks rendered frames, switches lenses, captures PNG and records
+a temporary video through Home/backgrounding. The host retrieves only that named
+test MP4, checks sustained frames and decodes it, then deletes test media. No
+personal media is read. This is separate from the default smoke tests.
 Use a development test device; reinstall the normal release APK afterwards to
 restore the app UI.
 

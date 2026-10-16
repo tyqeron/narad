@@ -158,3 +158,6 @@ screen. Build 10's requester/source behavior is covered by the 37-test client su
 - Screen-off, manufacturer battery policies, long-duration background operation,
   activity removal and Android 16 microphone runtime need further physical QA.
   iOS remains foreground-only; desktop tray behavior is unchanged.
+- Build 11 release APK signature/checksum and ZIP/ELF 16 KiB alignment checks pass.
+  Installed on the tablet; the normal Devices page renders and connected-device +
+  camera foreground types remain active after Home. Phone is not updated in this run.

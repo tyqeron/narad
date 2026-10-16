@@ -625,3 +625,14 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   Temporary recording and host copies are deleted. No phone/contacts permissions
   or default roles are changed. Screen-off/long-duration/activity-removal tests
   remain separate QA; this is a physical media loopback, not a paired-device test.
+
+## 45. Background-media build 11 delivery
+
+- Build 11 universal release APK passes signature, checksum, 16 KiB ZIP alignment
+  and all 16 packaged 64-bit ELF checks, with three embedded backend ABIs.
+- Installed over existing tablet data, restored the normal Devices dashboard,
+  confirmed no Flutter error screen, and verified foreground service type 0x50
+  (connected device + camera) and its ongoing notification persist through Home.
+  Narad is brought back to the foreground at the end. Phone was left untouched.
+- Updated Android setup documentation to replace foreground-only instructions
+  and describe the opt-in physical background-camera harness accurately.
