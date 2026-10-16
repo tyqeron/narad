@@ -566,3 +566,22 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - Tablet contacts list denial/reload checks use generated data. System contact
   editor resolution is confirmed; editor field automation timed out, so native
   contact saving remains manual QA. Existing contacts were not queried or saved.
+
+## 41. Final build 9 delivery and paired-device UI checks
+
+- Universal Android 0.1.0+9 and Linux release installer build. APK signature,
+  checksum, ZIP 16 KiB alignment and all 16 packaged 64-bit ELF libraries verify.
+  Installer checksum and all seven disposable installation/lifecycle tests pass.
+- Build 9 installed over existing data on the Android 15 Xiaomi tablet and
+  Android 16 Nothing A015. Both preserve their paired relationship and appear
+  online after restart. No default roles or OS access grants were changed.
+- Normal tablet app renders the phone's live camera after a remote lens switch.
+  Record/Stop/Save through the real Android picker produces a fully decodable
+  video-only H.264 MP4 at 720 x 1280. Save image through the real picker produces
+  a valid PNG. Only the uniquely named test files and host copies are deleted.
+- Final Flutter analysis and 35 tests pass; native Android tests pass (8). Tablet
+  generated contacts UI verifies denial clears the list and Save is explicit.
+  Existing address books are not read or modified. Native contact save/account
+  selection and full OBS virtual-camera meeting selection remain manual QA.
+- The desktop generated-display integration passes repeated real native frames,
+  feed retrieval and MP4 decoding. Windows/iOS native runtime remains unverified.

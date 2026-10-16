@@ -129,3 +129,9 @@ native H.264 recording with host full decode. An isolated animated Xvfb display
 passes repeated native desktop snapshots, localhost feed retrieval and MP4 decode.
 Native contact-editor field automation and saved-contact verification remain manual;
 no existing contacts were read/modified. iOS sources still require Apple validation.
+
+Final normal-app build 9 is installed on both the Xiaomi tablet (Android 15) and
+Nothing A015 (Android 16), preserving their pairing. The tablet displays the phone
+camera after remote lens switching and saves valid PNG and fully decodable
+720 × 1280 video-only H.264 via actual system save dialogs. Generated test files
+were removed. Final Android unit tests (8) and all seven Linux installer checks pass.

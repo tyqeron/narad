@@ -18,6 +18,9 @@ Camera sessions now show a local source preview and identify the connected devic
   recorder; desktop uses FFmpeg with libx264 on PATH, capturing up to eight frames
   per second. Desktop recordings use wall-clock timestamps; slow capture reduces frame rate.
 
+On mobile, opening a system save picker can end the foreground camera session.
+The captured image/video can still be saved; reopen View camera for another capture.
+
 Camera grants allow the viewer to capture/save received video. Use those grants only
 with devices you trust. A session ending/revocation stops frame output and capture;
 files already deliberately saved remain user files.
@@ -65,3 +68,9 @@ device): `FLUTTER_BIN=/opt/flutter/bin/flutter python3 tests/android_camera_tool
 --serial <ADB-IP:port>`. It disables test-app uninstall, verifies temporary native
 video with FFmpeg and removes its test copies. The contacts tablet UI test uses
 generated data only; it does not exercise personal contacts or save a contact.
+
+Build 9 was also checked in the normal tablet UI against a paired Android phone:
+live camera, remote lens switch, Record/Stop/Save and Save image all succeeded.
+The saved H.264 MP4 fully decoded at 720 × 1280 without audio; the saved PNG decoded
+successfully. Uniquely named test files were removed afterward. Existing pairing
+and OS access/role settings were preserved on both devices.
