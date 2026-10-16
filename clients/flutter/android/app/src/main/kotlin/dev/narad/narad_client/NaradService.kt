@@ -33,7 +33,7 @@ class NaradService : Service() {
         fun deviceName(context: Context): String = context.getSharedPreferences("narad",MODE_PRIVATE)
             .getString("device_name",null) ?: "${Build.MANUFACTURER} ${Build.MODEL}".take(80)
     }
-    private val widgetRequests=mutableSetOf<Int>()
+    private var lastConnectionText=""
     private var multicast: WifiManager.MulticastLock? = null
     private var callback: ConnectivityManager.NetworkCallback? = null
     @Volatile private var destroyed = false
@@ -41,7 +41,7 @@ class NaradService : Service() {
     private val platformPoll=object:Runnable {
         override fun run() {
             if(destroyed)return
-            if(state=="running")worker.execute {pollPlatformEvents()}
+            if(state=="running")worker.execute {refreshConnections();pollPlatformEvents()}
             main.postDelayed(this,3000)
         }
     }
@@ -50,12 +50,7 @@ class NaradService : Service() {
         super.onCreate()
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL,"Nearby device connection",NotificationManager.IMPORTANCE_LOW))
-        val open = PendingIntent.getActivity(this,0,Intent(this,MainActivity::class.java),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val stop = PendingIntent.getService(this,1,Intent(this,NaradService::class.java).setAction(STOP),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val notification = Notification.Builder(this,CHANNEL).setContentTitle("Narad is available nearby")
-            .setContentText("Your per-device permissions control incoming connections.")
-            .setSmallIcon(R.drawable.ic_narad_notification).setContentIntent(open).setOngoing(true)
-            .addAction(Notification.Action.Builder(null,"Stop Narad",stop).build()).build()
+        val notification=connectionNotification(null)
         if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIFICATION,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
         else startForeground(NOTIFICATION,notification)
         acquireMulticast()
@@ -63,15 +58,7 @@ class NaradService : Service() {
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == STOP) { stopSelf(); return START_NOT_STICKY }
-        val widgetId=if(intent?.action==CommandWidget.RUN)intent.getIntExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID,-1) else -1
-        if(widgetId>=0 && CommandWidget.valid(this,widgetId) && widgetRequests.add(widgetId)) {
-            // Queue after startup below; repeated taps while running are coalesced.
-            main.post {worker.execute {
-                try {LocalBackendClient.awaitReady(this);CommandWidget.execute(this,widgetId)}
-                catch(_:Exception){CommandWidget.update(this,widgetId,"Open Narad and retry")}
-                finally{main.post{widgetRequests.remove(widgetId)}}
-            }}
-        }
+        if((intent?.action==CommandWidget.REFRESH || intent?.action==CommandWidget.RUN) && state=="running")worker.execute{refreshConnections();CommandWidget.refreshAll(this)}
         if (state == "starting") return START_NOT_STICKY
         if (state == "running" && JSONObject(NativeBackend.status()).optBoolean("running")) return START_NOT_STICKY
         state="starting"; lastError=null
@@ -86,6 +73,7 @@ class NaradService : Service() {
                 check(response.optBoolean("ok")) {response.optString("error","Backend startup failed")}
                 if(destroyed) {NativeBackend.stop();return@execute}
                 state="running"
+                refreshConnections()
                 main.post {if(!destroyed && callback==null) {watchNetwork()}}
             } catch(error:Throwable) {
                 state="error";lastError="Unable to start Narad: ${error.message ?: error.javaClass.simpleName}"
@@ -94,6 +82,49 @@ class NaradService : Service() {
         }
         // A killed process resumes when the user opens Narad; never restart capture silently.
         return START_NOT_STICKY
+    }
+    private fun connectionNotification(names:List<String>?):Notification {
+        val open=PendingIntent.getActivity(this,0,Intent(this,MainActivity::class.java),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val stop=PendingIntent.getService(this,1,Intent(this,NaradService::class.java).setAction(STOP),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val title=if(names==null)"Narad · Checking connections" else DeviceWidgetModel.title(names)
+        val text=if(names==null)"Connecting to your paired devices…" else DeviceWidgetModel.details(names)
+        val expanded=if(names.isNullOrEmpty())text else "Connected devices (${names.size})\n"+names.sortedWith(String.CASE_INSENSITIVE_ORDER).joinToString("\n"){"• $it"}
+        val public=Notification.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_narad_notification).setContentTitle("Narad is running")
+            .setContentText(if(names==null)"Checking connections" else "${names.size} connected devices").build()
+        return Notification.Builder(this,CHANNEL).setContentTitle(title).setContentText(text)
+            .setStyle(Notification.BigTextStyle().bigText(expanded)).setOnlyAlertOnce(true)
+            .setSmallIcon(R.drawable.ic_narad_notification).setContentIntent(open).setOngoing(true).setAutoCancel(false)
+            .setCategory(Notification.CATEGORY_SERVICE).setVisibility(Notification.VISIBILITY_PRIVATE).setPublicVersion(public)
+            .addAction(Notification.Action.Builder(null,"Stop Narad",stop).build()).build()
+    }
+    private fun refreshConnections() {
+        if(destroyed || state!="running")return
+        try {
+            val paired=JSONObject()
+            var presence=JSONObject()
+            var offset=0
+            do {
+                val snapshot=LocalBackendClient.call(this,JSONObject().put("op","status").put("offset",offset),3000)
+                val page=snapshot.getJSONObject("paired")
+                for(id in page.keys())paired.put(id,page.getJSONObject(id))
+                presence=snapshot.optJSONObject("presence") ?: JSONObject()
+                offset+=32
+            }while(snapshot.optBoolean("has_more") && offset<=512)
+            val names=paired.keys().asSequence().filter{presence.optJSONObject(it)?.optBoolean("online")==true}
+                .map{paired.getJSONObject(it).getJSONObject("peer").getString("device_name")}.toList()
+            val text=DeviceWidgetModel.title(names)+DeviceWidgetModel.details(names)
+            if(text!=lastConnectionText) {
+                getSystemService(NotificationManager::class.java).notify(NOTIFICATION,connectionNotification(names))
+                lastConnectionText=text
+            }
+            CommandWidget.updateConnections(this,paired,presence)
+        }catch(_:Exception) {
+            if(lastConnectionText!="checking") {
+                getSystemService(NotificationManager::class.java).notify(NOTIFICATION,connectionNotification(null))
+                lastConnectionText="checking"
+                CommandWidget.disconnected(this)
+            }
+        }
     }
     private fun local(command:JSONObject):JSONObject {
         val token=File(stateDirectory(this),"api-token").readText()
@@ -206,6 +237,7 @@ class NaradService : Service() {
     override fun onDestroy() {
         destroyed=true
         main.removeCallbacks(platformPoll)
+        CommandWidget.disconnected(this)
         if(state!="error")state="stopping"
         callback?.let {try {getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(it)} catch(_:Exception){}}
         callback=null

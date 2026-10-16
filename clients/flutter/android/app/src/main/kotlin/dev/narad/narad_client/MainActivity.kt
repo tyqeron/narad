@@ -58,6 +58,7 @@ class MainActivity : FlutterActivity() {
                         startForegroundService(Intent(this,NaradService::class.java))
                         result.success(mapOf("stateDirectory" to NaradService.stateDirectory(this).absolutePath,"apiPort" to NaradService.API_PORT,"deviceName" to NaradService.deviceName(this)))
                     }
+                    "takeDeviceAction" -> result.success(CommandWidget.takeAction(this,intent))
                     "status" -> result.success(mapOf("state" to NaradService.state,"error" to NaradService.lastError))
                     "stop" -> {stopService(Intent(this,NaradService::class.java));result.success(null)}
                     "setDeviceName" -> {
@@ -81,6 +82,10 @@ class MainActivity : FlutterActivity() {
                 }
             }catch(error:Throwable){result.error("android_backend",error.message ?: "Android operation failed",null)}
         }
+    }
+    override fun onNewIntent(intent:Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
     }
     override fun onRequestPermissionsResult(requestCode:Int,permissions:Array<out String>,grantResults:IntArray) {
         super.onRequestPermissionsResult(requestCode,permissions,grantResults)

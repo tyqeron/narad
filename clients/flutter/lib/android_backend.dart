@@ -35,6 +35,9 @@ class AndroidBackend {
     );
   }
 
+  Future<Map<String, dynamic>?> takeDeviceAction() =>
+      channel.invokeMapMethod<String, dynamic>('takeDeviceAction');
+
   Future<void> stop() async {
     await channel.invokeMethod<void>('stop');
     for (var attempt = 0; attempt < 100; attempt++) {

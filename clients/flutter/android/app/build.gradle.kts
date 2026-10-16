@@ -72,3 +72,7 @@ val buildRustAndroid by tasks.registering(Exec::class) {
 }
 android.sourceSets.getByName("main").jniLibs.srcDir("build/generated/rustJniLibs")
 tasks.named("preBuild").configure { dependsOn(buildRustAndroid) }
+
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+}

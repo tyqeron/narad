@@ -11,6 +11,7 @@ import 'api.dart';
 import 'app_settings.dart';
 import 'audio.dart';
 import 'android_backend.dart';
+import 'device_widget_action.dart';
 import 'windows_backend.dart';
 import 'desktop_integration.dart';
 import 'pairing_scanner.dart';
@@ -101,6 +102,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   DesktopIntegration? _desktop;
   bool? _autostart;
   bool _starting = false;
+  bool _widgetDispatching = false;
   bool _foreground = true;
   bool _restoredMedia = false;
   NaradApi? _api;
@@ -290,6 +292,17 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         _online = true;
         _error = null;
       });
+      if (_android != null && !_busy && !_widgetDispatching && _foreground) {
+        final pending = await _android!.takeDeviceAction();
+        if (pending != null && mounted) {
+          _widgetDispatching = true;
+          unawaited(
+            _run(
+              () => _dispatchWidgetAction(DeviceWidgetAction.parse(pending)),
+            ).whenComplete(() => _widgetDispatching = false),
+          );
+        }
+      }
       try {
         if (!Platform.isAndroid) {
           for (final offer
@@ -339,6 +352,33 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       }
     } finally {
       _refreshing = false;
+    }
+  }
+
+  Future<void> _dispatchWidgetAction(DeviceWidgetAction action) async {
+    final peer = action.peerFrom(_data);
+    switch (action.action) {
+      case 'file':
+        await _sendFile(action.peerId);
+      case 'clipboard':
+        await _sendClipboard(action.peerId);
+      case 'audio':
+        await _audio!.start(action.peerId);
+        if (mounted) setState(() => _page = 3);
+      case 'camera':
+        await _viewCamera(action.peerId);
+      case 'browse':
+        await _browseFiles(peer);
+      case 'command':
+        await _runCommand(peer);
+      case 'lock':
+        await _deviceAction(action.peerId, 'lock');
+      case 'unlock':
+        await _deviceAction(action.peerId, 'unlock');
+      case 'settings':
+        await _permissions(peer);
+      case 'unpair':
+        await _unpair(peer);
     }
   }
 
@@ -609,9 +649,9 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
             _button('Quit Narad', () => _desktop!.quit()),
           ],
           if (_android != null) ...[
-            _section('Home-screen commands'),
+            _section('Home-screen device actions'),
             const Text(
-              'Long-press your Android home screen, choose Widgets → Narad Command, then select a paired device and one of its command presets. Add multiple widgets for quick access. The target must grant command permission.',
+              'Long-press your Android home screen, choose Widgets → Narad Devices, then select a paired device. Its actions appear as a scrollable list. Each action uses the same permissions and pickers as the app.',
             ),
           ],
           if (_online) ...[

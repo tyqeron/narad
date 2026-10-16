@@ -413,3 +413,17 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   pass. No Android device was connected for physical launcher interaction; Windows
   tray/login runtime and real reboot testing remain manual/native CI work. Tests
   never rebooted or locked the user's desktop or captured microphone/camera data.
+
+## 31. Device-action widgets and live connection notification
+
+- Replaced the preset-only widget with a device selector and scrollable icon
+  actions matching the device menu. Existing widget selections migrate in place;
+  command presets are selected only when Run command is tapped.
+- Widget taps open the matching Flutter action using a validated widget identity,
+  private nonce and stored paired target. Offline communication stays disabled;
+  the receiver still rechecks all permissions.
+- Added rounded light/dark layouts, connection status, refresh and reconfiguration.
+- The ongoing foreground notification now shows authenticated connected-device
+  names/count, an expanded list, private lock-screen content and Stop Narad.
+- Validation: 27 Flutter tests/analysis, five native policy tests and Android ARM64
+  debug build pass. Physical interaction and universal release verification follow.

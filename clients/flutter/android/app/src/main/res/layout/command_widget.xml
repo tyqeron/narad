@@ -2,13 +2,16 @@
     android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
     android:orientation="vertical" android:padding="12dp" android:background="@drawable/widget_background">
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical">
-        <TextView android:id="@+id/widget_device" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
-            android:text="Narad Command" android:textColor="@color/widget_text" android:maxLines="1" android:ellipsize="end" android:textStyle="bold" />
-        <ImageButton android:id="@+id/widget_configure" android:layout_width="40dp" android:layout_height="40dp"
-            android:src="@android:drawable/ic_menu_preferences" android:contentDescription="Configure command" android:background="@android:color/transparent" />
+        <ImageView android:layout_width="28dp" android:layout_height="28dp" android:layout_marginEnd="10dp" android:src="@drawable/ic_narad_notification" android:tint="#64B9A7" android:contentDescription="Narad" />
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/widget_device" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Your device" android:textColor="@color/widget_text" android:textSize="17sp" android:textStyle="bold" android:maxLines="1" android:ellipsize="end" />
+            <TextView android:id="@+id/widget_status" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:text="Choose a device to get started" android:textColor="@color/widget_text" android:textSize="11sp" android:maxLines="2" android:ellipsize="end" />
+        </LinearLayout>
+        <ImageButton android:id="@+id/widget_refresh" android:layout_width="40dp" android:layout_height="44dp" android:src="@drawable/widget_refresh" android:contentDescription="Refresh connection" android:background="@android:color/transparent" />
+        <ImageButton android:id="@+id/widget_configure" android:layout_width="40dp" android:layout_height="44dp" android:src="@drawable/widget_settings" android:contentDescription="Choose device" android:background="@android:color/transparent" />
     </LinearLayout>
-    <Button android:id="@+id/widget_run" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="Choose command" android:maxLines="1" android:ellipsize="end" />
-    <TextView android:id="@+id/widget_status" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="Tap to run" android:textColor="@color/widget_text" android:textSize="12sp" android:maxLines="2" android:ellipsize="end" />
+    <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:layout_marginTop="8dp">
+        <ListView android:id="@+id/widget_actions" android:layout_width="match_parent" android:layout_height="match_parent" android:divider="@android:color/transparent" android:dividerHeight="3dp" android:scrollbars="vertical" android:cacheColorHint="@android:color/transparent" />
+        <TextView android:id="@+id/widget_empty" android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center" android:text="Choose a paired device using the settings icon" android:textColor="@color/widget_text" android:padding="12dp" />
+    </FrameLayout>
 </LinearLayout>
