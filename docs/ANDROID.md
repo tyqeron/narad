@@ -138,20 +138,38 @@ See Android's [device locking API](https://developer.android.com/reference/andro
 and [keyguard dismissal API](https://developer.android.com/reference/android/app/KeyguardManager#requestDismissKeyguard(android.app.Activity,%20android.app.KeyguardManager.KeyguardDismissCallback))
 for the system-enforced lock and authentication requirements.
 
-## Home-screen command widgets
+## Home-screen device widget
 
-Long-press an empty area of the Android home screen, open **Widgets**, find
-**Narad Command** and drag it onto the screen. Choose a paired target device,
-then one of that device's saved command presets. The target must be online and
-must grant this Android device **Run configured command presets** permission.
-Configure presets in Settings on the target device first.
+Long-press an empty area of your home screen, choose **Widgets → Narad Devices**,
+and place the widget. Select a paired device: its actions appear immediately as
+a scrollable list with icons. No command preset is required to configure it.
+Resize the widget to show more rows; the header shows the selected device and
+its authenticated online/offline status. The gear changes devices and Refresh
+checks connections.
 
-Each widget runs one preset; add more widgets for other commands/devices. Tap
-its button to run without opening Flutter. The connection service starts if
-needed, and success/failure appears on the widget. The gear reconfigures it.
-Deleting the widget removes its saved selection. Revocation, unpairing or deleting
-a preset prevents subsequent execution. Only preset IDs are stored; scripts and
-command output are not displayed or cached on the home screen. Repeated taps on
-the same widget while its command is executing are coalesced. Native OS/battery
-policies still apply. Widget configuration/launcher behavior needs physical QA
-on the launchers you use.
+The widget offers the same actions as the device menu: files, clipboard, audio,
+camera, browsing, commands, locking, supported unlock requests, device settings
+and unpairing. File pickers, clipboard input, command selection, media and
+confirmation dialogs open in Narad for that selected device. Receiver-side
+permissions still apply. Offline communication actions are disabled; settings
+and unpair remain available. Windows does not offer remote unlock. Existing
+command widgets migrate to the device-action layout using their selected peer.
+
+The foreground-service notification remains ongoing while Narad runs. It shows
+connected-device count and names, with the full list when expanded. Only paired
+devices passing authenticated presence checks count as connected; nearby discovery
+does not. No connected devices and temporary connection checks have explicit
+messages. Names are hidden in the lock-screen public version. Allow Narad
+notifications in Android Settings to see it. Android 14+ may let users dismiss
+ongoing notifications; see [Android's notification behavior](https://developer.android.com/about/versions/14/behavior-changes-all#non-dismissable-notifications).
+
+For generated-fixture physical tests, install the debug APK and use:
+
+```sh
+python3 tests/android_e2e.py --serial DEVICE_SERIAL --pairing nearby --controls --widget
+```
+
+The debug-only widget host tests real collection rows and action routing without
+placing a widget on the user's launcher. It temporarily grants then revokes widget
+binding for Narad, and deletes its own temporary widgets. The release APK contains
+no debug preview activity.

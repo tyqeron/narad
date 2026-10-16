@@ -25,6 +25,7 @@ def main():
     parser.add_argument('--serial', required=True, help='adb device serial')
     parser.add_argument('--pairing', choices=['invitation', 'nearby'], default='invitation')
     parser.add_argument('--controls', action='store_true', help='Also test persistent grants, shared files and command presets')
+    parser.add_argument('--widget', action='store_true', help='Test the debug-only real widget host and connected notification')
     args = parser.parse_args()
     adb = ['adb', '-s', args.serial]
 
@@ -241,6 +242,59 @@ def main():
                     # Remove generated records while this temporary pairing is valid.
                     cleanup_automatic()
                     phone(op='command_remove', id=preset['id'])
+                if args.widget:
+                    import re
+                    import xml.etree.ElementTree as ET
+                    run('shell', 'appwidget', 'grantbind', '--package', PACKAGE)
+                    try:
+                        deadline=time.monotonic()+20
+                        while not phone(op='status')['presence'].get(host_id,{}).get('online'):
+                            if time.monotonic()>deadline:raise RuntimeError('Widget target not online')
+                            time.sleep(0.2)
+                        run('shell','am','start','-W','-n',f'{PACKAGE}/.WidgetPreviewActivity','--es','peer_id',host_id)
+                        def ui():
+                            run('shell','uiautomator','dump','/data/local/tmp/narad-widget-test.xml')
+                            return ET.fromstring(run('exec-out','cat','/data/local/tmp/narad-widget-test.xml'))
+                        deadline=time.monotonic()+25
+                        while True:
+                            tree=ui()
+                            labels={node.get('text') for node in tree.iter('node')}
+                            if 'Send file' in labels and 'Run command' in labels:break
+                            if time.monotonic()>deadline:raise RuntimeError('Widget action rows did not inflate: '+str(labels))
+                            time.sleep(0.5)
+                        Path('/tmp/narad-device-widget.png').write_bytes(run('exec-out','screencap','-p'))
+                        print('PASS real widget host renders device actions without requiring command presets')
+                        if 'Device settings' not in labels:
+                            view=next(node for node in tree.iter('node') if node.get('resource-id','').endswith('/widget_actions'))
+                            x1,y1,x2,y2=map(int,re.findall(r'\d+',view.get('bounds')))
+                            run('shell','input','swipe',str((x1+x2)//2),str(y2-30),str((x1+x2)//2),str(y1+30),'400')
+                            tree=ui()
+                        settings=next(node for node in tree.iter('node') if node.get('text')=='Device settings')
+                        x1,y1,x2,y2=map(int,re.findall(r'\d+',settings.get('bounds')))
+                        run('shell','input','tap',str((x1+x2)//2),str((y1+y2)//2))
+                        deadline=time.monotonic()+20
+                        while True:
+                            tree=ui()
+                            if any('Permissions · Narad Android test' in (node.get('text','')+node.get('content-desc','')) for node in tree.iter('node')):break
+                            if time.monotonic()>deadline:
+                                Path('/tmp/narad-widget-routing.xml').write_bytes(ET.tostring(tree))
+                                raise RuntimeError('Widget settings action did not route to its paired device')
+                            time.sleep(0.3)
+                        print('PASS widget action opens settings for the selected paired device')
+                        keys=run('shell','cmd','notification','list').decode().splitlines()
+                        key=next((k.strip() for k in keys if PACKAGE in k and '|81|' in k),None)
+                        assert key, 'Narad foreground connection notification is missing'
+                        import shlex
+                        detail=run('shell','cmd','notification','get',shlex.quote(key)).decode()
+                        assert 'Narad Android test' in detail,detail
+                        print('PASS persistent notification names the authenticated connected device')
+                    finally:
+                        run('shell','input','keyevent','KEYCODE_BACK')
+                        run('shell','am','start','-W','-n',f'{PACKAGE}/.WidgetPreviewActivity','--activity-clear-top')
+                        run('shell','input','keyevent','KEYCODE_BACK')
+                        run('shell','appwidget','revokebind','--package',PACKAGE)
+                        run('shell','rm','-f','/data/local/tmp/narad-widget-test.xml')
+                        run('shell','am','start','-n',f'{PACKAGE}/.MainActivity')
                 phone(op='unpair', peer_id=host_id)
                 cleanup.pop(0)
                 try:

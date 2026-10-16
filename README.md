@@ -104,8 +104,9 @@ Standalone short-code discovery is not yet implemented.
 
 Desktop installations start quietly after login and stay connected when their
 window closes. Reopen Narad from the menu/tray; use **Quit Narad** to exit.
-**Settings → Start after login** controls startup. On Android, add **Narad Command**
-from your launcher's Widgets picker to run a paired device's preset from home.
+**Settings → Start after login** controls startup. On Android, add **Narad Devices**
+from your launcher's Widgets picker to access a paired device's actions from home.
+The ongoing Android notification lists authenticated connected devices.
 
 ## CLI
 

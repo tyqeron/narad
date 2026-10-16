@@ -427,3 +427,19 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   names/count, an expanded list, private lock-screen content and Stop Narad.
 - Validation: 27 Flutter tests/analysis, five native policy tests and Android ARM64
   debug build pass. Physical interaction and universal release verification follow.
+
+## 32. Physical widget regression checks and Android delivery
+
+- Added a debug-only AppWidgetHost fixture and repeatable tablet checks for real
+  RemoteViews rows, scrolling, selected-device action routing and the ongoing
+  notification's connected-device name. Flutter labels are asserted through their
+  accessibility content descriptions. Fixture widgets/peers/grants are cleaned up.
+- All 15 nearby Android/Linux scenarios pass on the Android 15/API 35 tablet,
+  including trust after process restart, bidirectional files, automatic grants,
+  scoped browse/download, command presets and background pairing completion.
+- Five native widget policy tests pass and run in Android CI; 27 Flutter tests and
+  analysis pass. Media capture and actual device locking were not automated.
+- Universal 0.1.0+6 release packages three backend ABIs; signature, checksum,
+  16 KiB ZIP alignment and all 16 packaged 64-bit ELF libraries verify. Release
+  manifest excludes the debug host. Android 14+ OS dismissal rules still apply
+  to ongoing notifications; device names are hidden in public lock-screen content.
