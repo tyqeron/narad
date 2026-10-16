@@ -13,7 +13,7 @@ baseline. This document describes the actual implementation.
 | Files | Persistent per-peer auto-grants or per-offer acceptance, scoped Shared-folder browsing, separate TLS plane, bounded checksummed chunks, resume/retry, cancellation, archive | Performance tuning, streaming transport optimization, disk quota management |
 | Clipboard | Opt-in receive permission, manual sending, persistent automatic receive grants or one-off acceptance, native system clipboard write | Optional background monitoring with platform privacy policies |
 | Audio | Flutter WebRTC microphone-to-speaker adapter, LAN host candidates, authorized signaling, stop/cleanup | Physical audio/latency tests, reconnection, output selection and diagnostics |
-| Camera | Permissioned WebRTC viewing, lens switching, source preview, PNG/MP4 saving and localhost OBS desktop feed | End-to-end OBS call-app selection, Windows/iOS runtime and physical quality matrix |
+| Camera | Permissioned WebRTC viewing, lens switching, requester-only preview, PNG/MP4 saving and localhost OBS desktop feed | End-to-end OBS call-app selection, Windows/iOS runtime and physical quality matrix |
 | Controls | Locally configured command presets, bounded execution, Android force-lock and unlock-authentication notification, Linux loginctl | Physical lock/unlock matrix and desktop-session support |
 | Flutter client | Nearby/online/offline dashboard, per-device settings, saved Device/Light/Dark themes, grouped activity, Media, Inbox and transfers | Platform packaging/installers, accessibility/device QA |
 | Linux | Native builds, installer, tray/close-to-background, opt-out-aware login startup, isolated GTK hide/reopen tests, real daemon integration | Packaged release and physical two-machine media QA |
@@ -33,7 +33,7 @@ baseline. This document describes the actual implementation.
   automatic grants, scoped browsing, preset command execution/revocation, and
   camera-only signaling with audio denied and camera revocation, phone permission separation, ephemeral dispatch and revocation, and separate contacts access. The latest fix
   run passed 16 cases with the multicast case skipped; multicast passed previously.
-- Thirty-five Flutter tests: device actions, clipboard acceptance, pairing confirmation,
+- Thirty-seven Flutter tests: device actions, clipboard acceptance, pairing confirmation,
   narrow-screen layout, no media capture before approval, Android readiness,
   shutdown waiting, identity-error propagation, nearby request/accept/cancel UI, themes, grouped activity, per-device grants, validated widget routing, explicit SMS confirmation, sensitive-content clearing and banner deduplication.
 - Eight native Android unit tests cover device actions without presets, platform
@@ -135,3 +135,7 @@ Nothing A015 (Android 16), preserving their pairing. The tablet displays the pho
 camera after remote lens switching and saves valid PNG and fully decodable
 720 × 1280 video-only H.264 via actual system save dialogs. Generated test files
 were removed. Final Android unit tests (8) and all seven Linux installer checks pass.
+
+Build 10 removes the source camera preview. Source devices show the requester and
+a stop control; video and capture/webcam tools appear only on the requesting device.
+Role-specific widget checks and the full 37-test Flutter suite pass.

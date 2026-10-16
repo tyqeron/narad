@@ -31,7 +31,11 @@ class AudioController {
   bool cameraEnabled = false;
 
   CameraTools cameraTools(AudioLink link) {
-    if (!link.camera) throw StateError('Not a camera session');
+    if (!link.camera || !link.outgoing) {
+      throw StateError(
+        'Camera viewing tools are available only on the requesting device',
+      );
+    }
     return link.tools ??= CameraTools(() {
       final tracks =
           (link.microphone ?? link.renderer?.srcObject)?.getVideoTracks() ?? [];
@@ -84,7 +88,6 @@ class AudioController {
           await sender.replaceTrack(replacement.getVideoTracks().first);
           link.microphone = replacement;
           link.cameraDevice = next.deviceId;
-          link.renderer?.srcObject = replacement;
           for (final track in stream.getTracks()) {
             await track.stop();
           }
@@ -295,7 +298,11 @@ class AudioController {
       }
     };
     pc.onTrack = (event) async {
-      if (event.streams.isEmpty || !links.containsKey(link.id)) return;
+      if (event.streams.isEmpty ||
+          !links.containsKey(link.id) ||
+          (link.camera && !link.outgoing)) {
+        return;
+      }
       final renderer = RTCVideoRenderer();
       try {
         await renderer.initialize();
@@ -414,15 +421,6 @@ class AudioController {
           return;
         }
         link.microphone = stream;
-        final preview = RTCVideoRenderer();
-        await preview.initialize();
-        if (!links.containsKey(link.id)) {
-          await preview.dispose();
-          return;
-        }
-        await link.renderer?.dispose();
-        link.renderer = preview;
-        preview.srcObject = stream;
         await api.call({'op': 'session_touch', 'id': link.id});
         for (final track in stream.getVideoTracks()) {
           await link.connection!.addTrack(track, stream);

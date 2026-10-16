@@ -585,3 +585,13 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   selection and full OBS virtual-camera meeting selection remain manual QA.
 - The desktop generated-display integration passes repeated real native frames,
   feed retrieval and MP4 decoding. Windows/iOS native runtime remains unverified.
+
+## 42. Requester-only camera display
+
+- Removed creation of a local video renderer on the camera source and ignore
+  source-side camera onTrack events. Capture and authorized transmission remain.
+- Source UI shows only the requesting device and Stop sharing camera. Video,
+  snapshots, recording and webcam tools are restricted to the requester.
+- Added role-specific UI regression checks; Android version advances to build 10.
+  Flutter analysis and 37 tests pass, including source/requester role checks.
+  Physical delivery is recorded below when complete.

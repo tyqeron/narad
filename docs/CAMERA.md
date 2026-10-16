@@ -3,7 +3,9 @@
 Update both endpoints. On the source device enable **Media → Camera sharing**, allow
 OS camera access, and grant the viewer **Share this device’s camera** in Device
 settings. On the viewer choose **Device actions → View camera**, then open Media.
-Camera sessions now show a local source preview and identify the connected device.
+Video appears only on the requesting device. The source shows a sharing-status
+card identifying the requester and a Stop sharing camera control, without a preview
+or image/recording/webcam controls.
 
 - **Switch camera** changes front/back on mobile, or cycles available webcams on
   desktop. The viewer sends this control through the existing authorized camera

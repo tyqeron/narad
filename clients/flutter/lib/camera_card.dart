@@ -38,6 +38,7 @@ class _CameraCardState extends State<CameraCard> {
   @override
   void initState() {
     super.initState();
+    if (!widget.link.outgoing) return;
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -68,6 +69,33 @@ class _CameraCardState extends State<CameraCard> {
   @override
   Widget build(BuildContext context) {
     final link = widget.link;
+    if (!link.outgoing) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.videocam_outlined),
+                title: Text('Sharing camera with ${widget.name}'),
+                subtitle: const Text(
+                  'Video is shown only on the requesting device.',
+                ),
+              ),
+              TextButton.icon(
+                onPressed: _busy
+                    ? null
+                    : () => _run(() => widget.controller.stop(link.id)),
+                icon: const Icon(Icons.stop_circle_outlined),
+                label: const Text('Stop sharing camera'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     final ready = link.renderer != null && link.renderer!.videoWidth > 0;
     return Card(
       child: Padding(
