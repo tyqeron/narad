@@ -515,3 +515,11 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   Windows backend cross-check passes; new Windows banner native code awaits CI.
 - Full integration rerun passes 15 cases with one opt-in multicast case skipped,
   resolving the transient fixture port collision noted in milestone 35.
+
+## 38. Physical phone setup layout correction
+
+- The Nothing A015 Android 16 setup screen opens from Flutter Settings; access
+  remains disabled and no role/permission was changed. Physical inspection found
+  a status-bar overlap in native activities. Added system-bar insets and modern
+  device-theme controls to setup/dial/in-call screens and clarified audio limits.
+- Final release build and post-update layout verification follow below.

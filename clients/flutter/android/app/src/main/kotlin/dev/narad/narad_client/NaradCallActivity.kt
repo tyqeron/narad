@@ -14,7 +14,7 @@ class NaradCallActivity:Activity() {
     private var speaker=false
     private var muted=false
     private val refresh=object:Runnable {override fun run(){render();main.postDelayed(this,1000)}}
-    override fun onCreate(state:Bundle?){super.onCreate(state);if(android.os.Build.VERSION.SDK_INT>=27){setShowWhenLocked(true);setTurnScreenOn(true)};window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);content=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(32,48,32,32)};setContentView(ScrollView(this).apply{addView(content)})}
+    override fun onCreate(state:Bundle?){super.onCreate(state);if(android.os.Build.VERSION.SDK_INT>=27){setShowWhenLocked(true);setTurnScreenOn(true)};window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);content=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(32,48,32,32)};setPhoneContent(ScrollView(this).apply{addView(content)})}
     override fun onResume(){super.onResume();main.post(refresh)}
     override fun onPause(){main.removeCallbacks(refresh);super.onPause()}
     private fun render(){

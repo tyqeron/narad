@@ -18,6 +18,6 @@ class NaradDialActivity:Activity() {
             getSystemService(TelecomManager::class.java).placeCall(Uri.fromParts("tel",destination,null),Bundle())
         }catch(e:Exception){Toast.makeText(this@NaradDialActivity,e.message,Toast.LENGTH_LONG).show()}}})
         layout.addView(Button(this).apply{text="Active call";setOnClickListener{startActivity(android.content.Intent(this@NaradDialActivity,NaradCallActivity::class.java))}})
-        setContentView(layout)
+        setPhoneContent(layout)
     }
 }

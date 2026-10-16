@@ -16,7 +16,7 @@ class PhoneSetupActivity:Activity() {
     private fun render(){
         val layout=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(32,48,32,32)}
         layout.addView(TextView(this).apply{text="Phone integration";textSize=26f})
-        layout.addView(TextView(this).apply{text="Choose what Narad can access on this phone, then allow each paired device separately in Device settings. SMS and call-log access may be restricted by your installer. Changing the default phone app is optional. Cellular audio needs a Bluetooth hands-free connection; it is not streamed over Wi-Fi."})
+        layout.addView(TextView(this).apply{text="Choose what Narad can access on this phone, then allow each paired device separately in Device settings. SMS and call-log access may be restricted by your installer. Changing the default phone app is optional. Call audio stays on the phone or its existing audio route. Narad desktop call audio is not implemented."})
         layout.addView(Switch(this).apply{text="Enable phone integration";isChecked=PhoneBridge.enabled(this@PhoneSetupActivity);setOnCheckedChangeListener{_,value->getSharedPreferences("narad",MODE_PRIVATE).edit().putBoolean("phone_bridge",value).apply();if(value)startForegroundService(Intent(this@PhoneSetupActivity,NaradService::class.java))}})
         fun button(label:String,action:()->Unit){layout.addView(Button(this).apply{text=label;setOnClickListener{try{action()}catch(e:Exception){Toast.makeText(this@PhoneSetupActivity,e.message,Toast.LENGTH_LONG).show()}}})}
         button("Notification access"){startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))}
@@ -33,7 +33,7 @@ class PhoneSetupActivity:Activity() {
         for((key,label) in listOf("notifications" to "Notification access","sms_read" to "Read SMS","sms_send" to "Send SMS","call_logs" to "Call history","call_control" to "Call controls"))
             layout.addView(TextView(this).apply{text="$label: ${if(status.optBoolean(key))"Ready" else "Not enabled"}"})
         button("Done"){finish()}
-        setContentView(ScrollView(this).apply{addView(layout)})
+        setPhoneContent(ScrollView(this).apply{addView(layout)})
     }
     override fun onRequestPermissionsResult(code:Int,permissions:Array<out String>,results:IntArray){super.onRequestPermissionsResult(code,permissions,results);render()}
 }
