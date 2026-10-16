@@ -600,3 +600,18 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - Final paired-camera UI check was deferred because the phone is on its system
   call screen; no camera session was started and the call was left undisturbed.
   The prior build's paired camera tests remain historical, not build 10 validation.
+
+## 43. Android background media lifecycle
+
+- Keep a process-owned Flutter engine when the Android activity closes, so media
+  signaling/capture survives Home, save pickers and activity recreation.
+- Prepare camera/microphone foreground service types while visible, requesting
+  only the corresponding runtime permissions. Keep the existing ongoing connection
+  notification, show background media availability, and retain a partial wake lock
+  until media is disabled or the service stops. Stop Narad tears down media too.
+- Keep iOS foreground-only behavior and existing Linux/Windows tray operation.
+  Document Android process/reboot/privacy/battery restrictions rather than silently
+  starting camera/microphone after boot. Android version advances to build 11.
+- Flutter analysis and 37 tests pass; Android native compilation/unit tests pass.
+  Add opt-in tablet Home-during-capture validation to the camera host harness;
+  physical verification and release delivery are recorded separately after running.

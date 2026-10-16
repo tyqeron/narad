@@ -21,6 +21,8 @@ import java.util.concurrent.Executors
 /** Owns the Rust runtime independently of an Activity or Flutter engine. */
 class NaradService : Service() {
     companion object {
+        var instance: NaradService? = null
+            private set
         const val STOP = "dev.narad.STOP"
         const val API_PORT = 45700
         const val CONTROL_PORT = 45678
@@ -32,6 +34,23 @@ class NaradService : Service() {
         fun stateDirectory(context: Context) = File(context.noBackupFilesDir,"narad")
         fun deviceName(context: Context): String = context.getSharedPreferences("narad",MODE_PRIVATE)
             .getString("device_name",null) ?: "${Build.MANUFACTURER} ${Build.MODEL}".take(80)
+    }
+    var cameraReady=false
+        private set
+    var audioReady=false
+        private set
+    private var mediaWake:PowerManager.WakeLock?=null
+    fun prepareMedia(camera:Boolean,audio:Boolean) {
+        var types=ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+        if(camera && Build.VERSION.SDK_INT>=30)types=types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+        if(audio && Build.VERSION.SDK_INT>=30)types=types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        if(Build.VERSION.SDK_INT>=29)startForeground(NOTIFICATION,connectionNotification(null),types)
+        cameraReady=camera;audioReady=audio
+        if(camera || audio) {
+            if(mediaWake==null)mediaWake=getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"narad:media").apply {setReferenceCounted(false);acquire()}
+        } else {mediaWake?.release();mediaWake=null}
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION,connectionNotification(null))
+        lastConnectionText=""
     }
     private val phoneSyncWorker=Executors.newSingleThreadExecutor()
     private val phoneSync by lazy{PhoneNotificationSync(this)}
@@ -53,6 +72,7 @@ class NaradService : Service() {
     override fun onBind(intent: Intent?) = null
     override fun onCreate() {
         super.onCreate()
+        instance=this
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL,"Nearby device connection",NotificationManager.IMPORTANCE_LOW))
         val notification=connectionNotification(null)
@@ -93,11 +113,12 @@ class NaradService : Service() {
         val stop=PendingIntent.getService(this,1,Intent(this,NaradService::class.java).setAction(STOP),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val title=if(names==null)"Narad · Checking connections" else DeviceWidgetModel.title(names)
         val text=if(names==null)"Connecting to your paired devices…" else DeviceWidgetModel.details(names)
+        val media=if(cameraReady || audioReady) "Background sharing enabled: "+listOfNotNull(if(cameraReady)"camera" else null,if(audioReady)"microphone" else null).joinToString(", ")+". " else ""
         val expanded=if(names.isNullOrEmpty())text else "Connected devices (${names.size})\n"+names.sortedWith(String.CASE_INSENSITIVE_ORDER).joinToString("\n"){"• $it"}
         val public=Notification.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_narad_notification).setContentTitle("Narad is running")
             .setContentText(if(names==null)"Checking connections" else "${names.size} connected devices").build()
-        return Notification.Builder(this,CHANNEL).setContentTitle(title).setContentText(text)
-            .setStyle(Notification.BigTextStyle().bigText(expanded)).setOnlyAlertOnce(true)
+        return Notification.Builder(this,CHANNEL).setContentTitle(title).setContentText(media+text)
+            .setStyle(Notification.BigTextStyle().bigText(media+expanded)).setOnlyAlertOnce(true)
             .setSmallIcon(R.drawable.ic_narad_notification).setContentIntent(open).setOngoing(true).setAutoCancel(false)
             .setCategory(Notification.CATEGORY_SERVICE).setVisibility(Notification.VISIBILITY_PRIVATE).setPublicVersion(public)
             .addAction(Notification.Action.Builder(null,"Stop Narad",stop).build()).build()
@@ -240,6 +261,10 @@ class NaradService : Service() {
         return "127.0.0.1"
     }
     override fun onDestroy() {
+        instance=null
+        MediaRuntime.serviceStopped()
+        mediaWake?.release();mediaWake=null
+        cameraReady=false;audioReady=false
         phoneSyncWorker.shutdownNow();phoneSync.stop();
         destroyed=true
         main.removeCallbacks(platformPoll)

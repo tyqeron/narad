@@ -20,8 +20,23 @@ or image/recording/webcam controls.
   recorder; desktop uses FFmpeg with libx264 on PATH, capturing up to eight frames
   per second. Desktop recordings use wall-clock timestamps; slow capture reduces frame rate.
 
-On mobile, opening a system save picker can end the foreground camera session.
-The captured image/video can still be saved; reopen View camera for another capture.
+On Android, enable camera/audio sharing while Narad is visible and approve the OS
+permission. The foreground service then keeps media available when you press Home,
+lock the screen, open a save picker, or close the activity. Its persistent connection
+notification identifies background camera/microphone availability; **Stop Narad**
+stops sharing. Per-device camera/audio grants and revocation still apply. Enabling
+sharing does not capture until an authorized session requests it. Keeping media
+available holds a partial wake lock and uses more battery.
+
+Android force-stop, system process termination, reboot, OS privacy switches, another
+app using the camera, and manufacturer battery restrictions can interrupt sharing.
+After a process restart, open Narad to re-enable media: Android requires a visible
+activity to prepare camera/microphone foreground service access. This is not a way
+to bypass runtime permissions or OS clipboard/unlock restrictions.
+
+On iOS, camera/audio sharing remains foreground-only; a system save picker can end
+the session. Reopen View camera for another capture. Linux/Windows keep their
+existing tray/background operation; the desktop session must remain running.
 
 Camera grants allow the viewer to capture/save received video. Use those grants only
 with devices you trust. A session ending/revocation stops frame output and capture;

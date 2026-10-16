@@ -17,6 +17,11 @@ import java.util.UUID
 import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
+    override fun provideFlutterEngine(context:android.content.Context):FlutterEngine = MediaRuntime.engine(context)
+    override fun shouldDestroyEngineWithHost() = false
+    override fun onResume() {super.onResume();MediaRuntime.activity=this;MediaRuntime.visible=true;MediaRuntime.finishPermission(this)}
+    override fun onPause() {MediaRuntime.visible=false;super.onPause()}
+
     private var cameraResult:MethodChannel.Result?=null
     private var adminResult:MethodChannel.Result?=null
     private var exportResult:MethodChannel.Result?=null
@@ -91,6 +96,7 @@ class MainActivity : FlutterActivity() {
     }
     override fun onRequestPermissionsResult(requestCode:Int,permissions:Array<out String>,grantResults:IntArray) {
         super.onRequestPermissionsResult(requestCode,permissions,grantResults)
+        if(requestCode==1905)MediaRuntime.permissionResult(this)
         if(requestCode==1904){val pending=cameraResult;cameraResult=null;pending?.success(grantResults.isNotEmpty() && grantResults[0]==PackageManager.PERMISSION_GRANTED)}
     }
     @Deprecated("Activity result API retained for the FlutterActivity host")
@@ -114,6 +120,8 @@ class MainActivity : FlutterActivity() {
         }
     }
     override fun onDestroy() {
+        flutterEngine?.let { MethodChannel(it.dartExecutor.binaryMessenger,"dev.narad/android").setMethodCallHandler(null) }
+        MediaRuntime.detach(this)
         cameraResult?.error("cancelled","Camera permission cancelled",null);cameraResult=null
         adminResult?.error("cancelled","Device admin setup cancelled",null);adminResult=null
         exportResult?.error("cancelled","Save cancelled",null);exportResult=null;exportSource=null

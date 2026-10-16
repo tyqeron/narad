@@ -195,10 +195,10 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     if (_android == null) return;
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
-      // Background availability is for control/files. Microphone capture stays foreground-only.
+      // Android keeps the process-owned media engine and foreground service alive.
       _foreground = false;
       _restoredMedia = false;
-      if (_audio != null) {
+      if (!Platform.isAndroid && _audio != null) {
         unawaited(
           _audio!.setCameraEnabled(false).catchError((Object e) {
             _showError(e);
@@ -2027,8 +2027,10 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   List<Widget> _audioPage() => [
     SwitchListTile(
       title: const Text('Camera sharing'),
-      subtitle: const Text(
-        'Available while this app is open, only to devices you allowed.',
+      subtitle: Text(
+        Platform.isAndroid
+            ? 'Enable here to allow permitted devices to use the camera in the background. A persistent notification stays visible.'
+            : 'Available while this app is open, only to devices you allowed.',
       ),
       value: _audio?.cameraEnabled ?? false,
       onChanged: (value) => _run(() async {

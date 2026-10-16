@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'api.dart';
 import 'dart:io';
@@ -22,7 +23,19 @@ class AudioLink {
 }
 
 class AudioController {
-  AudioController(this.api, this.onError);
+  AudioController(this.api, this.onError) {
+    if (Platform.isAndroid) {
+      const MethodChannel('dev.narad/media').setMethodCallHandler((call) async {
+        if (call.method == 'stopped') {
+          enabled = false;
+          cameraEnabled = false;
+          for (final id in links.keys.toList()) {
+            await stop(id, notify: false);
+          }
+        }
+      });
+    }
+  }
   final NaradApi api;
   final void Function(Object) onError;
   final Map<String, AudioLink> links = {};
@@ -105,7 +118,16 @@ class AudioController {
     }
   }
 
+  Future<void> _prepareBackground(bool camera, bool audio) async {
+    if (Platform.isAndroid) {
+      await const MethodChannel(
+        'dev.narad/media',
+      ).invokeMethod<void>('prepare', {'camera': camera, 'audio': audio});
+    }
+  }
+
   Future<void> setEnabled(bool value) async {
+    if (value) await _prepareBackground(cameraEnabled, true);
     if (!value) {
       enabled = false;
       for (final link in links.values.where((l) => !l.camera).toList()) {
@@ -119,9 +141,11 @@ class AudioController {
       'camera_ready': cameraEnabled,
     });
     enabled = value;
+    if (!value) await _prepareBackground(cameraEnabled, false);
   }
 
   Future<void> setCameraEnabled(bool value) async {
+    if (value) await _prepareBackground(true, enabled);
     cameraEnabled = value;
     if (!value) {
       for (final link in links.values.where((l) => l.camera).toList()) {
@@ -134,6 +158,7 @@ class AudioController {
       'audio_ready': enabled,
       'camera_ready': cameraEnabled,
     });
+    if (!value) await _prepareBackground(false, enabled);
   }
 
   Future<String> startCamera(String peer) async {
@@ -509,6 +534,7 @@ class AudioController {
         await tools.dispose();
       }
       savedCameras.clear();
+      await _prepareBackground(false, false);
       await api.call({'op': 'media_ready', 'ready': false});
     } catch (_) {}
   }
