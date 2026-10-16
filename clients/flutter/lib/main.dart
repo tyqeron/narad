@@ -1351,18 +1351,24 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         (p) => _isOnline(p['device_id'] as String),
       ))
         _pairedCard(peer),
-      _section(
-        'Offline (${_pairedPeers.where((p) => !_isOnline(p['device_id'] as String)).length})',
-      ),
-      if (_pairedPeers.every((p) => _isOnline(p['device_id'] as String)))
-        const Padding(
-          padding: EdgeInsets.only(bottom: 12),
-          child: Text('No paired devices offline'),
+      ExpansionTile(
+        key: const PageStorageKey('offline-devices'),
+        tilePadding: EdgeInsets.zero,
+        title: Text(
+          'Offline (${_pairedPeers.where((p) => !_isOnline(p['device_id'] as String)).length})',
         ),
-      for (final peer in _pairedPeers.where(
-        (p) => !_isOnline(p['device_id'] as String),
-      ))
-        _pairedCard(peer),
+        children: [
+          if (_pairedPeers.every((p) => _isOnline(p['device_id'] as String)))
+            const Padding(
+              padding: EdgeInsets.only(bottom: 12),
+              child: Text('No paired devices offline'),
+            ),
+          for (final peer in _pairedPeers.where(
+            (p) => !_isOnline(p['device_id'] as String),
+          ))
+            _pairedCard(peer),
+        ],
+      ),
     ],
   ];
   Widget _pairedCard(Map<String, dynamic> peer) {

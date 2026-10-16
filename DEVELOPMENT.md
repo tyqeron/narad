@@ -636,3 +636,12 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   Narad is brought back to the foreground at the end. Phone was left untouched.
 - Updated Android setup documentation to replace foreground-only instructions
   and describe the opt-in physical background-camera harness accurately.
+
+## 46. Collapsible offline devices
+
+- Offline paired devices now sit in a collapsed-by-default section with the
+  device count and an expand/collapse arrow. Online devices remain visible.
+  Page storage retains expansion state across widget rebuilds/navigation.
+- Updated the existing device-list test to expand, collapse and reopen the list,
+  then check offline action restrictions. All 12 dashboard widget tests and
+  Flutter analysis pass. This source change has not been packaged or installed.

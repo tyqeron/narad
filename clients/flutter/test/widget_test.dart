@@ -277,6 +277,16 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Online (1)'), findsOneWidget);
       expect(find.text('Offline (1)'), findsOneWidget);
+      expect(find.text('Sleeping laptop'), findsNothing);
+      await tester.scrollUntilVisible(find.text('Offline (1)'), 150);
+      await tester.tap(find.text('Offline (1)'));
+      await tester.pumpAndSettle();
+      expect(find.text('Sleeping laptop'), findsOneWidget);
+      await tester.tap(find.text('Offline (1)'));
+      await tester.pumpAndSettle();
+      expect(find.text('Sleeping laptop'), findsNothing);
+      await tester.tap(find.text('Offline (1)'));
+      await tester.pumpAndSettle();
       await tester.scrollUntilVisible(find.text('Sleeping laptop'), 150);
       await tester.pumpAndSettle();
       final settings = find.byKey(const ValueKey('settings-offline'));
