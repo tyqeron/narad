@@ -48,6 +48,9 @@ pub async fn remote(
     file_plane: bool,
 ) -> Result<Value> {
     let op = handler::string(payload, "op")?;
+    if op == "phone_request" {
+        return crate::phone::remote(shared, peer, payload, file_plane).await;
+    }
     if !matches!(
         op,
         "browse"

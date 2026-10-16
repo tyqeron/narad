@@ -477,3 +477,18 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   with existing app data preserved; the disconnected tablet still needs updating.
 - Desktop webcam capture (no webcam attached here), Windows camera runtime and
   physical phone-to-tablet video remain outside the verified hardware matrix.
+
+## 35. Permissioned phone companion protocol
+
+- Added paired TLS phone RPC with distinct notification read/manage/reply, SMS
+  read/send and call read/control grants. Native requests are bounded, expire,
+  dispatch once, and recheck grants before execution and result delivery.
+- Content remains in memory for the request and never enters activity history or
+  persistent storage. Disabling the bridge drops pending content; receiver-side
+  revocation and unpairing prevent delivery. Only readiness is advertised.
+- Generated two-daemon tests verify explicit opt-in, separate send permissions,
+  exactly-once dispatch, content exclusion from status/history, and revocation.
+- Validation: Rust 21 behavioral tests, strict Clippy and both new integration
+  cases pass. The full run encountered a transient port-allocation collision in
+  one fixture; both new scenarios pass when rerun. Native phone/client UI work
+  and platform limitations are recorded separately below.

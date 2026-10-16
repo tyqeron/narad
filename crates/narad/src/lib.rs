@@ -1,6 +1,7 @@
 mod controls;
 mod discovery;
 mod handler;
+mod phone;
 mod state;
 pub mod transport;
 

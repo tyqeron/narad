@@ -38,7 +38,8 @@ fn capability(v: &Value) -> Result<&str> {
             "device.lock",
             "device.unlock"
         ]
-        .contains(&c),
+        .contains(&c)
+            || crate::phone::CAPABILITIES.contains(&c),
         "unsupported capability"
     );
     Ok(c)
@@ -345,6 +346,12 @@ pub fn remote(s: &mut State, peer: &Peer, p: &Value, file_plane: bool) -> Result
 
 pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
     let op = string(&p, "op")?.to_string();
+    if matches!(
+        op.as_str(),
+        "phone_request" | "phone_bridge_ready" | "phone_jobs" | "phone_validate" | "phone_result"
+    ) {
+        return crate::phone::local(shared, &p).await;
+    }
     if matches!(
         op.as_str(),
         "pair"

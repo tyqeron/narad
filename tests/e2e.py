@@ -366,6 +366,57 @@ class NaradIntegration(unittest.TestCase):
             self.a.call(op="pair", invitation=invite)
         self.assertFalse(self.a.call(op="status")["paired"])
 
+    def test_phone_bridge_grants_dispatch_results_and_revocation(self):
+        self.pair()
+        self.b.call(op="phone_bridge_ready", support={"enabled": True, "platform": "android"})
+        with self.assertRaisesRegex(RuntimeError, "permission denied"):
+            self.a.call(op="phone_request", peer_id=self.bid, kind="notifications", args={})
+        self.b.call(op="permission", peer_id=self.aid, capability="notification.read", allow=True)
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            pending = executor.submit(self.a.call, op="phone_request", peer_id=self.bid, kind="notifications", args={})
+            deadline = time.monotonic()+5
+            while True:
+                jobs = self.b.call(op="phone_jobs")["jobs"]
+                if jobs: break
+                self.assertLess(time.monotonic(), deadline)
+                time.sleep(0.05)
+            job = jobs[0]
+            self.assertEqual(job["kind"], "notifications")
+            self.assertEqual(self.b.call(op="phone_jobs")["jobs"], [])
+            self.b.call(op="phone_validate", id=job["id"])
+            self.b.call(op="phone_result", id=job["id"], result={"ok": True, "items": [{"title": "generated-private-fixture"}]})
+            self.assertEqual(pending.result()["items"][0]["title"], "generated-private-fixture")
+            self.assertNotIn("generated-private-fixture", json.dumps(self.b.call(op="status")))
+            with self.assertRaises(RuntimeError):
+                self.b.call(op="phone_result", id=job["id"], result={"ok": True})
+            pending = executor.submit(self.a.call, op="phone_request", peer_id=self.bid, kind="notifications", args={})
+            deadline = time.monotonic()+5
+            while True:
+                jobs = self.b.call(op="phone_jobs")["jobs"]
+                if jobs: break
+                self.assertLess(time.monotonic(), deadline)
+                time.sleep(0.05)
+            self.b.call(op="permission", peer_id=self.aid, capability="notification.read", allow=False)
+            with self.assertRaisesRegex(RuntimeError, "permission denied"):
+                self.b.call(op="phone_validate", id=jobs[0]["id"])
+            with self.assertRaisesRegex(RuntimeError, "permission denied"):
+                pending.result()
+
+    def test_phone_bridge_is_opt_in_and_sms_send_has_separate_permission(self):
+        self.pair()
+        with self.assertRaisesRegex(RuntimeError, "unavailable"):
+            self.a.call(op="phone_request", peer_id=self.bid, kind="support", args={})
+        self.b.call(op="phone_bridge_ready", support={"enabled": True, "platform": "android"})
+        self.b.call(op="permission", peer_id=self.aid, capability="sms.read", allow=True)
+        for kind in ("sms_send", "dial", "notification_reply", "notification_dismiss"):
+            with self.subTest(kind=kind), self.assertRaisesRegex(RuntimeError, "permission denied"):
+                self.a.call(op="phone_request", peer_id=self.bid, kind=kind, args={})
+        with self.assertRaisesRegex(RuntimeError, "unsupported phone action"):
+            self.a.call(op="phone_request", peer_id=self.bid, kind="arbitrary_intent", args={})
+        self.b.call(op="phone_bridge_ready", support={"enabled": False})
+        with self.assertRaisesRegex(RuntimeError, "unavailable"):
+            self.a.call(op="phone_request", peer_id=self.bid, kind="support", args={})
+
     def test_camera_signaling_uses_camera_permission_without_audio_grant(self):
         self.pair()
         for device in (self.a, self.b):
