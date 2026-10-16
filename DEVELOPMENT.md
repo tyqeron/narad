@@ -443,3 +443,16 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   16 KiB ZIP alignment and all 16 packaged 64-bit ELF libraries verify. Release
   manifest excludes the debug host. Android 14+ OS dismissal rules still apply
   to ongoing notifications; device names are hidden in public lock-screen content.
+
+## 33. Camera signaling authorization fix
+
+- Reproduced camera sharing failure with a real two-daemon regression: the outgoing
+  media signaling path incorrectly authorized every session as audio.output,
+  rejecting camera.stream offers, answers and ICE candidates.
+- Authorize against the stored session capability, explicitly limited to audio
+  and camera. Peer ownership, session state and current permissions still apply.
+- Regression verifies both signaling directions with audio denied, rejection before
+  camera approval and rejection after camera revocation. Existing audio checks pass.
+- Validation: 21 Rust tests and strict Clippy pass; the integration suite passes
+  13 scenarios with its optional multicast case skipped. Hardware camera validation
+  and updated artifacts are recorded in the next milestone.

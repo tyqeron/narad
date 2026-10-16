@@ -366,6 +366,35 @@ class NaradIntegration(unittest.TestCase):
             self.a.call(op="pair", invitation=invite)
         self.assertFalse(self.a.call(op="status")["paired"])
 
+    def test_camera_signaling_uses_camera_permission_without_audio_grant(self):
+        self.pair()
+        for device in (self.a, self.b):
+            device.call(op="media_ready", ready=True, audio_ready=False, camera_ready=True)
+        offer = self.a.call(op="media_start", peer_id=self.bid, kind="camera")
+        session = offer["id"]
+        with self.assertRaisesRegex(RuntimeError, "permission denied"):
+            self.a.call(op="media_send", peer_id=self.bid, id=session, data={"type": "offer", "sdp": "camera-test"})
+        self.b.call(op="media_accept", id=session)
+        self.a.call(op="media_poll", peer_id=self.bid, id=session)
+        # Denied audio must never prevent an authorized camera session.
+        self.a.call(op="permission", peer_id=self.bid, capability="audio.output", allow=False)
+        self.b.call(op="permission", peer_id=self.aid, capability="audio.output", allow=False)
+        for sender, receiver, peer_id, data in (
+            (self.a, self.b, self.bid, {"type": "offer", "sdp": "camera-test"}),
+            (self.b, self.a, self.aid, {"type": "answer", "sdp": "camera-test"}),
+            (self.a, self.b, self.bid, {"type": "candidate", "candidate": "camera-test"}),
+            (self.b, self.a, self.aid, {"type": "candidate", "candidate": "camera-test"}),
+        ):
+            sender.call(op="media_send", peer_id=peer_id, id=session, data=data)
+            signals = receiver.call(op="media_events")["signals"]
+            self.assertEqual(len(signals), 1)
+            self.assertEqual(signals[0]["data"], data)
+        self.b.call(op="permission", peer_id=self.aid, capability="camera.stream", allow=False)
+        with self.assertRaisesRegex(RuntimeError, "permission denied"):
+            self.a.call(op="media_send", peer_id=self.bid, id=session, data={"type": "candidate"})
+        with self.assertRaisesRegex(RuntimeError, "permission denied"):
+            self.b.call(op="media_send", peer_id=self.aid, id=session, data={"type": "candidate"})
+
     def test_media_signaling_gated_by_approval_and_stops_on_revocation(self):
         self.pair()
         self.a.call(op="media_ready", ready=True)

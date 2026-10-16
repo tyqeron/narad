@@ -1020,7 +1020,13 @@ async fn outgoing(shared: Arc<Mutex<State>>, op: &str, p: &Value) -> Result<Valu
     };
     if op == "media_send" {
         let s = shared.lock().await;
-        s.session(string(p, "id")?, &peer, "audio.output")?;
+        let id = string(p, "id")?;
+        let capability = &s.sessions.get(id).context("unknown session")?.capability;
+        ensure!(
+            ["audio.output", "camera.stream"].contains(&capability.as_str()),
+            "session is not a media session"
+        );
+        s.session(id, &peer, capability)?;
     }
     if op == "session_stop" {
         let mut s = shared.lock().await;
