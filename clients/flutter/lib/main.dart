@@ -5,11 +5,10 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart'
-    show RTCVideoView, RTCVideoViewObjectFit;
 import 'api.dart';
 import 'app_settings.dart';
 import 'audio.dart';
+import 'camera_card.dart';
 import 'android_backend.dart';
 import 'ios_backend.dart';
 import 'device_widget_action.dart';
@@ -1629,6 +1628,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                 ),
                 for (final entry in {
                   if (_data['device']['platform'] == 'android') ...{
+                    'contacts.read': 'Share contacts',
                     'notification.read': 'Share phone notifications',
                     'notification.manage': 'Dismiss phone notifications',
                     'notification.reply': 'Reply to phone notifications',
@@ -1638,6 +1638,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                     'calls.control': 'Place, answer and end calls',
                   },
                   if (_data['device']['platform'] == 'ios') ...{
+                    'contacts.read': 'Share permitted iPhone contacts',
                     'sms.send': 'Open SMS composer here (confirm on iPhone)',
                     'calls.control':
                         'Open call requests here (confirm on iPhone)',
@@ -2036,15 +2037,43 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       }),
     ),
     for (final link
-        in _audio?.links.values.where((l) => l.camera && l.renderer != null) ??
-            <AudioLink>[])
-      SizedBox(
-        height: 320,
-        child: RTCVideoView(
-          link.renderer!,
-          objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
-        ),
+        in _audio?.links.values.where((l) => l.camera) ?? <AudioLink>[])
+      CameraCard(
+        key: ValueKey(link.id),
+        controller: _audio!,
+        link: link,
+        name: _peerName(link.peer),
       ),
+    for (final tools in _audio?.savedCameras ?? [])
+      for (final path in tools.completed.toList())
+        Card(
+          child: ListTile(
+            title: const Text('Camera recording ready to save'),
+            subtitle: const Text(
+              'The camera session ended. Save or discard before closing Narad.',
+            ),
+            trailing: Wrap(
+              children: [
+                IconButton(
+                  tooltip: 'Save recorded video',
+                  icon: const Icon(Icons.save_alt),
+                  onPressed: () => _run(() async {
+                    await saveCameraRecording(tools, path);
+                    if (mounted) setState(() {});
+                  }),
+                ),
+                IconButton(
+                  tooltip: 'Discard recording',
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: () => _run(() async {
+                    await tools.discard(path);
+                    if (mounted) setState(() {});
+                  }),
+                ),
+              ],
+            ),
+          ),
+        ),
 
     Card(
       child: SwitchListTile(

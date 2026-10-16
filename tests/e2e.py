@@ -417,6 +417,30 @@ class NaradIntegration(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "unavailable"):
             self.a.call(op="phone_request", peer_id=self.bid, kind="support", args={})
 
+    def test_contacts_are_separately_granted_ephemeral_and_revocable(self):
+        self.pair()
+        self.b.call(op="phone_bridge_ready", support={"enabled": True, "contacts": True})
+        self.b.call(op="permission", peer_id=self.aid, capability="sms.read", allow=True)
+        with self.assertRaisesRegex(RuntimeError, "permission denied"):
+            self.a.call(op="phone_request", peer_id=self.bid, kind="contacts_list", args={})
+        self.b.call(op="permission", peer_id=self.aid, capability="contacts.read", allow=True)
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            pending = executor.submit(self.a.call, op="phone_request", peer_id=self.bid, kind="contacts_list", args={"after": "20"})
+            deadline = time.monotonic()+5
+            while True:
+                jobs = self.b.call(op="phone_jobs")["jobs"]
+                if jobs: break
+                self.assertLess(time.monotonic(), deadline)
+                time.sleep(0.05)
+            self.assertEqual(jobs[0]["args"], {"after": "20"})
+            self.b.call(op="phone_validate", id=jobs[0]["id"])
+            self.b.call(op="phone_result", id=jobs[0]["id"], result={"ok": True, "items": [{"name": "Generated-private-contact", "phones": ["12345"]}], "next_after": "40"})
+            self.assertEqual(pending.result()["next_after"], "40")
+            self.assertNotIn("Generated-private-contact", json.dumps(self.b.call(op="status")))
+        self.b.call(op="permission", peer_id=self.aid, capability="contacts.read", allow=False)
+        with self.assertRaisesRegex(RuntimeError, "permission denied"):
+            self.a.call(op="phone_request", peer_id=self.bid, kind="contacts_list", args={})
+
     def test_camera_signaling_uses_camera_permission_without_audio_grant(self):
         self.pair()
         for device in (self.a, self.b):

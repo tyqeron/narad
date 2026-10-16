@@ -1,11 +1,14 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:narad_client/camera_tools.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:narad_client/android_backend.dart';
 
-/// Opt-in hardware test: video stays within this device and is never recorded.
+/// Opt-in tablet camera test. Temporary photo/video fixtures are removed after validation.
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets('physical camera sends a frame to the native video renderer', (
@@ -22,6 +25,8 @@ void main() {
     });
     final renderer = RTCVideoRenderer();
     MediaStream? camera;
+    CameraTools? tools;
+    File? export;
     final frame = Completer<void>();
     final sized = Completer<void>();
     final pendingViewer = <RTCIceCandidate>[];
@@ -98,7 +103,51 @@ void main() {
       ]).timeout(const Duration(seconds: 30));
       expect(renderer.videoWidth, greaterThan(0));
       expect(renderer.videoHeight, greaterThan(0));
+      tools = CameraTools(
+        () => renderer.srcObject!.getVideoTracks().first,
+        (e) => fail('$e'),
+      );
+      final image = await tools.photo();
+      expect(image.take(8), [137, 80, 78, 71, 13, 10, 26, 10]);
+      final sourceTrack = camera.getVideoTracks().first;
+      final firstFacing = await Helper.switchCamera(sourceTrack);
+      await Future<void>.delayed(const Duration(seconds: 1));
+      expect((await tools.photo()).length, greaterThan(100));
+      final secondFacing = await Helper.switchCamera(sourceTrack);
+      expect(secondFacing, isNot(firstFacing));
+      await Future<void>.delayed(const Duration(seconds: 1));
+      await tools.startRecording();
+      await Future<void>.delayed(const Duration(seconds: 3));
+      final path = await tools.stopRecording();
+      expect(path, isNotNull);
+      final file = File(path!);
+      expect(await file.length(), greaterThan(1000));
+      final head = await file.open();
+      final bytes = await head.read(32);
+      await head.close();
+      expect(String.fromCharCodes(bytes), contains('ftyp'));
+      export = File(
+        '${(await getTemporaryDirectory()).path}/narad-camera-fixture.mp4',
+      );
+      await file.copy(export.path);
+      print('NARAD_CAMERA_FIXTURE_READY');
+      // Host harness verifies the actual native MP4 while this temporary copy exists.
+      final marker = File(
+        '${(await getTemporaryDirectory()).path}/narad-camera-fixture.checked',
+      );
+      final deadline = DateTime.now().add(const Duration(seconds: 60));
+      while (!await marker.exists() && DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      }
+      expect(
+        await marker.exists(),
+        isTrue,
+        reason: 'Host must decode the generated MP4',
+      );
+      await marker.delete();
     } finally {
+      await tools?.dispose();
+      if (export != null && await export.exists()) await export.delete();
       for (final track in camera?.getTracks() ?? <MediaStreamTrack>[]) {
         await track.stop();
       }

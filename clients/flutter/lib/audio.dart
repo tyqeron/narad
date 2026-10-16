@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'api.dart';
+import 'dart:io';
+import 'camera_tools.dart';
 
 class AudioLink {
   AudioLink(this.id, this.peer, this.outgoing, {this.camera = false});
@@ -11,6 +13,9 @@ class AudioLink {
   RTCPeerConnection? connection;
   MediaStream? microphone;
   RTCVideoRenderer? renderer;
+  CameraTools? tools;
+  bool switching = false;
+  String? cameraDevice;
   bool remoteReady = false;
   bool starting = false;
   final List<RTCIceCandidate> candidates = [];
@@ -21,8 +26,81 @@ class AudioController {
   final NaradApi api;
   final void Function(Object) onError;
   final Map<String, AudioLink> links = {};
+  final List<CameraTools> savedCameras = [];
   bool enabled = false;
   bool cameraEnabled = false;
+
+  CameraTools cameraTools(AudioLink link) {
+    if (!link.camera) throw StateError('Not a camera session');
+    return link.tools ??= CameraTools(() {
+      final tracks =
+          (link.microphone ?? link.renderer?.srcObject)?.getVideoTracks() ?? [];
+      if (tracks.isEmpty) throw StateError('Wait for camera video');
+      return tracks.first;
+    }, onError);
+  }
+
+  Future<void> switchCamera(String id) async {
+    final link = links[id];
+    if (link == null || !link.camera || link.connection == null) {
+      throw StateError('Camera is not connected');
+    }
+    if (link.outgoing) {
+      await _signal(link, {'type': 'camera_switch'});
+      return;
+    }
+    if (link.switching) return;
+    if (link.tools?.recording == true) {
+      throw StateError('Stop recording before switching the source camera');
+    }
+    link.switching = true;
+    try {
+      final stream = link.microphone;
+      if (stream == null) throw StateError('Camera is not capturing');
+      if (Platform.isAndroid || Platform.isIOS) {
+        await Helper.switchCamera(stream.getVideoTracks().first);
+      } else {
+        final devices = (await navigator.mediaDevices.enumerateDevices())
+            .where((d) => d.kind == 'videoinput')
+            .toList();
+        if (devices.length < 2) {
+          throw StateError('No other camera is available');
+        }
+        final current =
+            link.cameraDevice ??
+            stream.getVideoTracks().first.getSettings()['deviceId']?.toString();
+        var index = devices.indexWhere((d) => d.deviceId == current);
+        if (index < 0) index = 0;
+        final next = devices[(index + 1) % devices.length];
+        final replacement = await navigator.mediaDevices.getUserMedia({
+          'audio': false,
+          'video': {'deviceId': next.deviceId},
+        });
+        try {
+          if (!links.containsKey(id)) throw StateError('Camera session ended');
+          final sender = (await link.connection!.getSenders()).firstWhere(
+            (s) => s.track?.kind == 'video',
+          );
+          await sender.replaceTrack(replacement.getVideoTracks().first);
+          link.microphone = replacement;
+          link.cameraDevice = next.deviceId;
+          link.renderer?.srcObject = replacement;
+          for (final track in stream.getTracks()) {
+            await track.stop();
+          }
+          await stream.dispose();
+        } catch (_) {
+          for (final track in replacement.getTracks()) {
+            await track.stop();
+          }
+          await replacement.dispose();
+          rethrow;
+        }
+      }
+    } finally {
+      link.switching = false;
+    }
+  }
 
   Future<void> setEnabled(bool value) async {
     if (!value) {
@@ -261,6 +339,33 @@ class AudioController {
   }
 
   Future<void> _receive(AudioLink link, Map<String, dynamic> data) async {
+    if (data['type'] == 'camera_switch') {
+      if (!link.camera || link.outgoing) {
+        throw StateError('Invalid camera control direction');
+      }
+      try {
+        await switchCamera(link.id);
+        await _signal(link, {'type': 'camera_control_result', 'ok': true});
+      } catch (e) {
+        await _signal(link, {
+          'type': 'camera_control_result',
+          'ok': false,
+          'error': e.toString(),
+        });
+      }
+      return;
+    }
+    if (data['type'] == 'camera_control_result') {
+      if (!link.camera || !link.outgoing) {
+        throw StateError('Unexpected camera control response');
+      }
+      if (data['ok'] != true) {
+        onError(
+          StateError(data['error']?.toString() ?? 'Camera switch failed'),
+        );
+      }
+      return;
+    }
     if (data['type'] == 'candidate') {
       final candidate = RTCIceCandidate(
         data['candidate'] as String?,
@@ -309,6 +414,15 @@ class AudioController {
           return;
         }
         link.microphone = stream;
+        final preview = RTCVideoRenderer();
+        await preview.initialize();
+        if (!links.containsKey(link.id)) {
+          await preview.dispose();
+          return;
+        }
+        await link.renderer?.dispose();
+        link.renderer = preview;
+        preview.srcObject = stream;
         await api.call({'op': 'session_touch', 'id': link.id});
         for (final track in stream.getVideoTracks()) {
           await link.connection!.addTrack(track, stream);
@@ -353,6 +467,8 @@ class AudioController {
   Future<void> stop(String id, {bool notify = true}) async {
     final link = links.remove(id);
     if (link == null) return;
+    link.tools?.quiesce();
+    await link.tools?.stopFeed();
     // Stop capture and playback before waiting for network teardown.
     try {
       for (final track
@@ -360,6 +476,14 @@ class AudioController {
         await track.stop();
       }
     } finally {
+      if (link.tools != null) {
+        await link.tools!.stop();
+        if (link.tools!.completed.isNotEmpty) {
+          savedCameras.add(link.tools!);
+        } else {
+          await link.tools!.dispose();
+        }
+      }
       try {
         await link.connection?.close();
         await link.connection?.dispose();
@@ -383,6 +507,10 @@ class AudioController {
       await stop(id, notify: false);
     }
     try {
+      for (final tools in savedCameras) {
+        await tools.dispose();
+      }
+      savedCameras.clear();
       await api.call({'op': 'media_ready', 'ready': false});
     } catch (_) {}
   }

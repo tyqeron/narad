@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'api.dart';
+import 'contacts_page.dart';
 
 /// Content is kept only while this screen is open. Side effects require a user tap.
 class PhonePage extends StatefulWidget {
@@ -195,6 +196,20 @@ class _PhonePageState extends State<PhonePage> with WidgetsBindingObserver {
     appBar: AppBar(
       title: Text('Phone · ${widget.peer['device_name']}'),
       actions: [
+        IconButton(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => ContactsPage(
+                api: widget.api,
+                peer: widget.peer,
+                onSms: (number) => _compose(number: number),
+                onCall: (number) => _dial(number),
+              ),
+            ),
+          ),
+          icon: const Icon(Icons.contacts_outlined),
+          tooltip: 'Contacts',
+        ),
         IconButton(
           onPressed: _loading ? null : _load,
           icon: const Icon(Icons.refresh),

@@ -73,6 +73,7 @@ set_target_properties(${BINARY_NAME}
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
 include(flutter/generated_plugins.cmake)
+include("${CMAKE_CURRENT_SOURCE_DIR}/../native/camera_capture.cmake")
 
 
 # === Installation ===

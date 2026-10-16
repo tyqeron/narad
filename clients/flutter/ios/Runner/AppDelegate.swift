@@ -1,6 +1,8 @@
 import Flutter
 import UIKit
 import MessageUI
+import Contacts
+import ContactsUI
 import Security
 import AVFoundation
 import Darwin
@@ -25,7 +27,7 @@ private struct NaradFailure: LocalizedError {
 }
 
 /// Foreground-only iOS host. Identity lives in non-migrating Keychain storage.
-final class NaradMobileBridge: NSObject, UIDocumentPickerDelegate, MFMessageComposeViewControllerDelegate {
+final class NaradMobileBridge: NSObject, UIDocumentPickerDelegate, MFMessageComposeViewControllerDelegate, CNContactViewControllerDelegate {
   static weak var active: NaradMobileBridge?
   private let queue = DispatchQueue(label: "dev.narad.ios.backend")
   private let channel: FlutterMethodChannel
@@ -113,12 +115,26 @@ final class NaradMobileBridge: NSObject, UIDocumentPickerDelegate, MFMessageComp
       guard let name = args["name"] as? String, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, name.utf8.count <= 128 else { result(FlutterError(code: "name", message: "Use a device name of 1–128 UTF-8 bytes", details: nil)); return }
       UserDefaults.standard.set(name, forKey: "narad.name"); result(nil)
     case "ensureCameraPermission": AVCaptureDevice.requestAccess(for: .video) { allowed in DispatchQueue.main.async { result(allowed) } }
+    case "importContact":
+      let contact = CNMutableContact()
+      contact.givenName = String((args["name"] as? String ?? "").prefix(256))
+      contact.phoneNumbers = (args["phones"] as? [String] ?? []).prefix(8).map { CNLabeledValue(label: CNLabelOther, value: CNPhoneNumber(stringValue: String($0.prefix(256)))) }
+      contact.emailAddresses = (args["emails"] as? [String] ?? []).prefix(8).map { CNLabeledValue(label: CNLabelOther, value: String($0.prefix(256)) as NSString) }
+      let editor = CNContactViewController(forNewContact: contact)
+      editor.contactStore = CNContactStore(); editor.delegate = self
+      presenter()?.present(UINavigationController(rootViewController: editor), animated: true); result(nil)
     case "ensureDeviceAdmin": result(false)
     case "takeDeviceAction": result(nil)
     case "phoneSetup":
       let enabled = UserDefaults.standard.bool(forKey: "narad.phoneHandoff")
       let alert = UIAlertController(title: "Phone integration on iPhone", message: "View an Android phone’s permitted notifications, SMS and calls in its Phone panel. This iPhone can open SMS and call requests for your confirmation while Narad is visible. iOS does not let Narad read this phone’s SMS inbox, call history or general system notifications. Phone handoff is currently \(enabled ? "enabled" : "disabled"). Grant each paired device separately in Device settings.", preferredStyle: .alert)
       alert.addAction(UIAlertAction(title: enabled ? "Disable phone handoff" : "Enable phone handoff", style: .default) { _ in UserDefaults.standard.set(!enabled, forKey: "narad.phoneHandoff") })
+      alert.addAction(UIAlertAction(title: "Allow contacts sharing", style: .default) { _ in
+        CNContactStore().requestAccess(for: .contacts) { granted, _ in
+          UserDefaults.standard.set(granted, forKey: "narad.contactsSharing")
+        }
+      })
+      alert.addAction(UIAlertAction(title: "Stop contacts sharing", style: .destructive) { _ in UserDefaults.standard.set(false, forKey: "narad.contactsSharing") })
       alert.addAction(UIAlertAction(title: "Done", style: .cancel))
       presenter()?.present(alert, animated: true); result(nil)
     case "saveReceivedFile":
@@ -153,13 +169,24 @@ final class NaradMobileBridge: NSObject, UIDocumentPickerDelegate, MFMessageComp
   }
   private func pollPhone(smsAvailable: Bool) {
     do {
-      let enabled = UserDefaults.standard.bool(forKey: "narad.phoneHandoff")
-      _ = try native(["op": "bridge", "command": ["op": "phone_bridge_ready", "support": ["enabled": enabled, "platform": "ios", "sms_send": smsAvailable, "call_control": false, "dial": true, "confirmation_required": true]]])
+      let contacts = UserDefaults.standard.bool(forKey: "narad.contactsSharing") && contactsAllowed()
+      let handoff = UserDefaults.standard.bool(forKey: "narad.phoneHandoff")
+      let enabled = handoff || contacts
+      _ = try native(["op": "bridge", "command": ["op": "phone_bridge_ready", "support": ["enabled": enabled, "platform": "ios", "contacts": contacts, "sms_send": handoff && smsAvailable, "call_control": false, "dial": true, "confirmation_required": true]]])
       guard enabled else { return }
       let response = try native(["op": "bridge", "command": ["op": "phone_jobs"]])
       for job in response["jobs"] as? [[String: Any]] ?? [] {
         guard let id = job["id"] as? String, let kind = job["kind"] as? String, let args = job["args"] as? [String: Any] else { continue }
         _ = try native(["op": "bridge", "command": ["op": "phone_validate", "id": id]])
+        if kind == "contacts_list" {
+          var result: [String: Any]
+          do {
+            guard contacts else { throw NaradFailure(message: "Allow contacts sharing on the iPhone") }
+            result = try contactPage(args)
+          } catch { result = ["ok": false, "error": "Contacts access unavailable"] }
+          _ = try native(["op": "bridge", "command": ["op": "phone_result", "id": id, "result": result]])
+          continue
+        }
         guard kind == "sms_send" || kind == "dial" else {
           _ = try native(["op": "bridge", "command": ["op": "phone_result", "id": id, "result": ["ok": false, "error": "This iPhone action is unavailable through Narad’s public iOS APIs"]]])
           continue
@@ -192,6 +219,32 @@ final class NaradMobileBridge: NSObject, UIDocumentPickerDelegate, MFMessageComp
       }
     } catch { /* Backend is stopped or the request was revoked; never retry actions. */ }
   }
+  private func contactsAllowed() -> Bool {
+    let status = CNContactStore.authorizationStatus(for: .contacts)
+    if #available(iOS 18.0, *), status == .limited { return true }
+    return status == .authorized
+  }
+  private func contactPage(_ args: [String: Any]) throws -> [String: Any] {
+    let after = args["after"] as? String ?? ""
+    let store = CNContactStore()
+    let request = CNContactFetchRequest(keysToFetch: [CNContactIdentifierKey, CNContactGivenNameKey, CNContactFamilyNameKey, CNContactPhoneNumbersKey, CNContactEmailAddressesKey] as [CNKeyDescriptor])
+    // Stable identifier ordering provides a bounded cursor without persisting content.
+    var page: [CNContact] = []
+    try store.enumerateContacts(with: request) { contact, _ in
+      if contact.identifier > after {
+        page.append(contact); page.sort { $0.identifier < $1.identifier }
+        if page.count > 21 { page.removeLast() }
+      }
+    }
+    var rows: [[String: Any]] = []; var bytes = 0
+    for contact in page.prefix(20) {
+      let row: [String: Any] = ["id": contact.identifier, "name": String((contact.givenName + " " + contact.familyName).trimmingCharacters(in: .whitespaces).prefix(256)), "phones": contact.phoneNumbers.prefix(8).map { String($0.value.stringValue.prefix(256)) }, "emails": contact.emailAddresses.prefix(8).map { String(($0.value as String).prefix(256)) }]
+      let size = try JSONSerialization.data(withJSONObject: row).count
+      if bytes + size > 38000 { break }; bytes += size; rows.append(row)
+    }
+    return ["ok": true, "items": rows, "next_after": page.count > rows.count ? (rows.last?["id"] ?? NSNull()) : NSNull()]
+  }
+  func contactViewController(_ viewController: CNContactViewController, didCompleteWith contact: CNContact?) { viewController.navigationController?.dismiss(animated: true) }
   func messageComposeViewController(_ controller: MFMessageComposeViewController, didFinishWith result: MessageComposeResult) { controller.dismiss(animated: true) }
   func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { exportResult?(false); exportResult = nil }
   func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) { exportResult?(!urls.isEmpty); exportResult = nil }

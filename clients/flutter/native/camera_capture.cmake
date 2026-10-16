@@ -1,0 +1,15 @@
+# Use a repository-owned replacement without modifying the global Pub cache.
+# Reassess the ABI when upgrading flutter_webrtc beyond the locked 1.6.2 version.
+get_target_property(narad_webrtc_sources flutter_webrtc_plugin SOURCES)
+set(narad_capture_source_found FALSE)
+foreach(narad_source IN LISTS narad_webrtc_sources)
+  if(narad_source MATCHES "flutter_frame_capturer\\.cc$")
+    list(REMOVE_ITEM narad_webrtc_sources "${narad_source}")
+    set(narad_capture_source_found TRUE)
+  endif()
+endforeach()
+if(NOT narad_capture_source_found)
+  message(FATAL_ERROR "WebRTC capture ABI changed; review Narad camera replacement")
+endif()
+set_property(TARGET flutter_webrtc_plugin PROPERTY SOURCES ${narad_webrtc_sources})
+target_sources(flutter_webrtc_plugin PRIVATE "${CMAKE_CURRENT_LIST_DIR}/camera_frame_capturer.cc")

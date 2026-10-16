@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.provider.ContactsContract
 import android.provider.CallLog
 import android.provider.Telephony
 import android.telecom.TelecomManager
@@ -20,6 +21,7 @@ object PhoneBridge {
     fun enabled(c:Context)=c.getSharedPreferences("narad",Context.MODE_PRIVATE).getBoolean("phone_bridge",false)
     fun granted(c:Context,p:String)=c.checkSelfPermission(p)==PackageManager.PERMISSION_GRANTED
     fun support(c:Context)=JSONObject().put("platform","android").put("enabled",enabled(c))
+        .put("contacts",granted(c,Manifest.permission.READ_CONTACTS))
         .put("notifications",NaradNotificationListener.connected())
         .put("sms_read",granted(c,Manifest.permission.READ_SMS)).put("sms_send",granted(c,Manifest.permission.SEND_SMS))
         .put("call_logs",granted(c,Manifest.permission.READ_CALL_LOG)).put("call_control",NaradInCallService.isDefault(c))
@@ -55,6 +57,7 @@ object PhoneBridge {
     }
     private fun execute(c:Context,kind:String,args:JSONObject,id:String):JSONObject {
         when(kind) {
+            "contacts_list" -> {requirePermission(c,Manifest.permission.READ_CONTACTS);return PhoneContacts.list(c,args)}
             "notifications" -> return JSONObject().put("items",NaradNotificationListener.list())
             "notification_dismiss" -> {NaradNotificationListener.dismiss(args.getString("key"));return JSONObject()}
             "notification_reply" -> {val text=args.getString("text");require(text.isNotBlank() && text.length<=2000);claim(c,id);NaradNotificationListener.reply(c,args.getString("key"),text);return JSONObject()}

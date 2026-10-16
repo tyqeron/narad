@@ -5,7 +5,8 @@ use narad_core::model::{now, Peer};
 use serde_json::{json, Value};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::Mutex;
-pub const CAPABILITIES: [&str; 7] = [
+pub const CAPABILITIES: [&str; 8] = [
+    "contacts.read",
     "notification.read",
     "notification.manage",
     "notification.reply",
@@ -25,6 +26,7 @@ pub struct PhoneJob {
 }
 pub fn capability(kind: &str) -> Result<&'static str> {
     Ok(match kind {
+        "contacts_list" => "contacts.read",
         "notifications" => "notification.read",
         "notification_dismiss" => "notification.manage",
         "notification_reply" => "notification.reply",
@@ -135,6 +137,7 @@ pub async fn local(shared: Arc<Mutex<State>>, p: &Value) -> Result<Value> {
                 s.phone_jobs.clear();
             }
             for (cap, key) in [
+                ("contacts.read", "contacts"),
                 ("notification.read", "notifications"),
                 ("notification.manage", "notifications"),
                 ("notification.reply", "notifications"),

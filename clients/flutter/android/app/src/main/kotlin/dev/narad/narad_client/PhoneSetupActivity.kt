@@ -20,6 +20,7 @@ class PhoneSetupActivity:Activity() {
         layout.addView(Switch(this).apply{text="Enable phone integration";isChecked=PhoneBridge.enabled(this@PhoneSetupActivity);setOnCheckedChangeListener{_,value->getSharedPreferences("narad",MODE_PRIVATE).edit().putBoolean("phone_bridge",value).apply();if(value)startForegroundService(Intent(this@PhoneSetupActivity,NaradService::class.java))}})
         fun button(label:String,action:()->Unit){layout.addView(Button(this).apply{text=label;setOnClickListener{try{action()}catch(e:Exception){Toast.makeText(this@PhoneSetupActivity,e.message,Toast.LENGTH_LONG).show()}}})}
         button("Notification access"){startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))}
+        button("Allow reading contacts"){requestPermissions(arrayOf(Manifest.permission.READ_CONTACTS),1925)}
         button("Allow reading SMS"){requestPermissions(arrayOf(Manifest.permission.READ_SMS),1920)}
         button("Allow sending SMS"){requestPermissions(arrayOf(Manifest.permission.SEND_SMS),1921)}
         button("Allow call history"){requestPermissions(arrayOf(Manifest.permission.READ_CALL_LOG),1922)}
@@ -30,7 +31,7 @@ class PhoneSetupActivity:Activity() {
         }
         button("Allow placing calls"){requestPermissions(arrayOf(Manifest.permission.CALL_PHONE),1924)}
         val status=PhoneBridge.support(this)
-        for((key,label) in listOf("notifications" to "Notification access","sms_read" to "Read SMS","sms_send" to "Send SMS","call_logs" to "Call history","call_control" to "Call controls"))
+        for((key,label) in listOf("contacts" to "Contacts","notifications" to "Notification access","sms_read" to "Read SMS","sms_send" to "Send SMS","call_logs" to "Call history","call_control" to "Call controls"))
             layout.addView(TextView(this).apply{text="$label: ${if(status.optBoolean(key))"Ready" else "Not enabled"}"})
         button("Done"){finish()}
         setPhoneContent(ScrollView(this).apply{addView(layout)})

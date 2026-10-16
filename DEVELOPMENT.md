@@ -530,3 +530,19 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   messages, call history, notifications, or place/answer a real call.
 - Linux release installer builds and all seven disposable installation/upgrade/
   daemon lifecycle checks pass; checksum verifies. Artifacts live under dist/.
+
+## 39. Contact access, camera tools and desktop webcam bridge
+
+- Added separately granted live contacts pages, Android/iOS source adapters and
+  explicit native contact-editor/vCard export. Existing address books are never
+  silently merged or overwritten; desktop address-book publishing is not included.
+- Added source/viewer camera switching, PNG capture, video-only MP4 recording,
+  save/discard controls and an explicit random-token localhost OBS Browser feed.
+  OBS provides the desktop system camera; mobile system-wide injection is absent.
+- Replaced the locked desktop WebRTC frame capturer at CMake build time without
+  altering Pub cache: synchronized/bounded frame wait and scoped pixel buffer.
+- Validation so far: 22 Rust tests, strict Clippy, 16 real-daemon scenarios pass
+  (one multicast opt-in skipped), clean Flutter analysis and 35 Flutter tests.
+  Generated FFmpeg recordings decode; feed rejects unknown paths/Host headers.
+  Linux release builds including the native replacement. Physical tablet tests,
+  isolated desktop capture and final artifact delivery are recorded next.

@@ -99,3 +99,27 @@ Platform references: [Android notification listener](https://developer.android.c
 [call-audio capture restrictions](https://developer.android.com/media/platform/sharing-audio-input),
 [Apple SMS composer](https://developer.apple.com/documentation/messageui/mfmessagecomposeviewcontroller),
 [Apple accessory notification forwarding](https://developer.apple.com/documentation/accessorynotifications).
+
+## Contacts
+
+Open **Phone companion → Contacts** for a paired Android/iPhone source. On Android,
+allow **Settings → Phone integration → Allow reading contacts**, enable integration,
+and grant **Share contacts** to the viewer in Device settings. iOS source preview
+adds **Allow contacts sharing**; its OS contact picker/limited access determines
+which contacts Narad can read. iOS still requires macOS compilation/device QA.
+
+The live list refreshes every ten seconds while visible, with bounded twenty-contact
+pages. It includes names, up to eight phone numbers and eight emails; photos, notes,
+postal addresses, groups and account credentials are excluded. Revocation/errors and
+backgrounding clear displayed content. The address book is not persisted by Narad.
+
+**Contact actions → Save contact** opens the system contact editor on Android/iOS
+for review and explicit Save; desktop exports an escaped UTF-8 vCard to a location
+chosen by the user. SMS/call actions open the existing confirmation dialogs, using
+the contact's first phone number. This provides live access and deliberate copying,
+not automatic two-way address-book merging, deletion propagation or conflict resolution.
+Android and iOS can exchange their permitted contacts in either direction; desktop
+can view/export phone contacts but does not yet publish a desktop address book.
+
+References: [Android contact insertion](https://developer.android.com/reference/android/provider/ContactsContract.Intents.Insert),
+[Apple contact access](https://developer.apple.com/documentation/contacts/accessing-the-contact-store).
