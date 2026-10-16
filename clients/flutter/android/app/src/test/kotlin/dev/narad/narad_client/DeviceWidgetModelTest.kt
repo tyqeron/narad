@@ -6,7 +6,12 @@ class DeviceWidgetModelTest {
     @Test fun allActionsAvailableWithoutPresets() {
         assertEquals(10,DeviceWidgetModel.actionsFor("linux").size)
         assertTrue(DeviceWidgetModel.actionsFor("android").any{it.id=="command"})
-        assertEquals(10,DeviceWidgetModel.actions.map{it.id}.distinct().size)
+        assertEquals(11,DeviceWidgetModel.actions.map{it.id}.distinct().size)
+    }
+    @Test fun phoneActionsRespectPlatforms(){
+        assertTrue(DeviceWidgetModel.actionsFor("android").any{it.id=="phone"})
+        assertFalse(DeviceWidgetModel.actionsFor("linux").any{it.id=="phone"})
+        assertFalse(DeviceWidgetModel.actionsFor("ios").any{it.id in listOf("command","lock","unlock")})
     }
     @Test fun windowsDoesNotAdvertiseUnlock() {
         assertFalse(DeviceWidgetModel.actionsFor("windows").any{it.id=="unlock"})

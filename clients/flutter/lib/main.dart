@@ -11,7 +11,10 @@ import 'api.dart';
 import 'app_settings.dart';
 import 'audio.dart';
 import 'android_backend.dart';
+import 'ios_backend.dart';
 import 'device_widget_action.dart';
+import 'phone_page.dart';
+import 'phone_sync.dart';
 import 'windows_backend.dart';
 import 'desktop_integration.dart';
 import 'pairing_scanner.dart';
@@ -100,6 +103,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   AndroidBackend? _android;
   WindowsBackend? _windows;
   DesktopIntegration? _desktop;
+  PhoneSync? _phoneSync;
   bool? _autostart;
   bool _starting = false;
   bool _widgetDispatching = false;
@@ -144,8 +148,8 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     }
     if (widget.api != null) {
       _attach(widget.api!);
-    } else if (Platform.isAndroid) {
-      _android = AndroidBackend();
+    } else if (Platform.isAndroid || Platform.isIOS) {
+      _android = Platform.isIOS ? IosBackend() : AndroidBackend();
       unawaited(_startAndroid());
     } else if (Platform.isWindows) {
       _windows = WindowsBackend();
@@ -212,7 +216,9 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       _foreground = true;
       _restoredMedia = false;
     }
-    if (state == AppLifecycleState.resumed && !_online && !_starting) {
+    if (state == AppLifecycleState.resumed &&
+        (Platform.isIOS || !_online) &&
+        !_starting) {
       unawaited(_startAndroid());
     }
   }
@@ -224,6 +230,10 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   }
 
   void _attach(NaradApi api) {
+    _phoneSync?.dispose();
+    if (_desktop != null) {
+      _phoneSync = PhoneSync(api, _desktop!.phoneNotification);
+    }
     _connectionGeneration++;
     _restoredMedia = false;
     final previous = _audio;
@@ -292,6 +302,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         _online = true;
         _error = null;
       });
+      if (_phoneSync != null) unawaited(_phoneSync!.tick(data));
       if (_android != null && !_busy && !_widgetDispatching && _foreground) {
         final pending = await _android!.takeDeviceAction();
         if (pending != null && mounted) {
@@ -358,6 +369,14 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   Future<void> _dispatchWidgetAction(DeviceWidgetAction action) async {
     final peer = action.peerFrom(_data);
     switch (action.action) {
+      case 'phone':
+        if (mounted) {
+          await Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => PhonePage(api: _api!, peer: peer),
+            ),
+          );
+        }
       case 'file':
         await _sendFile(action.peerId);
       case 'clipboard':
@@ -422,6 +441,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     if (_audio != null) unawaited(_audio!.dispose());
+    _phoneSync?.dispose();
     _directory.dispose();
     _port.dispose();
     super.dispose();
@@ -649,10 +669,22 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
             _button('Quit Narad', () => _desktop!.quit()),
           ],
           if (_android != null) ...[
-            _section('Home-screen device actions'),
-            const Text(
-              'Long-press your Android home screen, choose Widgets → Narad Devices, then select a paired device. Its actions appear as a scrollable list. Each action uses the same permissions and pickers as the app.',
+            _section('Phone integration'),
+            ListTile(
+              leading: const Icon(Icons.smartphone),
+              title: const Text('Notifications, SMS and calls'),
+              subtitle: Text(
+                Platform.isIOS
+                    ? 'View Android phone data; learn about iOS source limitations'
+                    : 'Choose Android access and optional default-dialer role',
+              ),
+              onTap: () => _android!.phoneSetup(),
             ),
+            if (!Platform.isIOS) _section('Home-screen device actions'),
+            if (!Platform.isIOS)
+              const Text(
+                'Long-press your Android home screen, choose Widgets → Narad Devices, then select a paired device. Its actions appear as a scrollable list. Each action uses the same permissions and pickers as the app.',
+              ),
           ],
           if (_online) ...[
             _section('Shared folder'),
@@ -663,29 +695,32 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
             _button('Add file to Shared folder', _addSharedFile),
             const SizedBox(height: 12),
             _button('View Shared folder', _localSharedFiles),
-            _section('Command presets'),
-            const Text(
-              'Devices with command permission can run only the presets configured here. Commands run as your user on Linux/Windows and inside Narad’s app sandbox on Android.',
-            ),
-            for (final raw in (_data['commands'] as List? ?? []))
-              ListTile(
-                title: Text(raw['label'] as String),
-                subtitle: const Text('Available to permitted devices'),
-                trailing: IconButton(
-                  tooltip: 'Remove command',
-                  icon: const Icon(Icons.delete_outline),
-                  onPressed: () async {
-                    await _run(
-                      () => _command({'op': 'command_remove', 'id': raw['id']}),
-                    );
-                    if (context.mounted) refresh?.call();
-                  },
-                ),
+            if (!Platform.isIOS) ...[
+              _section('Command presets'),
+              const Text(
+                'Devices with command permission can run only the presets configured here. Commands run as your user on Linux/Windows and inside Narad’s app sandbox on Android.',
               ),
-            _button('Add command preset', () async {
-              await _addCommand();
-              refresh?.call();
-            }),
+              for (final raw in (_data['commands'] as List? ?? []))
+                ListTile(
+                  title: Text(raw['label'] as String),
+                  subtitle: const Text('Available to permitted devices'),
+                  trailing: IconButton(
+                    tooltip: 'Remove command',
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () async {
+                      await _run(
+                        () =>
+                            _command({'op': 'command_remove', 'id': raw['id']}),
+                      );
+                      if (context.mounted) refresh?.call();
+                    },
+                  ),
+                ),
+              _button('Add command preset', () async {
+                await _addCommand();
+                refresh?.call();
+              }),
+            ],
             _section('Connection details'),
             SelectableText(
               'This device: ${_data['device']['device_name']}\nLocal address: ${_data['device']['address']}\n${_paired.length} paired devices',
@@ -1345,10 +1380,25 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         },
       ),
       'View camera': (Icons.videocam_outlined, () => _viewCamera(id)),
+      if (peer['platform'] == 'android' || peer['platform'] == 'ios')
+        'Phone companion': (
+          Icons.smartphone,
+          () async {
+            if (mounted) {
+              await Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => PhonePage(api: _api!, peer: peer),
+                ),
+              );
+            }
+          },
+        ),
       'Browse files': (Icons.folder_open, () => _browseFiles(peer)),
-      'Run command': (Icons.terminal, () => _runCommand(peer)),
-      'Lock': (Icons.lock_outline, () => _deviceAction(id, 'lock')),
-      if (peer['platform'] != 'windows')
+      if (peer['platform'] != 'ios')
+        'Run command': (Icons.terminal, () => _runCommand(peer)),
+      if (peer['platform'] != 'ios')
+        'Lock': (Icons.lock_outline, () => _deviceAction(id, 'lock')),
+      if (peer['platform'] != 'windows' && peer['platform'] != 'ios')
         'Request unlock': (Icons.lock_open, () => _deviceAction(id, 'unlock')),
       'Unpair': (Icons.link_off, () => _unpair(peer)),
     };
@@ -1386,7 +1436,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                       children: [
                         Icon(entry.value.$1, size: 20),
                         const SizedBox(width: 12),
-                        Text(entry.key),
+                        Flexible(child: Text(entry.key)),
                       ],
                     ),
                   ),
@@ -1578,14 +1628,31 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                   'Allow what this paired device can do on this device. Enabled permissions are saved and communication proceeds without repeated approval prompts.',
                 ),
                 for (final entry in {
+                  if (_data['device']['platform'] == 'android') ...{
+                    'notification.read': 'Share phone notifications',
+                    'notification.manage': 'Dismiss phone notifications',
+                    'notification.reply': 'Reply to phone notifications',
+                    'sms.read': 'Read SMS messages',
+                    'sms.send': 'Send SMS through this phone',
+                    'calls.read': 'Read call history and live call state',
+                    'calls.control': 'Place, answer and end calls',
+                  },
+                  if (_data['device']['platform'] == 'ios') ...{
+                    'sms.send': 'Open SMS composer here (confirm on iPhone)',
+                    'calls.control':
+                        'Open call requests here (confirm on iPhone)',
+                  },
                   'file.transfer': 'Receive files automatically',
                   'clipboard.sync': 'Apply shared clipboard automatically',
                   'audio.output': 'Play shared audio',
                   'camera.stream': 'Share this device’s camera',
                   'file.browse': 'Browse and download from Shared folder',
-                  'command.run': 'Run configured command presets',
-                  'device.lock': 'Lock this device',
-                  if (_data['device']['platform'] != 'windows')
+                  if (_data['device']['platform'] != 'ios')
+                    'command.run': 'Run configured command presets',
+                  if (_data['device']['platform'] != 'ios')
+                    'device.lock': 'Lock this device',
+                  if (_data['device']['platform'] != 'windows' &&
+                      _data['device']['platform'] != 'ios')
                     'device.unlock':
                         'Request unlock (device authentication required)',
                 }.entries)

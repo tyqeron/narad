@@ -33,6 +33,10 @@ class NaradService : Service() {
         fun deviceName(context: Context): String = context.getSharedPreferences("narad",MODE_PRIVATE)
             .getString("device_name",null) ?: "${Build.MANUFACTURER} ${Build.MODEL}".take(80)
     }
+    private val phoneSyncWorker=Executors.newSingleThreadExecutor()
+    private val phoneSync by lazy{PhoneNotificationSync(this)}
+    @Volatile private var phoneSyncBusy=false
+    private var phoneSyncTicks=0
     private var lastConnectionText=""
     private var multicast: WifiManager.MulticastLock? = null
     private var callback: ConnectivityManager.NetworkCallback? = null
@@ -41,7 +45,8 @@ class NaradService : Service() {
     private val platformPoll=object:Runnable {
         override fun run() {
             if(destroyed)return
-            if(state=="running")worker.execute {refreshConnections();pollPlatformEvents()}
+            if(state=="running")worker.execute {refreshConnections();pollPlatformEvents();try{PhoneBridge.poll(this@NaradService)}catch(_:Exception){}}
+            if(state=="running" && ++phoneSyncTicks%4==0 && !phoneSyncBusy){phoneSyncBusy=true;phoneSyncWorker.execute{try{phoneSync.poll()}catch(_:Exception){}finally{phoneSyncBusy=false}}}
             main.postDelayed(this,3000)
         }
     }
@@ -235,6 +240,7 @@ class NaradService : Service() {
         return "127.0.0.1"
     }
     override fun onDestroy() {
+        phoneSyncWorker.shutdownNow();phoneSync.stop();
         destroyed=true
         main.removeCallbacks(platformPoll)
         CommandWidget.disconnected(this)

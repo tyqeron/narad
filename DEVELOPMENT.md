@@ -492,3 +492,26 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   cases pass. The full run encountered a transient port-allocation collision in
   one fixture; both new scenarios pass when rerun. Native phone/client UI work
   and platform limitations are recorded separately below.
+
+## 36. Android phone integration and companion interface
+
+- Added explicit native setup for notification access, SMS, call logs and optional
+  default-dialer call controls. No permission or role is changed automatically.
+- Added shared notification, SMS and call views, separate per-device grants,
+  confirmation before sending, background generic banners and widget routing.
+- Android native tests pass (8); Flutter analysis and 31 tests pass. Generated
+  fixtures cover confirmation, revocation clearing and banner deduplication.
+- Cellular audio remains on the phone or its existing OS audio route; Narad
+  desktop cellular audio routing is not implemented. No real messages/calls sent.
+
+## 37. iOS source preview and platform boundaries
+
+- Added a foreground iOS runner, Keychain identity, bounded Rust C ABI and
+  macOS XCFramework build script/CI configuration. Invitation/QR pairing avoids
+  requiring a multicast entitlement. User-confirmed composer/call handoff is optional.
+- General iPhone SMS inbox, call history and system notification mirroring are
+  unavailable in this implementation. macOS build/signing and iPhone QA remain.
+- Rust workspace 22 tests and strict Clippy pass; mobile ABI lifecycle test passes.
+  Windows backend cross-check passes; new Windows banner native code awaits CI.
+- Full integration rerun passes 15 cases with one opt-in multicast case skipped,
+  resolving the transient fixture port collision noted in milestone 35.

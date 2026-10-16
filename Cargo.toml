@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/narad-core", "crates/narad", "crates/narad-android"]
+members = ["crates/narad-core", "crates/narad", "crates/narad-android", "crates/narad-mobile"]
 resolver = "2"
 
 [workspace.package]

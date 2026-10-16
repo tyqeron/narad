@@ -71,6 +71,7 @@ bool set_autostart(bool enabled, GError **error) {
   g_unlink(disabled);
   return true;
 }
+void show_phone(GSimpleAction*,GVariant*,gpointer app){g_application_activate(G_APPLICATION(app));}
 void handle(FlMethodChannel *, FlMethodCall *call, gpointer user_data) {
   const gchar *method = fl_method_call_get_name(call);
   g_autoptr(FlMethodResponse) response = nullptr;
@@ -95,6 +96,19 @@ void handle(FlMethodChannel *, FlMethodCall *call, gpointer user_data) {
           fl_method_error_response_new("autostart", error->message, nullptr));
     else
       response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else if (g_strcmp0(method, "phoneNotification") == 0) {
+    FlValue* args=fl_method_call_get_args(call);
+    FlValue* title=args && fl_value_get_type(args)==FL_VALUE_TYPE_MAP?fl_value_lookup_string(args,"title"):nullptr;
+    FlValue* text=args && fl_value_get_type(args)==FL_VALUE_TYPE_MAP?fl_value_lookup_string(args,"text"):nullptr;
+    if(!title || !text || fl_value_get_type(title)!=FL_VALUE_TYPE_STRING || fl_value_get_type(text)!=FL_VALUE_TYPE_STRING) {
+      response=FL_METHOD_RESPONSE(fl_method_error_response_new("arguments","Expected notification text",nullptr));
+    } else {
+      g_autoptr(GNotification) notification=g_notification_new(fl_value_get_string(title));
+      g_notification_set_body(notification,fl_value_get_string(text));
+      g_notification_set_default_action(notification,"app.show");
+      g_application_send_notification(G_APPLICATION(user_data),"narad-phone",notification);
+      response=FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+    }
   } else if (g_strcmp0(method, "quit") == 0) {
     fl_method_call_respond_success(call, nullptr, nullptr);
     g_application_quit(G_APPLICATION(user_data));
@@ -105,6 +119,12 @@ void handle(FlMethodChannel *, FlMethodCall *call, gpointer user_data) {
 }
 } // namespace
 void narad_register_desktop(FlView *view, GtkApplication *application) {
+  if(!g_action_map_lookup_action(G_ACTION_MAP(application),"show")){
+    GSimpleAction* action=g_simple_action_new("show",nullptr);
+    g_signal_connect(action,"activate",G_CALLBACK(show_phone),application);
+    g_action_map_add_action(G_ACTION_MAP(application),G_ACTION(action));
+    g_object_unref(action);
+  }
   g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
   g_autoptr(FlMethodChannel) channel = fl_method_channel_new(
       fl_engine_get_binary_messenger(fl_view_get_engine(view)),

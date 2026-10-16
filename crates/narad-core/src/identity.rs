@@ -81,14 +81,17 @@ impl Identity {
             address,
             port,
             capabilities: {
-                let mut capabilities = vec![
+                let mut capabilities: Vec<String> = vec![
                     "file.transfer".into(),
                     "clipboard.sync".into(),
                     "file.browse".into(),
                     "command.run".into(),
                     "device.lock".into(),
                 ];
-                if !cfg!(windows) {
+                if cfg!(target_os = "ios") {
+                    capabilities.retain(|c| !["command.run", "device.lock"].contains(&c.as_str()));
+                }
+                if !cfg!(windows) && !cfg!(target_os = "ios") {
                     capabilities.push("device.unlock".into());
                 }
                 capabilities

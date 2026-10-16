@@ -652,6 +652,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "narad-mobile"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "narad",
+ "narad-android",
+ "narad-core",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "num-conv"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

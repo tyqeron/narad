@@ -4,6 +4,7 @@ class DeviceWidgetAction {
   final String peerId;
   final String action;
   static const actions = {
+    'phone',
     'file',
     'clipboard',
     'audio',
@@ -32,6 +33,13 @@ class DeviceWidgetAction {
       throw StateError(
         'This device is no longer paired. Choose another device in the widget.',
       );
+    }
+    if (action == 'phone' && !['android', 'ios'].contains(peer['platform'])) {
+      throw StateError('Phone integration is available for paired phones.');
+    }
+    if (peer['platform'] == 'ios' &&
+        ['command', 'lock', 'unlock'].contains(action)) {
+      throw StateError('This action is unavailable on iOS.');
     }
     if (action == 'unlock' && peer['platform'] == 'windows') {
       throw StateError('Unlock this Windows device locally.');

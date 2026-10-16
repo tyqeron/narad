@@ -116,3 +116,17 @@ jobs:
           path: |
             dist/narad-windows-x64-release.zip
             dist/narad-windows-x64-release.zip.sha256
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.88.0'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.8'
+          channel: stable
+          cache: true
+      - run: ./scripts/build-ios.sh --simulator

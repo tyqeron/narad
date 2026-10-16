@@ -16,13 +16,18 @@ void main() {
     },
   };
   test('all device actions route to the selected paired device', () {
-    expect(DeviceWidgetAction.actions.length, 10);
+    expect(DeviceWidgetAction.actions.length, 11);
     for (final action in DeviceWidgetAction.actions) {
       final request = DeviceWidgetAction.parse({
         'peer_id': 'peer',
         'action': action,
       });
-      expect(request.peerFrom(status())['device_id'], 'peer');
+      expect(
+        request.peerFrom(
+          status(platform: action == 'phone' ? 'android' : 'linux'),
+        )['device_id'],
+        'peer',
+      );
     }
   });
   test(

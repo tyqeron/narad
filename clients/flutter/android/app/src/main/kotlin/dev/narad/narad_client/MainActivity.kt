@@ -28,6 +28,7 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger,"dev.narad/android").setMethodCallHandler {call,result ->
             try {
                 when(call.method) {
+                    "phoneSetup" -> {startActivity(Intent(this,PhoneSetupActivity::class.java));result.success(null)}
                     "getTheme" -> result.success(getSharedPreferences("narad",MODE_PRIVATE).getString("theme","system"))
                     "setTheme" -> {
                         val theme=call.argument<String>("theme") ?: "system"

@@ -4,11 +4,13 @@ import 'api.dart';
 
 /// Android owns the runtime, identity vault and foreground service.
 class AndroidBackend {
+  AndroidBackend({MethodChannel? platformChannel})
+    : _platformChannel = platformChannel ?? channel;
+  final MethodChannel _platformChannel;
   static const channel = MethodChannel('dev.narad/android');
   Future<DaemonApi> start() async {
-    final configuration = await channel.invokeMapMethod<String, dynamic>(
-      'start',
-    );
+    final configuration = await _platformChannel
+        .invokeMapMethod<String, dynamic>('start');
     if (configuration == null) {
       throw StateError('Android backend did not return its configuration');
     }
@@ -18,7 +20,9 @@ class AndroidBackend {
     );
     Object? lastError;
     for (var attempt = 0; attempt < 100; attempt++) {
-      final state = await channel.invokeMapMethod<String, dynamic>('status');
+      final state = await _platformChannel.invokeMapMethod<String, dynamic>(
+        'status',
+      );
       if (state?['error'] != null) throw StateError(state!['error'] as String);
       if (state?['state'] == 'running') {
         try {
@@ -35,13 +39,18 @@ class AndroidBackend {
     );
   }
 
+  Future<void> phoneSetup() =>
+      _platformChannel.invokeMethod<void>('phoneSetup');
+
   Future<Map<String, dynamic>?> takeDeviceAction() =>
-      channel.invokeMapMethod<String, dynamic>('takeDeviceAction');
+      _platformChannel.invokeMapMethod<String, dynamic>('takeDeviceAction');
 
   Future<void> stop() async {
-    await channel.invokeMethod<void>('stop');
+    await _platformChannel.invokeMethod<void>('stop');
     for (var attempt = 0; attempt < 100; attempt++) {
-      final state = await channel.invokeMapMethod<String, dynamic>('status');
+      final state = await _platformChannel.invokeMapMethod<String, dynamic>(
+        'status',
+      );
       if (state?['state'] == 'stopped' || state?['state'] == 'error') return;
       await Future<void>.delayed(const Duration(milliseconds: 100));
     }
@@ -49,17 +58,18 @@ class AndroidBackend {
   }
 
   Future<void> setDeviceName(String name) async {
-    await channel.invokeMethod<void>('setDeviceName', {'name': name});
+    await _platformChannel.invokeMethod<void>('setDeviceName', {'name': name});
   }
 
   Future<bool> ensureCameraPermission() async =>
-      await channel.invokeMethod<bool>('ensureCameraPermission') ?? false;
+      await _platformChannel.invokeMethod<bool>('ensureCameraPermission') ??
+      false;
 
   Future<bool> ensureDeviceAdmin() async =>
-      await channel.invokeMethod<bool>('ensureDeviceAdmin') ?? false;
+      await _platformChannel.invokeMethod<bool>('ensureDeviceAdmin') ?? false;
 
   Future<bool> saveFile(String id, String name) async =>
-      await channel.invokeMethod<bool>('saveReceivedFile', {
+      await _platformChannel.invokeMethod<bool>('saveReceivedFile', {
         'id': id,
         'name': name,
       }) ??

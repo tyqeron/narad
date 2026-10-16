@@ -24,7 +24,7 @@ class DeviceWidgetActionsService:RemoteViewsService() {
                 views.setTextViewText(R.id.widget_action_label,action.label)
                 views.setTextColor(R.id.widget_action_label,foreground)
                 views.setImageViewResource(R.id.widget_action_icon,when(action.id){
-                    "file"->R.drawable.widget_file;"clipboard"->R.drawable.widget_clipboard;"audio"->R.drawable.widget_audio
+                    "phone"->R.drawable.widget_phone;"file"->R.drawable.widget_file;"clipboard"->R.drawable.widget_clipboard;"audio"->R.drawable.widget_audio
                     "camera"->R.drawable.widget_camera;"browse"->R.drawable.widget_folder;"command"->R.drawable.widget_terminal
                     "lock"->R.drawable.widget_lock;"unlock"->R.drawable.widget_unlock;"settings"->R.drawable.widget_settings;else->R.drawable.widget_unpair
                 })

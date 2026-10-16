@@ -11,6 +11,12 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <application
         android:label="Narad"
         android:allowBackup="false"
@@ -19,6 +25,11 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher">
+        <service android:name=".NaradNotificationListener" android:exported="true" android:label="Narad phone notifications" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"><intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter></service>
+        <service android:name=".NaradInCallService" android:exported="true" android:permission="android.permission.BIND_INCALL_SERVICE"><meta-data android:name="android.telecom.IN_CALL_SERVICE_UI" android:value="true" /><intent-filter><action android:name="android.telecom.InCallService" /></intent-filter></service>
+        <activity android:name=".PhoneSetupActivity" android:exported="false" android:theme="@style/NormalTheme" />
+        <activity android:name=".NaradCallActivity" android:exported="false" android:theme="@style/NormalTheme" android:showWhenLocked="true" android:turnScreenOn="true" />
+        <activity android:name=".NaradDialActivity" android:exported="true" android:theme="@style/NormalTheme"><intent-filter><action android:name="android.intent.action.DIAL" /><category android:name="android.intent.category.DEFAULT" /></intent-filter><intent-filter><action android:name="android.intent.action.DIAL" /><category android:name="android.intent.category.DEFAULT" /><data android:scheme="tel" /></intent-filter></activity>
         <service android:name=".DeviceWidgetActionsService" android:exported="false" android:permission="android.permission.BIND_REMOTEVIEWS" />
         <receiver android:name=".CommandWidget" android:exported="false" android:label="@string/command_widget_name">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /><action android:name="android.intent.action.CONFIGURATION_CHANGED" /><action android:name="android.intent.action.MY_PACKAGE_REPLACED" /></intent-filter>

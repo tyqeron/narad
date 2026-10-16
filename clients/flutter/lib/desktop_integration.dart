@@ -16,5 +16,7 @@ class DesktopIntegration {
       true;
   Future<void> setAutostart(bool enabled) =>
       channel.invokeMethod<void>('setAutostart', {'enabled': enabled});
+  Future<void> phoneNotification(String title, String text) => channel
+      .invokeMethod<void>('phoneNotification', {'title': title, 'text': text});
   Future<void> quit() => channel.invokeMethod<void>('quit');
 }

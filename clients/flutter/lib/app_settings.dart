@@ -20,7 +20,8 @@ class MemoryThemePreferences implements ThemePreferences {
 }
 
 class DeviceThemePreferences implements ThemePreferences {
-  static const channel = MethodChannel('dev.narad/android');
+  MethodChannel get channel =>
+      MethodChannel(Platform.isIOS ? 'dev.narad/ios' : 'dev.narad/android');
   File get file {
     final env = Platform.environment;
     final root = Platform.isWindows
@@ -35,7 +36,7 @@ class DeviceThemePreferences implements ThemePreferences {
 
   @override
   Future<ThemeMode> read() async {
-    final value = Platform.isAndroid
+    final value = (Platform.isAndroid || Platform.isIOS)
         ? await channel.invokeMethod<String>('getTheme')
         : await file.exists()
         ? (jsonDecode(await file.readAsString()) as Map)['theme']
@@ -48,7 +49,7 @@ class DeviceThemePreferences implements ThemePreferences {
 
   @override
   Future<void> write(ThemeMode mode) async {
-    if (Platform.isAndroid) {
+    if (Platform.isAndroid || Platform.isIOS) {
       await channel.invokeMethod<void>('setTheme', {'theme': mode.name});
       return;
     }
