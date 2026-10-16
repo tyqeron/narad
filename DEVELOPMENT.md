@@ -395,3 +395,21 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - Validation: Android ARM64 debug compilation passes; the universal release and
   metadata/signature checks are recorded in the final delivery milestone. No
   physical Android device is connected, so launcher interaction is manual QA.
+
+## 30. Background lifecycle regression checks and updated delivery
+
+- Added isolated Xvfb/D-Bus native tests using the real window-manager close
+  protocol: hidden login startup, close-to-background and same-process reopen all
+  pass. Explicitly realizes the hidden GTK parent and restores registered windows
+  even before they have received focus. CI runs these checks on its debug bundle.
+- All seven installer scenarios pass, including per-user login entries and an
+  explicit startup opt-out surviving upgrades. The refreshed Linux release
+  installer includes the final native runner fix.
+- Universal Android 0.1.0+5 release includes widget provider/configuration metadata;
+  signature, SHA-256, 16 KiB ZIP/ELF alignment and three backend ABIs verify.
+- Updated guides for icon action menus, Android widget setup, desktop background
+  operation, after-login startup, opt-outs and explicit Quit behavior.
+- Validation boundaries: 22 Flutter tests/analysis and native Windows compile checks
+  pass. No Android device was connected for physical launcher interaction; Windows
+  tray/login runtime and real reboot testing remain manual/native CI work. Tests
+  never rebooted or locked the user's desktop or captured microphone/camera data.

@@ -39,13 +39,16 @@ bash narad-linux-x64-release.run --prefix "$HOME/Apps/Narad"
 The installer checks its embedded payload before extracting, installs under
 `~/.local/opt/narad` by default and adds **Narad** to your application menu.
 It needs Bash, Python 3, tar, sha256sum and the app's GTK 3/PulseAudio/ALSA runtime
-libraries. It uses no sudo, FUSE, AppImage runtime or package manager. No firewall
-rules or background login services are installed.
+libraries. It uses no sudo, FUSE, AppImage runtime or package manager. No firewall rules or system services are installed. A per-user desktop
+autostart entry starts Narad quietly when you sign in after reboot.
 
 You can also extract the `.tar.gz` and run its `install.sh`, or launch its
 `narad-linux` without installing. The desktop shortcut always launches the
-backend and GUI together. Closing the GUI stops the backend it started; an
-already authenticated daemon is reused and left running.
+backend and GUI together. Closing the window hides it and keeps the app/backend connected. Open Narad
+again from the application menu or tray to restore it. **Quit Narad** in Settings
+or the tray stops the app and its owned backend; an externally owned daemon is
+left running. Desktop shells without a legacy tray still support reopening from
+the menu and quitting in Settings.
 
 State defaults to `${XDG_DATA_HOME:-$HOME/.local/share}/narad`, independently of
 the installation folder. Set `NARAD_STATE` to reuse an existing development
@@ -53,9 +56,9 @@ identity (for example, the repository's `.narad` directory). Do not copy the sam
 identity onto another device. `NARAD_DEVICE_NAME`, `NARAD_API_PORT` and
 `NARAD_CONTROL_PORT` can customize launch settings.
 
-To update, close Narad and run a new installer with the same prefix. It replaces
+To update, use **Quit Narad** and run a new installer with the same prefix. It replaces
 only a recognized Narad installation, preserving state and downloads. To uninstall,
-close the app, remove its installation directory and
+quit the app, remove its installation directory and
 `${XDG_DATA_HOME:-$HOME/.local/share}/applications/dev.narad.narad_client.desktop`.
 Delete the separate state directory only if you intend to lose pairings/downloads.
 
@@ -75,3 +78,19 @@ This uses temporary prefixes/generated data and checks installation, upgrade
 preservation, desktop entries with spaces, invalid destinations, corrupted payloads,
 and real backend ownership/reuse with a headless GUI fixture. CI repeats the
 same checks against its debug bundle.
+
+**Settings → Background operation → Start after login** enables/disables the
+per-user autostart file under `${XDG_CONFIG_HOME:-$HOME/.config}/autostart`.
+Its disabled preference survives upgrades. Remove the Narad autostart entry when
+uninstalling. `--background` starts with the window hidden. This runs after user
+login, not before authentication or as a root/system daemon. Clipboard delivery
+and commands continue while the desktop app is hidden.
+
+Native close/reopen regression checks can run without using your desktop:
+
+```sh
+xvfb-run -a dbus-run-session -- python3 tests/linux_background.py clients/flutter/build/linux/x64/release/bundle
+```
+
+This needs Xvfb, xdotool, D-Bus and a built debug backend at `target/debug/narad`.
+It forces X11 within the isolated display and uses a temporary identity.

@@ -137,3 +137,21 @@ you intend a granted peer to trigger.
 See Android's [device locking API](https://developer.android.com/reference/android/app/admin/DevicePolicyManager#lockNow())
 and [keyguard dismissal API](https://developer.android.com/reference/android/app/KeyguardManager#requestDismissKeyguard(android.app.Activity,%20android.app.KeyguardManager.KeyguardDismissCallback))
 for the system-enforced lock and authentication requirements.
+
+## Home-screen command widgets
+
+Long-press an empty area of the Android home screen, open **Widgets**, find
+**Narad Command** and drag it onto the screen. Choose a paired target device,
+then one of that device's saved command presets. The target must be online and
+must grant this Android device **Run configured command presets** permission.
+Configure presets in Settings on the target device first.
+
+Each widget runs one preset; add more widgets for other commands/devices. Tap
+its button to run without opening Flutter. The connection service starts if
+needed, and success/failure appears on the widget. The gear reconfigures it.
+Deleting the widget removes its saved selection. Revocation, unpairing or deleting
+a preset prevents subsequent execution. Only preset IDs are stored; scripts and
+command output are not displayed or cached on the home screen. Repeated taps on
+the same widget while its command is executing are coalesced. Native OS/battery
+policies still apply. Widget configuration/launcher behavior needs physical QA
+on the launchers you use.

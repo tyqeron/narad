@@ -40,10 +40,11 @@ copies the matching Rust backend through CMake. The Windows runner is x64.
    warning. Verify the checksum and source before running them.
 2. Optionally run `./install-windows.ps1` from the extracted package. It copies
    the app to `%LOCALAPPDATA%\Programs\Narad` and adds a Start menu shortcut;
-   administrator access is not required. Close Narad before installing an update.
+   administrator access is not required. Use **Quit Narad** before installing an update.
 3. The backend starts automatically. Its private state lives in
    `%LOCALAPPDATA%\Narad\state`, independently of the extracted/installed app.
-   Closing the window stops the backend it launched. An already authenticated
+   Closing the window keeps the app and its backend running in the notification
+   area. Use the tray or Settings **Quit Narad** to stop them. An already authenticated
    daemon at that state path is reused and remains owned by its original launcher.
 4. Put Windows, Android and Linux devices on the same private Wi-Fi/LAN. Set the
    Windows network profile to **Private** and allow Narad's backend through the
@@ -84,7 +85,7 @@ Encrypted trust/permissions/presets are keyed from that identity. Existing
 identity. A broken wrapped file causes a visible error; the app never silently
 creates a replacement identity. Do not copy identity/state to other accounts or PCs.
 
-Reinstalling/updating the app preserves state. To uninstall, close Narad, remove
+Reinstalling/updating the app preserves state. To uninstall, quit Narad, remove
 its installation directory and Start-menu shortcut. State remains until you
 explicitly delete `%LOCALAPPDATA%\Narad`; deletion loses pairing and downloads.
 
@@ -120,3 +121,15 @@ recorded separately from Linux cross-compilation.
 The platform behavior follows Microsoft's [DPAPI documentation](https://learn.microsoft.com/en-us/windows/win32/seccrypto/example-c-program-using-cryptprotectdata),
 [Windows Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects),
 and [workstation locking requirements](https://learn.microsoft.com/en-us/windows/win32/shutdown/how-to-lock-the-workstation).
+
+## Background operation and reboot
+
+The per-user installer enables **Start after login** by default. After a reboot,
+Narad starts quietly when you sign into Windows, keeping files, commands and
+clipboard delivery available. Use its notification-area icon or launch Narad
+again to reopen the same window. The tray menu and Settings offer **Quit Narad**.
+Settings can disable/enable startup; an explicit opt-out survives installer
+upgrades. The entry is `Narad` in your account's Windows Run registry key, with
+`--background`; it requires no administrator rights. Remove that entry when
+uninstalling. A portable ZIP can enable startup through Settings. This is a user
+session app, not a pre-login Windows service.

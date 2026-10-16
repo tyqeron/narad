@@ -102,6 +102,11 @@ works when multicast is blocked. Android supports camera QR scanning; desktop
 supports pasted invitations.
 Standalone short-code discovery is not yet implemented.
 
+Desktop installations start quietly after login and stay connected when their
+window closes. Reopen Narad from the menu/tray; use **Quit Narad** to exit.
+**Settings → Start after login** controls startup. On Android, add **Narad Command**
+from your launcher's Widgets picker to run a paired device's preset from home.
+
 ## CLI
 
 ```sh

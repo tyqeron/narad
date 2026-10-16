@@ -16,9 +16,9 @@ baseline. This document describes the actual implementation.
 | Camera | Permissioned WebRTC camera viewing, foreground source, native permission gate and teardown | Physical capture/quality/device matrix |
 | Controls | Locally configured command presets, bounded execution, Android force-lock and unlock-authentication notification, Linux loginctl | Physical lock/unlock matrix and desktop-session support |
 | Flutter client | Nearby/online/offline dashboard, per-device settings, saved Device/Light/Dark themes, grouped activity, Media, Inbox and transfers | Platform packaging/installers, accessibility/device QA |
-| Linux | Rust checks, Flutter tests, native debug build, real daemon integration | Packaged release and physical two-machine media QA |
-| Windows | Supervised packaged daemon, DPAPI identity migration, private ACLs, Windows command Jobs, workstation lock, ZIP/installer/firewall helpers, CI job; cross-compiled backend | Windows-native CI run, full GUI build and physical Windows/Android/Linux media/firewall/locking QA |
-| Android | Embedded Rust/JNI backend, connected-device service, multicast lock, permissions, Keystore identity, QR scan, file picker/export, universal APK | More physical devices/OS versions; camera, document export and microphone QA; battery policy matrix |
+| Linux | Native builds, installer, tray/close-to-background, opt-out-aware login startup, isolated GTK hide/reopen tests, real daemon integration | Packaged release and physical two-machine media QA |
+| Windows | Supervised packaged daemon, DPAPI identity migration, private ACLs, Windows command Jobs, workstation lock, ZIP/installer/firewall helpers, tray and hidden login startup, CI job; cross-compiled backend/native runner | Windows-native CI run, full GUI build and physical Windows/Android/Linux media/firewall/locking QA |
+| Android | Embedded Rust/JNI backend, connected-device service, multicast lock, permissions, Keystore identity, QR scan, file picker/export, command widgets, universal APK | More physical devices/OS versions; camera, document export and microphone QA; battery policy matrix |
 | iOS | Architecture boundary only | Runner, embedding, entitlements, lifecycle, keychain and device QA |
 | Release | Lockfiles, development journal, CI configuration, setup/protocol docs | Release candidate criteria and security/compatibility review |
 
@@ -30,7 +30,7 @@ baseline. This document describes the actual implementation.
   authentication, file acceptance/cancellation, interruption/resume, restart,
   persisted revocation, clipboard acceptance, media signaling gates, nearby acceptance/decline/cancellation, authenticated online/offline/reconnect,
   automatic grants, scoped browsing, and preset command execution/revocation.
-- Twenty Flutter tests: device actions, clipboard acceptance, pairing confirmation,
+- Twenty-two Flutter tests: device actions, clipboard acceptance, pairing confirmation,
   narrow-screen layout, no media capture before approval, Android readiness,
   shutdown waiting, identity-error propagation, nearby request/accept/cancel UI, themes, grouped activity and per-device grants.
 - Flutter analysis and Linux native debug build.
@@ -59,6 +59,13 @@ baseline. This document describes the actual implementation.
   Windows engine headers. Full Windows GUI packaging and Windows-native integration
   are configured in CI but have not run here; isolated Wine initialization did not
   complete and is not counted as Windows runtime validation.
+- Linux native virtual-desktop checks pass for hidden login startup, close-to-
+  background and same-process restore. Seven installer scenarios cover login
+  entry generation and preserving explicit startup opt-outs across upgrades.
+- Android 0.1.0+5 debug and universal release builds include configurable command
+  widgets. Widget configuration/taps need physical launcher QA; no Android device
+  was connected during this build. Windows tray/login behavior is cross-compiled,
+  with full Windows-native runtime verification still pending.
 - Public OSV check: 171 locked Rust registry packages, no matched advisories.
   CI includes an Android APK artifact job; hosted CI has not been run here.
 
