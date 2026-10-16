@@ -291,6 +291,16 @@ class AudioController {
           'audio': false,
           'video': {'facingMode': 'environment'},
         });
+        if (stream.getVideoTracks().isEmpty) {
+          for (final track in stream.getTracks()) {
+            await track.stop();
+          }
+          await stream.dispose();
+          throw StateError(
+            'No usable camera was found. Connect a camera and allow Narad '
+            'camera access in your device settings, then retry.',
+          );
+        }
         if (!links.containsKey(link.id)) {
           for (final track in stream.getTracks()) {
             await track.stop();

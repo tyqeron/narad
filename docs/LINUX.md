@@ -94,3 +94,23 @@ xvfb-run -a dbus-run-session -- python3 tests/linux_background.py clients/flutte
 
 This needs Xvfb, xdotool, D-Bus and a built debug backend at `target/debug/narad`.
 It forces X11 within the isolated display and uses a temporary identity.
+
+## Camera sharing
+
+Update Narad on both devices and fully quit/reopen the desktop app after upgrading
+so its background daemon also uses the fix. Camera signaling now uses the camera
+permission; it does not require audio access. On the device providing video, allow
+**Share this device’s camera** for the viewer and keep Narad open. On the viewer,
+choose **View camera**; video appears in Media. A desktop source needs an accessible
+webcam and operating-system camera permission. An empty camera stream now reports
+an error instead of starting a session without video.
+
+The opt-in physical Android-to-Linux camera check is:
+
+```sh
+FLUTTER_BIN=/path/to/flutter python3 tests/android_e2e.py --serial DEVICE_SERIAL --pairing nearby --desktop-camera
+```
+
+Install and open the normal debug APK first, with camera permission enabled on
+Android. The test uses a temporary pairing and streams live video to a test window
+(or Xvfb); it never records video or captures audio. Generated trust is removed.

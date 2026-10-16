@@ -133,3 +133,14 @@ upgrades. The entry is `Narad` in your account's Windows Run registry key, with
 `--background`; it requires no administrator rights. Remove that entry when
 uninstalling. A portable ZIP can enable startup through Settings. This is a user
 session app, not a pre-login Windows service.
+
+## Camera sharing
+
+Rebuild/install the current Windows package and update the other device too.
+Fully quit Narad from its tray before restarting the updated app so the backend
+also reloads. Camera sessions now authorize camera.stream independently of audio.
+Allow **Share this device’s camera** for the viewer on the source device, keep
+Narad open there, and choose **View camera** on the viewer. Windows camera privacy
+settings must permit desktop apps to use the webcam. Missing video tracks produce
+an explicit camera-access error. The updated backend cross-compiles for Windows;
+physical Windows camera capture/viewing still requires native testing.

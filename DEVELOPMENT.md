@@ -456,3 +456,24 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - Validation: 21 Rust tests and strict Clippy pass; the integration suite passes
   13 scenarios with its optional multicast case skipped. Hardware camera validation
   and updated artifacts are recorded in the next milestone.
+
+## 34. Camera hardware and desktop interoperability checks
+
+- Added an explicit Android camera loopback test: video without audio reaches a
+  native renderer with nonzero dimensions, then capture stops. It passes on the
+  Android 15 tablet; first-frame and size events are awaited independently.
+- Added an opt-in physical camera fixture and Linux viewer test using the production
+  media controller. Android 16 Nothing A015 camera video renders on Linux through
+  real paired TLS signaling/WebRTC with audio explicitly denied. Temporary camera
+  grants and peers are removed; no video/audio is recorded.
+- Desktop capture now rejects a stream without video tracks with an actionable
+  camera-access error. The shared backend fix also compiles for Windows GNU.
+- Flutter analysis and 27 tests pass. The physical desktop check uses an isolated
+  D-Bus session and a real display or Xvfb; source Narad must stay foreground.
+- Bumped Android to 0.1.0+7 and documented updating both endpoints/restarting the
+  desktop daemon. Universal APK and Linux release installer both build successfully.
+- APK signature, checksum, 16 KiB ZIP alignment and all 16 packaged 64-bit ELF
+  libraries verify across three backend ABIs. Build 7 is installed on the phone
+  with existing app data preserved; the disconnected tablet still needs updating.
+- Desktop webcam capture (no webcam attached here), Windows camera runtime and
+  physical phone-to-tablet video remain outside the verified hardware matrix.

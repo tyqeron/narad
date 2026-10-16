@@ -173,3 +173,28 @@ The debug-only widget host tests real collection rows and action routing without
 placing a widget on the user's launcher. It temporarily grants then revokes widget
 binding for Narad, and deletes its own temporary widgets. The release APK contains
 no debug preview activity.
+
+## Camera sharing checks
+
+Install the current APK on **both** the phone sharing its camera and the tablet
+viewing it. Builds before 0.1.0+7 incorrectly checked camera signaling against the
+audio capability and could show `Bad state: capability permission denied` even
+when camera access was allowed.
+
+On the phone, open the tablet's device settings and allow **Share this device’s
+camera**, including Android's camera permission. Keep Narad open on the phone.
+On the tablet, select **View camera** for that phone; video appears in Media.
+Camera sharing stops when the source app is backgrounded.
+
+To explicitly test native camera capture and rendering on one Android device:
+
+```sh
+cd clients/flutter
+flutter test integration_test/android_camera_test.dart -d DEVICE_SERIAL --no-uninstall
+```
+
+This hardware test opens the camera, exchanges video between two local WebRTC
+connections, checks a rendered frame and stops capture. It never records video
+or sends it off the test device. It is separate from the default smoke tests.
+Use a development test device; reinstall the normal release APK afterwards to
+restore the app UI.

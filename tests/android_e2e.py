@@ -2,7 +2,8 @@
 """Opt-in physical Android/Linux interoperability check using this app's debug API.
 
 Install/launch the debug APK first. No personal files, clipboard or microphone are
-accessed. Only generated fixtures and a temporary test pairing are used.
+accessed. Only generated fixtures and a temporary test pairing are used. The explicit
+--desktop-camera option also streams live camera video without recording it.
 """
 import argparse
 import contextlib
@@ -10,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import shutil
 import subprocess
 import tempfile
 import time
@@ -26,6 +28,7 @@ def main():
     parser.add_argument('--pairing', choices=['invitation', 'nearby'], default='invitation')
     parser.add_argument('--controls', action='store_true', help='Also test persistent grants, shared files and command presets')
     parser.add_argument('--widget', action='store_true', help='Test the debug-only real widget host and connected notification')
+    parser.add_argument('--desktop-camera', action='store_true', help='Explicitly stream the Android camera to a Linux viewer; never record')
     args = parser.parse_args()
     adb = ['adb', '-s', args.serial]
 
@@ -242,6 +245,30 @@ def main():
                     # Remove generated records while this temporary pairing is valid.
                     cleanup_automatic()
                     phone(op='command_remove', id=preset['id'])
+                if args.desktop_camera:
+                    # This opt-in captures video, never audio or recorded files.
+                    phone(op='permission', peer_id=host_id, capability='camera.stream', allow=True, automatic=True)
+                    phone(op='permission', peer_id=host_id, capability='audio.output', allow=False)
+                    desktop(op='permission', peer_id=phone_id, capability='audio.output', allow=False)
+                    run('shell','input','keyevent','KEYCODE_HOME')
+                    run('shell','am','start','-W','-n',f'{PACKAGE}/.MainActivity')
+                    deadline=time.monotonic()+15
+                    while not phone(op='status')['camera_ready']:
+                        if time.monotonic()>deadline:raise RuntimeError('Open Narad on Android and allow its camera permission')
+                        time.sleep(0.2)
+                    display_prefix=['xvfb-run','-a'] if shutil.which('xvfb-run') else []
+                    if not display_prefix and not os.environ.get('DISPLAY'):
+                        raise RuntimeError('The desktop camera test needs DISPLAY or xvfb-run')
+                    if shutil.which('dbus-run-session'):
+                        display_prefix+=['dbus-run-session','--']
+                    subprocess.run(display_prefix+[
+                        os.environ.get('FLUTTER_BIN','flutter'),'test',
+                        'integration_test/desktop_camera_test.dart','-d','linux',
+                    ],cwd=Path(__file__).resolve().parents[1]/'clients/flutter',
+                        env={**os.environ,'NARAD_CAMERA_STATE':str(state),'NARAD_CAMERA_PORT':str(api),'NARAD_CAMERA_PEER':phone_id},
+                        check=True,timeout=300)
+                    phone(op='permission', peer_id=host_id, capability='camera.stream', allow=False)
+                    print('PASS Linux renders Android camera through real Narad signaling with audio denied')
                 if args.widget:
                     import re
                     import xml.etree.ElementTree as ET

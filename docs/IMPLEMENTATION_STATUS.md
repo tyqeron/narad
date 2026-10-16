@@ -25,11 +25,13 @@ baseline. This document describes the actual implementation.
 ## Verified locally
 
 - 21 Rust behavioral tests, formatting and strict Clippy.
-- Thirteen two-daemon integration scenarios with multicast enabled: pairing and
+- Fourteen two-daemon integration scenarios (multicast is opt-in): pairing and
   code mismatch, certificate pin mismatch, expired invitations, local API
   authentication, file acceptance/cancellation, interruption/resume, restart,
   persisted revocation, clipboard acceptance, media signaling gates, nearby acceptance/decline/cancellation, authenticated online/offline/reconnect,
-  automatic grants, scoped browsing, and preset command execution/revocation.
+  automatic grants, scoped browsing, preset command execution/revocation, and
+  camera-only signaling with audio denied and camera revocation. The latest fix
+  run passed 13 cases with the multicast case skipped; multicast passed previously.
 - Twenty-seven Flutter tests: device actions, clipboard acceptance, pairing confirmation,
   narrow-screen layout, no media capture before approval, Android readiness,
   shutdown waiting, identity-error propagation, nearby request/accept/cancel UI, themes, grouped activity, per-device grants and validated widget routing.
@@ -64,8 +66,8 @@ baseline. This document describes the actual implementation.
 - Linux native virtual-desktop checks pass for hidden login startup, close-to-
   background and same-process restore. Seven installer scenarios cover login
   entry generation and preserving explicit startup opt-outs across upgrades.
-- Android 0.1.0+6 debug and universal release builds include device-action widgets
-  and an ongoing authenticated connection notification. Fifteen Android/Linux
+- Android 0.1.0+7 includes the camera signaling authorization fix; 0.1.0+6 added
+  device-action widgets and an ongoing authenticated connection notification. Fifteen Android/Linux
   physical checks pass on the Android 15 tablet, including real RemoteViews
   collection rendering without command presets, routing a widget tap to the
   selected device's settings, and its name in the foreground notification.
@@ -98,9 +100,15 @@ specification. A receiver must explicitly allow a revoked or stale file session
 to resume. Received file contents are ordinary files in the private download
 folder; manifest encryption does not encrypt the transferred file itself.
 
-Audio/camera negotiation and lifecycle code compile, and its permission boundary is
-tested. Actual audio/camera capture/playback across physical devices has not been
-validated. The app closes disrupted streams and lets the user start again;
+Camera-only signaling and permission revocation pass real-daemon tests. An
+explicit hardware test on the Android 15 tablet captures camera video without
+audio, negotiates native WebRTC and verifies a rendered frame with nonzero
+dimensions, then stops capture. A real Android 16 phone-to-Linux test also renders
+video through the production controller, paired TLS signaling and WebRTC while
+audio is denied. Phone-to-tablet
+video, desktop webcam capture and Windows camera runtime remain unverified.
+Audio capture/playback across devices has not been validated. The app closes
+disrupted streams and lets the user start again;
 automatic media reconnection and audio-device selection are pending.
 
 The complete cross-platform MVP and release criteria in the PRD are **not yet
