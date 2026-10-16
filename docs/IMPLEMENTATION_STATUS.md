@@ -18,7 +18,7 @@ baseline. This document describes the actual implementation.
 | Flutter client | Nearby/online/offline dashboard, per-device settings, saved Device/Light/Dark themes, grouped activity, Media, Inbox and transfers | Platform packaging/installers, accessibility/device QA |
 | Linux | Native builds, installer, tray/close-to-background, opt-out-aware login startup, isolated GTK hide/reopen tests, real daemon integration | Packaged release and physical two-machine media QA |
 | Windows | Supervised packaged daemon, DPAPI identity migration, private ACLs, Windows command Jobs, workstation lock, ZIP/installer/firewall helpers, tray and hidden login startup, CI job; cross-compiled backend/native runner | Windows-native CI run, full GUI build and physical Windows/Android/Linux media/firewall/locking QA |
-| Android | Embedded Rust/JNI backend, connected-device service, multicast lock, permissions, Keystore identity, QR scan, file picker/export, device-action widgets, live connection notification, universal APK | More physical devices/OS versions; camera, document export and microphone QA; battery policy matrix |
+| Android | Embedded Rust/JNI backend, connected-device/camera/microphone service, retained background media engine, multicast lock, permissions, Keystore identity, QR scan, file picker/export, device-action widgets, live connection notification, universal APK | More physical devices/OS versions; camera, document export and microphone QA; battery policy matrix |
 | iOS | Source-preview runner, Rust C ABI, Keychain identity, foreground Android companion viewer and user-confirmed SMS/call handoff | macOS compilation/signing and iPhone validation; no general iPhone SMS inbox, call logs or system notification sync |
 | Phone companion | Permissioned notification read/dismiss/reply, SMS read/send, call logs and call controls from Android; shared viewer and desktop banners | Physical sensitive-data tests; desktop cellular audio; Windows banner runtime QA; iOS source restrictions (see PHONE_INTEGRATION.md) |
 | Release | Lockfiles, development journal, CI configuration, setup/protocol docs | Release candidate criteria and security/compatibility review |
@@ -144,3 +144,17 @@ Build 10 is installed on the Android tablet and phone; APK signature, checksum
 and alignment verify, and the Linux installer builds/checksums successfully.
 The final paired hardware UI check was deferred while the phone showed its call
 screen. Build 10's requester/source behavior is covered by the 37-test client suite.
+
+### Android background media (build 11)
+
+- Process-owned Flutter engine survives activity closure; authorized camera/audio
+  availability is prepared while visible with the corresponding permissions and
+  foreground service types. The ongoing notification reports background media
+  availability. Stop Narad tears down media and releases the partial wake lock.
+- Flutter analysis and 37 tests pass; Android native compilation and eight tests pass.
+- Physical Android 15 tablet camera loopback passes lens switching, PNG capture
+  and MP4 recording after pressing Home. The temporary video fully decodes:
+  H.264, 180 × 320, 7.09 seconds and 99 frames, video only. Test media is removed.
+- Screen-off, manufacturer battery policies, long-duration background operation,
+  activity removal and Android 16 microphone runtime need further physical QA.
+  iOS remains foreground-only; desktop tray behavior is unchanged.

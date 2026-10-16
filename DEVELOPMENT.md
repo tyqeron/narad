@@ -615,3 +615,13 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - Flutter analysis and 37 tests pass; Android native compilation/unit tests pass.
   Add opt-in tablet Home-during-capture validation to the camera host harness;
   physical verification and release delivery are recorded separately after running.
+
+## 44. Physical background-camera regression check
+
+- Extend the opt-in Android camera harness with `--background`: prepare the
+  camera foreground service while visible, record through Home, capture a PNG
+  while backgrounded, return to Narad and decode the generated native MP4.
+- Android 15 tablet passes: H.264 180 × 320, 7.09 seconds, 99 frames, video only.
+  Temporary recording and host copies are deleted. No phone/contacts permissions
+  or default roles are changed. Screen-off/long-duration/activity-removal tests
+  remain separate QA; this is a physical media loopback, not a paired-device test.

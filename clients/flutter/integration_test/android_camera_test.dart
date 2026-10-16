@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:narad_client/camera_tools.dart';
 import 'package:flutter/material.dart';
@@ -14,7 +15,15 @@ void main() {
   testWidgets('physical camera sends a frame to the native video renderer', (
     tester,
   ) async {
-    expect(await AndroidBackend().ensureCameraPermission(), isTrue);
+    const background = bool.fromEnvironment('NARAD_BACKGROUND_CAMERA');
+    final backend = AndroidBackend();
+    expect(await backend.ensureCameraPermission(), isTrue);
+    if (background) {
+      await backend.start();
+      await const MethodChannel(
+        'dev.narad/media',
+      ).invokeMethod<void>('prepare', {'camera': true, 'audio': false});
+    }
     final viewer = await createPeerConnection({
       'iceServers': [],
       'sdpSemantics': 'unified-plan',
@@ -117,7 +126,23 @@ void main() {
       expect(secondFacing, isNot(firstFacing));
       await Future<void>.delayed(const Duration(seconds: 1));
       await tools.startRecording();
-      await Future<void>.delayed(const Duration(seconds: 3));
+      if (background) {
+        final temporary = (await getTemporaryDirectory()).path;
+        await File(
+          '$temporary/narad-camera-background.ready',
+        ).writeAsString('ready');
+        final marker = File('$temporary/narad-camera-background.active');
+        final deadline = DateTime.now().add(const Duration(seconds: 30));
+        while (!await marker.exists() && DateTime.now().isBefore(deadline)) {
+          await Future<void>.delayed(const Duration(milliseconds: 200));
+        }
+        expect(await marker.exists(), isTrue);
+        await marker.delete();
+        await Future<void>.delayed(const Duration(seconds: 6));
+        expect((await tools.photo()).length, greaterThan(100));
+      } else {
+        await Future<void>.delayed(const Duration(seconds: 3));
+      }
       final path = await tools.stopRecording();
       expect(path, isNotNull);
       final file = File(path!);
@@ -146,6 +171,12 @@ void main() {
       );
       await marker.delete();
     } finally {
+      if (background) {
+        await const MethodChannel(
+          'dev.narad/media',
+        ).invokeMethod<void>('prepare', {'camera': false, 'audio': false});
+        await backend.stop();
+      }
       await tools?.dispose();
       if (export != null && await export.exists()) await export.delete();
       for (final track in camera?.getTracks() ?? <MediaStreamTrack>[]) {
