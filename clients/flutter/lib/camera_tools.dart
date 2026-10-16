@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -14,7 +15,25 @@ class CameraFrames {
     _tail = _tail
         .then((_) async {
           try {
-            result.complete((await track.captureFrame()).asUint8List());
+            final bytes = (await track.captureFrame()).asUint8List();
+            // Android's plugin labels this .png but encodes JPEG. Normalize the public format.
+            final codec = await ui.instantiateImageCodec(bytes);
+            ui.Image? image;
+            try {
+              image = (await codec.getNextFrame()).image;
+              final png = await image.toByteData(
+                format: ui.ImageByteFormat.png,
+              );
+              if (png == null) {
+                throw StateError('Unable to encode camera image');
+              }
+              result.complete(
+                png.buffer.asUint8List(png.offsetInBytes, png.lengthInBytes),
+              );
+            } finally {
+              image?.dispose();
+              codec.dispose();
+            }
           } catch (e, st) {
             result.completeError(e, st);
           } finally {
@@ -96,6 +115,7 @@ class CameraTools {
   bool _capturing = false, _disposed = false;
   final List<String> completed = [];
   String _encoderError = '';
+  int _encodedFrames = 0;
 
   Future<Uint8List> photo() => capture?.call() ?? CameraFrames.capture(track());
   Future<String> startFeed() async {
@@ -133,8 +153,18 @@ class CameraTools {
       if (feed.url != null) feed.frame = bytes;
       final encoder = _encoder;
       if (encoder != null) {
-        encoder.stdin.add(bytes);
-        await encoder.stdin.flush();
+        // Preserve elapsed video time even when capture produces fewer than 8 fps.
+        // Duplicate the latest frame with bounded catch-up and real backpressure.
+        final expected = max(
+          1,
+          DateTime.now().difference(recordingStarted!).inMilliseconds ~/ 125,
+        );
+        final target = min(expected, _encodedFrames + 16);
+        while (_encodedFrames < target && identical(encoder, _encoder)) {
+          encoder.stdin.add(bytes);
+          await encoder.stdin.flush();
+          _encodedFrames++;
+        }
       }
     } catch (e) {
       await stopFeed();
@@ -192,6 +222,7 @@ class CameraTools {
         ], runInShell: false);
         _encoder = encoder;
         _encoderError = '';
+        _encodedFrames = 0;
         encoder.stdout.drain<void>();
         encoder.stderr.transform(utf8.decoder).listen((text) {
           if (_encoderError.length < 2000) _encoderError += text;

@@ -16,7 +16,7 @@ Camera sessions now show a local source preview and identify the connected devic
   Capture is video-only, without microphone/cellular audio. Limits: ten minutes or
   approximately 128 MB, checked every two seconds. Android/iOS use their native
   recorder; desktop uses FFmpeg with libx264 on PATH, capturing up to eight frames
-  per second. Desktop recordings are a preview and may run faster if capture is slow.
+  per second. Desktop recordings use wall-clock timestamps; slow capture reduces frame rate.
 
 Camera grants allow the viewer to capture/save received video. Use those grants only
 with devices you trust. A session ending/revocation stops frame output and capture;
@@ -59,3 +59,9 @@ H.264 recording. Desktop frame capture replaces the locked WebRTC dependency's
 busy wait and leaked pixel allocation with a bounded wait and scoped buffer.
 Windows/Apple native runtime and end-to-end OBS meeting-app selection still require
 platform/device QA; a working localhost feed alone is not that validation.
+
+Opt-in tablet hardware regression (requires existing camera access and an unlocked
+device): `FLUTTER_BIN=/opt/flutter/bin/flutter python3 tests/android_camera_tools.py
+--serial <ADB-IP:port>`. It disables test-app uninstall, verifies temporary native
+video with FFmpeg and removes its test copies. The contacts tablet UI test uses
+generated data only; it does not exercise personal contacts or save a contact.

@@ -19,22 +19,34 @@ void FlutterFrameCapturer::OnFrame(scoped_refptr<RTCVideoFrame> frame) {
 }
 
 void FlutterFrameCapturer::CaptureFrame(std::unique_ptr<MethodResultProxy> result) {
-  track_->AddRenderer(this);
-  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-  bool ready = false;
-  while (std::chrono::steady_clock::now() < deadline) {
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      ready = catch_frame_;
+  // Frame production can depend on the platform thread: never wait on that thread.
+  // Retain the track and construct the capturer in the worker, since the caller's
+  // FlutterFrameCapturer is stack-owned. The plugin result proxy marshals replies.
+  scoped_refptr<RTCVideoTrack> track(track_);
+  const auto path = path_;
+  std::thread([track, path, result = std::move(result)]() mutable {
+    FlutterFrameCapturer capture(track.get(), path);
+    track->AddRenderer(&capture);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    bool ready = false;
+    while (std::chrono::steady_clock::now() < deadline) {
+      {
+        std::lock_guard<std::mutex> lock(capture.mutex_);
+        ready = capture.catch_frame_;
+      }
+      if (ready) break;
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
-    if (ready) break;
-    std::this_thread::sleep_for(std::chrono::milliseconds(2));
-  }
-  track_->RemoveRenderer(this);
-  if (!ready) {result->Error("camera_timeout", "No camera frame arrived within three seconds"); return;}
-  std::lock_guard<std::mutex> lock(mutex_);
-  if (SaveFrame()) result->Success();
-  else result->Error("camera_frame", "Cannot save camera frame");
+    track->RemoveRenderer(&capture);
+    if (!ready) {result->Error("camera_timeout", "No camera frame arrived within three seconds"); return;}
+    try {
+      std::lock_guard<std::mutex> lock(capture.mutex_);
+      if (capture.SaveFrame()) result->Success();
+      else result->Error("camera_frame", "Cannot save camera frame");
+    } catch (const std::exception&) {
+      result->Error("camera_frame", "Camera frame encoding failed");
+    }
+  }).detach();
 }
 
 bool FlutterFrameCapturer::SaveFrame() {

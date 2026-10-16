@@ -21,7 +21,7 @@ def main():
     args = parser.parse_args()
     adb = [os.environ.get('ADB', 'adb'), '-s', args.serial, 'shell', 'run-as', 'dev.narad.narad_client']
     process = subprocess.Popen([os.environ.get('FLUTTER_BIN', 'flutter'), 'test',
-        'integration_test/android_camera_test.dart', '-d', args.serial], cwd=ROOT / 'clients/flutter')
+        'integration_test/android_camera_test.dart', '--no-uninstall', '-d', args.serial], cwd=ROOT / 'clients/flutter')
     checked = False
     try:
         with tempfile.TemporaryDirectory(prefix='narad-tablet-video-') as temporary:

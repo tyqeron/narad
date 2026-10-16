@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,15 +18,8 @@ void main() {
         '1',
         reason: 'Use an isolated Xvfb display',
       );
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            backgroundColor: Colors.teal,
-            body: Center(child: Text('Narad generated camera fixture')),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
+      await tester.pumpWidget(const MaterialApp(home: _GeneratedDisplay()));
+      await tester.pump();
       final screens = await desktopCapturer.getSources(
         types: [SourceType.Screen],
       );
@@ -84,5 +78,35 @@ void main() {
         await stream.dispose();
       }
     },
+  );
+}
+
+class _GeneratedDisplay extends StatefulWidget {
+  const _GeneratedDisplay();
+  @override
+  State<_GeneratedDisplay> createState() => _GeneratedDisplayState();
+}
+
+class _GeneratedDisplayState extends State<_GeneratedDisplay> {
+  Timer? timer;
+  bool alternate = false;
+  @override
+  void initState() {
+    super.initState();
+    timer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      if (mounted) setState(() => alternate = !alternate);
+    });
+  }
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: alternate ? Colors.teal : Colors.indigo,
+    body: const Center(child: Text('Narad generated camera fixture')),
   );
 }

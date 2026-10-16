@@ -65,7 +65,10 @@ void main() {
     final tools = CameraTools(
       () => throw StateError('fixture must not access hardware'),
       errors.add,
-      capture: () async => png,
+      capture: () async {
+        await Future<void>.delayed(const Duration(milliseconds: 180));
+        return png;
+      },
     );
     try {
       await tools.startRecording();
@@ -81,7 +84,7 @@ void main() {
         '-select_streams',
         'v:0',
         '-show_entries',
-        'stream=codec_name,width,height,nb_frames',
+        'stream=codec_name,width,height,nb_frames,duration',
         '-of',
         'json',
         path,
@@ -90,6 +93,7 @@ void main() {
       final stream =
           (jsonDecode(probe.stdout as String)['streams'] as List).single;
       expect(stream['codec_name'], 'h264');
+      expect(double.parse(stream['duration'] as String), greaterThan(1.2));
       expect(stream['width'], 16);
       expect(int.parse(stream['nb_frames'] as String), greaterThan(1));
       final decode = await Process.run('ffmpeg', [

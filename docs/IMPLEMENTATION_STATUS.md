@@ -13,7 +13,7 @@ baseline. This document describes the actual implementation.
 | Files | Persistent per-peer auto-grants or per-offer acceptance, scoped Shared-folder browsing, separate TLS plane, bounded checksummed chunks, resume/retry, cancellation, archive | Performance tuning, streaming transport optimization, disk quota management |
 | Clipboard | Opt-in receive permission, manual sending, persistent automatic receive grants or one-off acceptance, native system clipboard write | Optional background monitoring with platform privacy policies |
 | Audio | Flutter WebRTC microphone-to-speaker adapter, LAN host candidates, authorized signaling, stop/cleanup | Physical audio/latency tests, reconnection, output selection and diagnostics |
-| Camera | Permissioned WebRTC camera viewing, foreground source, native permission gate and teardown | Physical capture/quality/device matrix |
+| Camera | Permissioned WebRTC viewing, lens switching, source preview, PNG/MP4 saving and localhost OBS desktop feed | End-to-end OBS call-app selection, Windows/iOS runtime and physical quality matrix |
 | Controls | Locally configured command presets, bounded execution, Android force-lock and unlock-authentication notification, Linux loginctl | Physical lock/unlock matrix and desktop-session support |
 | Flutter client | Nearby/online/offline dashboard, per-device settings, saved Device/Light/Dark themes, grouped activity, Media, Inbox and transfers | Platform packaging/installers, accessibility/device QA |
 | Linux | Native builds, installer, tray/close-to-background, opt-out-aware login startup, isolated GTK hide/reopen tests, real daemon integration | Packaged release and physical two-machine media QA |
@@ -26,14 +26,14 @@ baseline. This document describes the actual implementation.
 ## Verified locally
 
 - 22 Rust behavioral tests, formatting and strict Clippy.
-- Sixteen two-daemon integration scenarios (multicast is opt-in): pairing and
+- Seventeen two-daemon integration scenarios (multicast is opt-in): pairing and
   code mismatch, certificate pin mismatch, expired invitations, local API
   authentication, file acceptance/cancellation, interruption/resume, restart,
   persisted revocation, clipboard acceptance, media signaling gates, nearby acceptance/decline/cancellation, authenticated online/offline/reconnect,
   automatic grants, scoped browsing, preset command execution/revocation, and
-  camera-only signaling with audio denied and camera revocation, phone permission separation, ephemeral dispatch and revocation. The latest fix
-  run passed 15 cases with the multicast case skipped; multicast passed previously.
-- Thirty-one Flutter tests: device actions, clipboard acceptance, pairing confirmation,
+  camera-only signaling with audio denied and camera revocation, phone permission separation, ephemeral dispatch and revocation, and separate contacts access. The latest fix
+  run passed 16 cases with the multicast case skipped; multicast passed previously.
+- Thirty-five Flutter tests: device actions, clipboard acceptance, pairing confirmation,
   narrow-screen layout, no media capture before approval, Android readiness,
   shutdown waiting, identity-error propagation, nearby request/accept/cancel UI, themes, grouped activity, per-device grants, validated widget routing, explicit SMS confirmation, sensitive-content clearing and banner deduplication.
 - Eight native Android unit tests cover device actions without presets, platform
@@ -119,3 +119,13 @@ claiming public-release readiness.
 Phone integration build 0.1.0+8 adds Android opt-in setup and the shared companion UI. Tests use generated fixtures; no real SMS, calls or private phone records were exercised. iOS is source-only and the new Windows notification code awaits native compilation/runtime validation. See [phone integration](PHONE_INTEGRATION.md) and [iOS preview](IOS.md).
 
 Final build 8 is installed on the Android 16 Nothing A015 with existing data preserved. Native setup layout was physically inspected after a system-bar inset fix. The integration switch remains off; existing OS access/role selections were preserved. Linux release installer passes all seven disposable packaging tests. Windows native banners and the iOS runner still require their platform build/runtime checks.
+
+Build 9 adds separately granted live contact access, explicit contact-editor/vCard
+copying, camera lens switching, PNG images, video-only MP4 recording and a local
+OBS Browser feed for desktop webcam use. Automatic address-book merging and a
+mobile system-wide virtual camera are not implemented. See [camera setup](CAMERA.md).
+The Android 15 tablet passes physical render, both lens switches, valid PNG and
+native H.264 recording with host full decode. An isolated animated Xvfb display
+passes repeated native desktop snapshots, localhost feed retrieval and MP4 decode.
+Native contact-editor field automation and saved-contact verification remain manual;
+no existing contacts were read/modified. iOS sources still require Apple validation.

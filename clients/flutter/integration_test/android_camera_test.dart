@@ -130,7 +130,7 @@ void main() {
         '${(await getTemporaryDirectory()).path}/narad-camera-fixture.mp4',
       );
       await file.copy(export.path);
-      print('NARAD_CAMERA_FIXTURE_READY');
+      debugPrint('NARAD_CAMERA_FIXTURE_READY');
       // Host harness verifies the actual native MP4 while this temporary copy exists.
       final marker = File(
         '${(await getTemporaryDirectory()).path}/narad-camera-fixture.checked',

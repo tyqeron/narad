@@ -546,3 +546,23 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   Generated FFmpeg recordings decode; feed rejects unknown paths/Host headers.
   Linux release builds including the native replacement. Physical tablet tests,
   isolated desktop capture and final artifact delivery are recorded next.
+
+## 40. Tablet camera format regression and physical verification
+
+- Android 15/API 35 Xiaomi tablet test caught WebRTC returning JPEG bytes under a
+  PNG filename. CameraFrames now decodes/re-encodes a real PNG before save/feed.
+- Physical WebRTC receive/render, front/back switch twice, valid snapshots and a
+  three-second video-only MP4 pass on the tablet. Host FFmpeg fully decodes the
+  actual native H.264 recording, then test copies are removed.
+- Flutter integration tests now specify --no-uninstall to preserve installed app
+  data; the first test's default cleanup was blocked by existing device-admin
+  policy. App data was preserved. A reusable host decoder harness is included.
+- The isolated Linux native test now passes repeated actual WebRTC PNG captures,
+  localhost feed retrieval and FFmpeg decoding of the generated display recording.
+  Capture waits run off the platform thread; a static/incorrect display initially
+  timed out. The test uses animated generated UI under forced X11/Xvfb.
+- Desktop MP4 duplicates frames against elapsed time rather than accelerating
+  when frame production is slower than the eight-fps preview limit.
+- Tablet contacts list denial/reload checks use generated data. System contact
+  editor resolution is confirmed; editor field automation timed out, so native
+  contact saving remains manual QA. Existing contacts were not queried or saved.
