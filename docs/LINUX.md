@@ -114,3 +114,5 @@ FLUTTER_BIN=/path/to/flutter python3 tests/android_e2e.py --serial DEVICE_SERIAL
 Install and open the normal debug APK first, with camera permission enabled on
 Android. The test uses a temporary pairing and streams live video to a test window
 (or Xvfb); it never records video or captures audio. Generated trust is removed.
+
+Phone companion setup, platform support and cellular audio limitations: [Phone integration](PHONE_INTEGRATION.md).

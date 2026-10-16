@@ -144,3 +144,5 @@ Narad open there, and choose **View camera** on the viewer. Windows camera priva
 settings must permit desktop apps to use the webcam. Missing video tracks produce
 an explicit camera-access error. The updated backend cross-compiles for Windows;
 physical Windows camera capture/viewing still requires native testing.
+
+Phone companion setup, platform support and cellular audio limitations: [Phone integration](PHONE_INTEGRATION.md).

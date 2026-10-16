@@ -5,7 +5,7 @@ baseline. This document describes the actual implementation.
 
 | Area | Implemented | Remaining work |
 | --- | --- | --- |
-| Identity | Persistent Ed25519/TLS identity, private Unix state, Android Keystore wrapping | Desktop/iOS keychain integration; Windows ACL validation |
+| Identity | Persistent Ed25519/TLS identity, private Unix state, Android Keystore wrapping | Desktop keychain integration; Windows ACL validation |
 | Discovery | mDNS/DNS-SD, metadata validation, live capability advertising, manual fallback | Physical multi-network/platform matrix; IPv6 |
 | Pairing | Direct nearby requests with receiver acceptance and automatic completion, invitation/QR fallback, verification codes | Standalone short-code pairing; security review |
 | Trust | Encrypted local trust/permission records, pinned TLS, unpair/revocation | Key rotation/migration; independent security audit |
@@ -19,24 +19,25 @@ baseline. This document describes the actual implementation.
 | Linux | Native builds, installer, tray/close-to-background, opt-out-aware login startup, isolated GTK hide/reopen tests, real daemon integration | Packaged release and physical two-machine media QA |
 | Windows | Supervised packaged daemon, DPAPI identity migration, private ACLs, Windows command Jobs, workstation lock, ZIP/installer/firewall helpers, tray and hidden login startup, CI job; cross-compiled backend/native runner | Windows-native CI run, full GUI build and physical Windows/Android/Linux media/firewall/locking QA |
 | Android | Embedded Rust/JNI backend, connected-device service, multicast lock, permissions, Keystore identity, QR scan, file picker/export, device-action widgets, live connection notification, universal APK | More physical devices/OS versions; camera, document export and microphone QA; battery policy matrix |
-| iOS | Architecture boundary only | Runner, embedding, entitlements, lifecycle, keychain and device QA |
+| iOS | Source-preview runner, Rust C ABI, Keychain identity, foreground Android companion viewer and user-confirmed SMS/call handoff | macOS compilation/signing and iPhone validation; no general iPhone SMS inbox, call logs or system notification sync |
+| Phone companion | Permissioned notification read/dismiss/reply, SMS read/send, call logs and call controls from Android; shared viewer and desktop banners | Physical sensitive-data tests; desktop cellular audio; Windows banner runtime QA; iOS source restrictions (see PHONE_INTEGRATION.md) |
 | Release | Lockfiles, development journal, CI configuration, setup/protocol docs | Release candidate criteria and security/compatibility review |
 
 ## Verified locally
 
-- 21 Rust behavioral tests, formatting and strict Clippy.
-- Fourteen two-daemon integration scenarios (multicast is opt-in): pairing and
+- 22 Rust behavioral tests, formatting and strict Clippy.
+- Sixteen two-daemon integration scenarios (multicast is opt-in): pairing and
   code mismatch, certificate pin mismatch, expired invitations, local API
   authentication, file acceptance/cancellation, interruption/resume, restart,
   persisted revocation, clipboard acceptance, media signaling gates, nearby acceptance/decline/cancellation, authenticated online/offline/reconnect,
   automatic grants, scoped browsing, preset command execution/revocation, and
-  camera-only signaling with audio denied and camera revocation. The latest fix
-  run passed 13 cases with the multicast case skipped; multicast passed previously.
-- Twenty-seven Flutter tests: device actions, clipboard acceptance, pairing confirmation,
+  camera-only signaling with audio denied and camera revocation, phone permission separation, ephemeral dispatch and revocation. The latest fix
+  run passed 15 cases with the multicast case skipped; multicast passed previously.
+- Thirty-one Flutter tests: device actions, clipboard acceptance, pairing confirmation,
   narrow-screen layout, no media capture before approval, Android readiness,
-  shutdown waiting, identity-error propagation, nearby request/accept/cancel UI, themes, grouped activity, per-device grants and validated widget routing.
-- Five native Android unit tests cover device actions without presets, platform
-  differences, offline gating, notification text and unknown actions.
+  shutdown waiting, identity-error propagation, nearby request/accept/cancel UI, themes, grouped activity, per-device grants, validated widget routing, explicit SMS confirmation, sensitive-content clearing and banner deduplication.
+- Eight native Android unit tests cover device actions without presets, platform
+  differences, offline gating, notification text, unknown actions and rejecting unsafe phone numbers.
 - Flutter analysis and Linux native debug build.
 - Desktop and narrow-screen previews rendered and inspected.
 - Android 15/API 35 physical ARM64 tablet: two device integration tests verify
@@ -114,3 +115,7 @@ automatic media reconnection and audio-device selection are pending.
 The complete cross-platform MVP and release criteria in the PRD are **not yet
 fulfilled**. Follow the remaining platform and release work above before
 claiming public-release readiness.
+
+Phone integration build 0.1.0+8 adds Android opt-in setup and the shared companion UI. Tests use generated fixtures; no real SMS, calls or private phone records were exercised. iOS is source-only and the new Windows notification code awaits native compilation/runtime validation. See [phone integration](PHONE_INTEGRATION.md) and [iOS preview](IOS.md).
+
+Final build 8 is installed on the Android 16 Nothing A015 with existing data preserved. Native setup layout was physically inspected after a system-bar inset fix. The integration switch remains off; existing OS access/role selections were preserved. Linux release installer passes all seven disposable packaging tests. Windows native banners and the iOS runner still require their platform build/runtime checks.

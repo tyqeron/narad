@@ -198,3 +198,5 @@ connections, checks a rendered frame and stops capture. It never records video
 or sends it off the test device. It is separate from the default smoke tests.
 Use a development test device; reinstall the normal release APK afterwards to
 restore the app UI.
+
+Phone companion setup, platform support and cellular audio limitations: [Phone integration](PHONE_INTEGRATION.md).

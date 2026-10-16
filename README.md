@@ -163,3 +163,9 @@ git show <commit>
 [Protocol details](docs/PROTOCOL.md) describe the current experimental wire/API
 contract. [Architecture decisions](docs/DECISIONS.md) record departures from the
 planning examples and the remaining platform work.
+
+Phone companion support and setup: [notifications, SMS and calls](docs/PHONE_INTEGRATION.md).
+Android source controls require explicit grants and OS access; cellular call audio
+is not bridged by Narad. The [iOS runner](docs/IOS.md) is an unverified source preview
+with Android-phone viewing and confirmation-only iPhone handoff, not full iPhone
+SMS/history/notification mirroring.

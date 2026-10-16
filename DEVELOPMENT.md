@@ -522,4 +522,11 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   remains disabled and no role/permission was changed. Physical inspection found
   a status-bar overlap in native activities. Added system-bar insets and modern
   device-theme controls to setup/dial/in-call screens and clarified audio limits.
-- Final release build and post-update layout verification follow below.
+- Universal release 0.1.0+8 builds; signature, checksum, ZIP 16 KiB alignment and
+  all 16 packaged 64-bit ELF libraries verify. Installed on the Nothing A015
+  preserving app data. The title is below the status bar and switch visible.
+- Phone-side access indicators are Ready and Narad is currently default dialer;
+  integration remains off. These checks did not change permissions/role or read
+  messages, call history, notifications, or place/answer a real call.
+- Linux release installer builds and all seven disposable installation/upgrade/
+  daemon lifecycle checks pass; checksum verifies. Artifacts live under dist/.
