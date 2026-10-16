@@ -594,4 +594,9 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   snapshots, recording and webcam tools are restricted to the requester.
 - Added role-specific UI regression checks; Android version advances to build 10.
   Flutter analysis and 37 tests pass, including source/requester role checks.
-  Physical delivery is recorded below when complete.
+  Android build 10 passes signature/checksum/16 KiB alignment verification and
+  is installed over existing data on the tablet and phone. Linux installer builds
+  and its checksum verifies. No permissions or default roles were changed.
+- Final paired-camera UI check was deferred because the phone is on its system
+  call screen; no camera session was started and the call was left undisturbed.
+  The prior build's paired camera tests remain historical, not build 10 validation.

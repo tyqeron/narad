@@ -139,3 +139,8 @@ were removed. Final Android unit tests (8) and all seven Linux installer checks 
 Build 10 removes the source camera preview. Source devices show the requester and
 a stop control; video and capture/webcam tools appear only on the requesting device.
 Role-specific widget checks and the full 37-test Flutter suite pass.
+
+Build 10 is installed on the Android tablet and phone; APK signature, checksum
+and alignment verify, and the Linux installer builds/checksums successfully.
+The final paired hardware UI check was deferred while the phone showed its call
+screen. Build 10's requester/source behavior is covered by the 37-test client suite.
