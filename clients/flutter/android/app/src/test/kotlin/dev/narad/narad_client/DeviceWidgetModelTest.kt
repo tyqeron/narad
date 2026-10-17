@@ -4,9 +4,9 @@ import org.junit.Test
 
 class DeviceWidgetModelTest {
     @Test fun allActionsAvailableWithoutPresets() {
-        assertEquals(11,DeviceWidgetModel.actionsFor("linux").size)
+        assertEquals(12,DeviceWidgetModel.actionsFor("linux").size)
         assertTrue(DeviceWidgetModel.actionsFor("android").any{it.id=="command"})
-        assertEquals(12,DeviceWidgetModel.actions.map{it.id}.distinct().size)
+        assertEquals(13,DeviceWidgetModel.actions.map{it.id}.distinct().size)
     }
     @Test fun phoneActionsRespectPlatforms(){
         assertTrue(DeviceWidgetModel.actionsFor("android").any{it.id=="phone"})

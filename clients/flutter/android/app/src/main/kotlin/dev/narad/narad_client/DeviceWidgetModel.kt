@@ -7,7 +7,7 @@ object DeviceWidgetModel {
         WidgetDeviceAction("find","Find device"),
         WidgetDeviceAction("phone","Phone companion"),
         WidgetDeviceAction("file","Send file"),WidgetDeviceAction("clipboard","Send clipboard"),
-        WidgetDeviceAction("audio","Send audio"),WidgetDeviceAction("camera","View camera"),
+        WidgetDeviceAction("audio","Send audio"),WidgetDeviceAction("microphone","Use microphone"),WidgetDeviceAction("camera","View camera"),
         WidgetDeviceAction("browse","Browse files"),WidgetDeviceAction("command","Run command"),
         WidgetDeviceAction("lock","Lock device"),WidgetDeviceAction("unlock","Request unlock"),
         WidgetDeviceAction("settings","Device settings"),WidgetDeviceAction("unpair","Unpair device")

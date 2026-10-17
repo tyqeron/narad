@@ -9,6 +9,7 @@ class DeviceWidgetAction {
     'file',
     'clipboard',
     'audio',
+    'microphone',
     'camera',
     'browse',
     'command',

@@ -420,6 +420,9 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       case 'audio':
         await _audio!.start(action.peerId);
         if (mounted) setState(() => _page = 3);
+      case 'microphone':
+        await _audio!.requestMicrophone(action.peerId);
+        if (mounted) setState(() => _page = 3);
       case 'camera':
         await _viewCamera(action.peerId);
       case 'browse':
