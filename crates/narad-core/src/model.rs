@@ -45,7 +45,7 @@ impl Peer {
             "invalid platform"
         );
         ensure!(
-            self.capabilities.len() <= 16
+            self.capabilities.len() <= 32
                 && self.capabilities.iter().all(|c| !c.is_empty()
                     && c.len() <= 64
                     && c.bytes()

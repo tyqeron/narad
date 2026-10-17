@@ -68,6 +68,7 @@ pub async fn remote(
         "browse" | "shared_read" => "file.browse",
         "command" | "command_list" => "command.run",
         "device_action" => match kind {
+            "find" | "find_stop" => "device.find",
             "lock" => "device.lock",
             "unlock" => "device.unlock",
             _ => anyhow::bail!("unsupported device action"),
@@ -151,7 +152,7 @@ pub async fn remote(
             );
         }
         #[cfg(windows)]
-        if op == "device_action" {
+        if op == "device_action" && !matches!(kind, "find" | "find_stop") {
             let result = crate::windows::device_action(kind)?;
             state.event(
                 "device.completed",
@@ -159,7 +160,28 @@ pub async fn remote(
             );
             return Ok(result);
         }
-        if op == "device_action" && cfg!(target_os = "android") {
+        if op == "device_action"
+            && (cfg!(target_os = "android") || matches!(kind, "find" | "find_stop"))
+        {
+            if kind == "find" {
+                ensure!(
+                    !state
+                        .platform_actions
+                        .values()
+                        .any(|a| a.peer_id == peer.device_id
+                            && a.kind == "find"
+                            && a.expires_at > now() + 30),
+                    "wait 30 seconds before ringing this device again"
+                );
+            }
+            if kind == "find_stop" {
+                for action in state.platform_actions.values_mut().filter(|a| {
+                    a.peer_id == peer.device_id && a.kind == "find" && a.status == "pending"
+                }) {
+                    action.status = "failed".into();
+                    action.message = "Ringing cancelled".into();
+                }
+            }
             ensure!(
                 state.platform_actions.len() < 32,
                 "too many pending device actions"
@@ -513,6 +535,87 @@ mod tests {
                 .is_err()
         );
         assert_eq!(shared.lock().await.platform_actions[&id].status, "failed");
+    }
+    #[tokio::test]
+    async fn find_device_is_separately_authorized_bounded_and_revocable() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut state = State::load(
+            directory.path().join("state"),
+            "Native test".into(),
+            "127.0.0.1".into(),
+            46000,
+        )
+        .unwrap();
+        state.own.capabilities.extend(
+            crate::phone::CAPABILITIES
+                .into_iter()
+                .chain(["audio.output", "camera.stream"])
+                .map(str::to_owned),
+        );
+        state.own.validate().unwrap();
+        let peer = Identity::generate()
+            .unwrap()
+            .peer("Peer".into(), "127.0.0.1".into(), 46002);
+        state.trust.peers.insert(
+            peer.device_id.clone(),
+            TrustRecord {
+                peer: peer.clone(),
+                paired_at: now(),
+            },
+        );
+        let shared = Arc::new(Mutex::new(state));
+        let request = json!({"op":"device_action","kind":"find"});
+        assert!(remote(shared.clone(), &peer, &request, false)
+            .await
+            .is_err());
+        handler::local(shared.clone(), json!({"op":"permission","peer_id":peer.device_id,"capability":"device.find","allow":true,"automatic":true})).await.unwrap();
+        assert!(remote(shared.clone(), &peer, &request, true).await.is_err());
+        let queued = remote(shared.clone(), &peer, &request, false)
+            .await
+            .unwrap();
+        let id = queued["id"].as_str().unwrap();
+        assert!(remote(shared.clone(), &peer, &request, false)
+            .await
+            .is_err());
+        let events = platform_events(&mut *shared.lock().await).unwrap();
+        assert_eq!(events["actions"][0]["kind"], "find");
+        assert!(
+            platform_events(&mut *shared.lock().await).unwrap()["actions"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        handler::local(
+            shared.clone(),
+            json!({"op":"platform_result","id":id,"success":true,"message":"Ringing"}),
+        )
+        .await
+        .unwrap();
+        handler::local(shared.clone(), json!({"op":"platform_validate","id":id}))
+            .await
+            .unwrap();
+        remote(
+            shared.clone(),
+            &peer,
+            &json!({"op":"device_action","kind":"find_stop"}),
+            false,
+        )
+        .await
+        .unwrap();
+        handler::local(shared.clone(), json!({"op":"permission","peer_id":peer.device_id,"capability":"device.find","allow":false})).await.unwrap();
+        assert!(
+            handler::local(shared.clone(), json!({"op":"platform_validate","id":id}))
+                .await
+                .is_err()
+        );
+        assert!(remote(
+            shared.clone(),
+            &peer,
+            &json!({"op":"device_action","kind":"lock"}),
+            false
+        )
+        .await
+        .is_err());
     }
     #[tokio::test]
     async fn command_output_is_bounded_while_the_pipe_is_drained() {

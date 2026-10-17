@@ -87,6 +87,7 @@ impl Identity {
                     "file.browse".into(),
                     "command.run".into(),
                     "device.lock".into(),
+                    "device.find".into(),
                 ];
                 if cfg!(target_os = "ios") {
                     capabilities.retain(|c| !["command.run", "device.lock"].contains(&c.as_str()));

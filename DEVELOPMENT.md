@@ -645,3 +645,17 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - Updated the existing device-list test to expand, collapse and reopen the list,
   then check offline action restrictions. All 12 dashboard widget tests and
   Flutter analysis pass. This source change has not been packaged or installed.
+
+## 47. Permissioned Find device protocol
+
+- Add a separate default-off device.find grant and authenticated find/find_stop
+  actions, delivered through the bounded native-platform queue on every platform.
+  Start requests are rate-limited per requester; stop remains available. Running
+  alerts can revalidate their grant after acknowledging playback so revocation
+  also stops an already-started alert.
+- Expand the bounded capability list to 32 so Find device, both media adapters
+  and all eight phone companion features can be advertised together. Update both
+  endpoints; older builds accept at most 16 advertised capabilities.
+- All 23 Rust tests and strict workspace/Windows-target Clippy pass. New coverage
+  checks separate authorization, transport plane, single dispatch, rate limiting,
+  stop and permission revocation, including the full capability advertisement.

@@ -35,6 +35,7 @@ fn capability(v: &Value) -> Result<&str> {
             "camera.stream",
             "file.browse",
             "command.run",
+            "device.find",
             "device.lock",
             "device.unlock"
         ]
@@ -448,7 +449,13 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
                 .platform_actions
                 .get(string(&p, "id")?)
                 .context("action expired")?;
-            ensure!(action.status == "dispatched", "action no longer pending");
+            ensure!(
+                action.status == "dispatched"
+                    || (action.kind == "find"
+                        && action.status == "completed"
+                        && action.expires_at > narad_core::model::now()),
+                "action no longer pending"
+            );
             s.trust
                 .authorize(&s.peer(&action.peer_id)?, &action.capability, true)?;
             Ok(ok())

@@ -72,6 +72,7 @@ pub fn start(peer: &Peer, peers: Discovered) -> Result<ServiceDaemon> {
                                     "camera.stream",
                                     "file.browse",
                                     "command.run",
+                                    "device.find",
                                     "device.lock",
                                     "device.unlock",
                                 ]
