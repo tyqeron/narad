@@ -74,7 +74,7 @@ impl Invitation {
     pub fn validate(&self) -> Result<()> {
         self.peer.validate()?;
         ensure!(
-            self.expires_at > now() && self.expires_at <= now() + 300,
+            self.expires_at > now() && self.expires_at <= now() + 360,
             "pairing invitation expired or invalid"
         );
         ensure!(self.nonce.len() == 64, "invalid pairing nonce");
@@ -157,6 +157,24 @@ pub struct TrustState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn fresh_invitations_tolerate_the_signed_frame_clock_skew() {
+        let peer = crate::identity::Identity::generate().unwrap().peer(
+            "Clock fixture".into(),
+            "127.0.0.1".into(),
+            46000,
+        );
+        let mut invitation = Invitation {
+            peer,
+            nonce: "a".repeat(64),
+            expires_at: now() + 330,
+        };
+        assert!(invitation.validate().is_ok());
+        invitation.expires_at = now() + 400;
+        assert!(invitation.validate().is_err());
+        invitation.expires_at = now() - 1;
+        assert!(invitation.validate().is_err());
+    }
     #[test]
     fn cannot_skip_authorization_or_reactivate_closed_session() {
         let mut s = Session {
