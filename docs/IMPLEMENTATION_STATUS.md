@@ -178,3 +178,7 @@ screen. Build 10's requester/source behavior is covered by the 37-test client su
   default roles, sensitive access or real peer grants are changed.
 - Windows/iOS native audio runtime remains unverified; iOS is foreground-only.
   No GPS/cloud tracking or offline wake-up is provided.
+- Build 12 universal release passes APK signature/checksum, ZIP alignment and all
+  16 native 64-bit ELF checks. Installed on the tablet; normal Devices UI verified.
+  Linux release GUI/backend/installer build, with verified checksums and the Find
+  device guide included. Windows/iOS packages have not been built on this Linux host.

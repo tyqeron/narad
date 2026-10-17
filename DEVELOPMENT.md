@@ -689,3 +689,17 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   paired devices, OS access grants and default roles remain untouched.
 - Settings → Quit Narad now awaits desktop locator cleanup. Document the bounded
   desktop player lifetime if abruptly terminated or quitting through native tray.
+
+## 50. Find device build 12 delivery
+
+- Universal Android release passes signature, checksum, ZIP 16 KiB alignment and
+  all 16 packaged 64-bit ELF checks, including three embedded backend ABIs.
+  Installed over existing tablet data; build 12 and the normal Devices dashboard
+  are verified. Phone is left untouched. No personal location data is accessed.
+- Linux release GUI/backend and self-extracting installer build; archive and
+  installer checksums verify. Desktop package scripts include FIND_DEVICE.md so
+  the bundled README's setup link resolves; the Linux archive member is checked.
+- Final Flutter analysis is clean. Physical Windows/iOS playback and signed iOS
+  delivery still require their respective build/test hosts. The Android test is
+  a paired Linux-requester/tablet-receiver check; Linux playback has a separate
+  real-process start/stop/cleanup check, not a physical speaker audibility claim.
