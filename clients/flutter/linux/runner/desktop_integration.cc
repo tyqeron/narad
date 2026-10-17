@@ -129,6 +129,24 @@ void narad_register_desktop(FlView *view, GtkApplication *application) {
   g_autoptr(FlMethodChannel) channel = fl_method_channel_new(
       fl_engine_get_binary_messenger(fl_view_get_engine(view)),
       "dev.narad/desktop", FL_METHOD_CODEC(codec));
+  g_object_set_data_full(G_OBJECT(application), "narad-desktop-channel",
+                         g_object_ref(channel), g_object_unref);
   fl_method_channel_set_method_call_handler(channel, handle, application,
                                             nullptr);
+}
+
+void narad_request_quit(GtkApplication *application) {
+  if (g_object_get_data(G_OBJECT(application), "narad-quitting")) return;
+  g_object_set_data(G_OBJECT(application), "narad-quitting", GINT_TO_POINTER(1));
+  auto *channel = static_cast<FlMethodChannel *>(
+      g_object_get_data(G_OBJECT(application), "narad-desktop-channel"));
+  if (channel) {
+    fl_method_channel_invoke_method(channel, "prepareQuit", nullptr, nullptr, nullptr, nullptr);
+    g_timeout_add_seconds_full(G_PRIORITY_DEFAULT, 30, [](gpointer app) -> gboolean {
+      g_application_quit(G_APPLICATION(app));
+      return G_SOURCE_REMOVE;
+    }, g_object_ref(application), g_object_unref);
+  } else {
+    g_application_quit(G_APPLICATION(application));
+  }
 }

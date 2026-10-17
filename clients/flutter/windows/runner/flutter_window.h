@@ -29,6 +29,7 @@ protected:
 private:
   bool start_hidden_ = false;
   bool quitting_ = false;
+  bool quit_requested_ = false;
   bool tray_added_ = false;
   void AddTray();
   void RemoveTray();

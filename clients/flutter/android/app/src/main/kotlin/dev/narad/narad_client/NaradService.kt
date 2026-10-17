@@ -39,15 +39,17 @@ class NaradService : Service() {
         private set
     var audioReady=false
         private set
+    var playbackReady=false
+        private set
     private var mediaWake:PowerManager.WakeLock?=null
-    fun prepareMedia(camera:Boolean,audio:Boolean) {
+    fun prepareMedia(camera:Boolean,audio:Boolean,playback:Boolean=playbackReady) {
         var types=ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-        if(FindDeviceAlarm.actionId!=null)types=types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+        if(FindDeviceAlarm.actionId!=null || playback)types=types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
         if(camera && Build.VERSION.SDK_INT>=30)types=types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
         if(audio && Build.VERSION.SDK_INT>=30)types=types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         if(Build.VERSION.SDK_INT>=29)startForeground(NOTIFICATION,connectionNotification(null),types)
-        cameraReady=camera;audioReady=audio
-        if(camera || audio) {
+        cameraReady=camera;audioReady=audio;playbackReady=playback
+        if(camera || audio || playback) {
             if(mediaWake==null)mediaWake=getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"narad:media").apply {setReferenceCounted(false);acquire()}
         } else {mediaWake?.release();mediaWake=null}
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION,connectionNotification(null))
@@ -121,7 +123,7 @@ class NaradService : Service() {
         val stop=PendingIntent.getService(this,1,Intent(this,NaradService::class.java).setAction(STOP),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val title=if(names==null)"Narad · Checking connections" else DeviceWidgetModel.title(names)
         val text=if(names==null)"Connecting to your paired devices…" else DeviceWidgetModel.details(names)
-        val media=if(cameraReady || audioReady) "Background sharing enabled: "+listOfNotNull(if(cameraReady)"camera" else null,if(audioReady)"microphone" else null).joinToString(", ")+". " else ""
+        val media=if(cameraReady || audioReady || playbackReady) "Background sharing enabled: "+listOfNotNull(if(cameraReady)"camera" else null,if(audioReady)"microphone" else null,if(playbackReady)"audio playback" else null).joinToString(", ")+". " else ""
         val expanded=if(names.isNullOrEmpty())text else "Connected devices (${names.size})\n"+names.sortedWith(String.CASE_INSENSITIVE_ORDER).joinToString("\n"){"• $it"}
         val public=Notification.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_narad_notification).setContentTitle("Narad is running")
             .setContentText(if(names==null)"Checking connections" else "${names.size} connected devices").build()
@@ -279,7 +281,7 @@ class NaradService : Service() {
         FindDeviceAlarm.stop()
         MediaRuntime.serviceStopped()
         mediaWake?.release();mediaWake=null
-        cameraReady=false;audioReady=false
+        cameraReady=false;audioReady=false;playbackReady=false
         phoneSyncWorker.shutdownNow();phoneSync.stop();
         destroyed=true
         main.removeCallbacks(platformPoll)

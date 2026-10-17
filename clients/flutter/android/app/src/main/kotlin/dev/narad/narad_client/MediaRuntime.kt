@@ -16,6 +16,7 @@ object MediaRuntime {
     private var permissionReturned=false
     private var requestedCamera = false
     private var requestedAudio = false
+    private var requestedPlayback = false
 
     fun engine(context: Context): FlutterEngine {
         engine?.let { return it }
@@ -26,6 +27,7 @@ object MediaRuntime {
             if(call.method != "prepare") { result.notImplemented(); return@setMethodCallHandler }
             val camera = call.argument<Boolean>("camera") == true
             val audio = call.argument<Boolean>("audio") == true
+            val playback = call.argument<Boolean>("playback") == true
             try {
                 val service = NaradService.instance ?: error("Start Narad before enabling media")
                 if((camera && !service.cameraReady) || (audio && !service.audioReady)) {
@@ -35,12 +37,12 @@ object MediaRuntime {
                     if(audio && app.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) permissions.add(Manifest.permission.RECORD_AUDIO)
                     if(permissions.isNotEmpty()) {
                         check(pending == null) { "A media permission request is already open" }
-                        pending=result; permissionReturned=false; requestedCamera=camera; requestedAudio=audio
+                        pending=result; permissionReturned=false; requestedCamera=camera; requestedAudio=audio;requestedPlayback=playback
                         activity!!.requestPermissions(permissions.toTypedArray(),1905)
                         return@setMethodCallHandler
                     }
                 }
-                service.prepareMedia(camera,audio)
+                service.prepareMedia(camera,audio,playback)
                 result.success(null)
             } catch(error:Exception) { result.error("background_media",error.message,null) }
         }
@@ -61,7 +63,7 @@ object MediaRuntime {
             check(visible) { "Open Narad to enable background media" }
             check(!requestedCamera || context.checkSelfPermission(Manifest.permission.CAMERA)==PackageManager.PERMISSION_GRANTED) { "Camera permission was not granted" }
             check(!requestedAudio || context.checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED) { "Microphone permission was not granted" }
-            (NaradService.instance ?: error("Narad has stopped")).prepareMedia(requestedCamera,requestedAudio)
+            (NaradService.instance ?: error("Narad has stopped")).prepareMedia(requestedCamera,requestedAudio,requestedPlayback)
             result.success(null)
         } catch(error:Exception) { result.error("background_media",error.message,null) }
     }

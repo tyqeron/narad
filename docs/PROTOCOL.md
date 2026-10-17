@@ -240,3 +240,13 @@ stops remain available. Platform adapters revalidate acknowledged find actions
 until playback stops so revocation/unpairing takes effect on their next poll.
 Peer advertisements permit at most 32 bounded capability names, accommodating
 all media and phone features alongside Find device; update both endpoints.
+
+Media `kind: microphone` uses the separate default-off `audio.input` grant and
+`microphone_ready` adapter heartbeat. It sends a receive-only offer from requester
+to source; source answers send-only audio. Ordinary `kind: audio` uses
+`audio.output` for send-only audio to the receiving speaker; camera uses
+`camera.stream` and video only. Adapters reject SDP with extra media sections or
+the wrong direction before setting remote descriptions. Playback readiness never
+implicitly enables microphone capture. Disabling source microphone readiness closes
+its capture sessions while retaining authorized outgoing microphone requests when
+playback remains ready. Unknown media kinds are rejected.

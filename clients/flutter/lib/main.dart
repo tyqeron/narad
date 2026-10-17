@@ -8,6 +8,9 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'api.dart';
 import 'app_settings.dart';
 import 'audio.dart';
+import 'meeting_page.dart';
+import 'system_audio_page.dart';
+import 'desktop_audio_routes.dart';
 import 'camera_card.dart';
 import 'find_device.dart';
 import 'android_backend.dart';
@@ -136,6 +139,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     );
     if (widget.api == null && (Platform.isLinux || Platform.isWindows)) {
       _desktop = DesktopIntegration();
+      _desktop!.onPrepareQuit(_shutdown);
       unawaited(
         _desktop!
             .autostart()
@@ -157,6 +161,25 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       unawaited(_startWindows());
     } else {
       unawaited(_autoConnect());
+    }
+  }
+
+  Future<void>? _quitting;
+  Future<void> _shutdown() => _quitting ??= _shutdownNow();
+  Future<void> _shutdownNow() async {
+    _timer?.cancel();
+    try {
+      await _finder?.stop();
+    } finally {
+      try {
+        await _audio?.dispose().timeout(const Duration(seconds: 6));
+      } finally {
+        try {
+          await LinuxAudioRoutes.disposeAll();
+        } finally {
+          await _desktop?.quit();
+        }
+      }
     }
   }
 
@@ -342,6 +365,11 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                 e.key.toString().endsWith('/audio.output') && e.value == true,
           )) {
             await audio.setEnabled(true);
+          }
+          if (grants.entries.any(
+            (e) => e.key.toString().endsWith('/audio.input') && e.value == true,
+          )) {
+            await audio.setMicrophoneEnabled(true);
           }
           if (grants.entries.any(
             (e) =>
@@ -692,10 +720,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                       }
                     },
             ),
-            _button('Quit Narad', () async {
-              await _finder?.stop();
-              await _desktop!.quit();
-            }),
+            _button('Quit Narad', _shutdown),
           ],
           if (_android != null) ...[
             _section('Phone integration'),
@@ -1080,7 +1105,8 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     1 => 'Review pairing, file, clipboard, and audio requests.',
     2 =>
       'Files travel directly between your devices. Interrupted transfers can resume.',
-    3 => 'Send your microphone to a paired device’s speakers over your LAN.',
+    3 =>
+      'Share speakers, microphone and camera with permitted devices over your LAN.',
     _ => 'Connection details and recent decisions, kept on this device.',
   };
 
@@ -1422,6 +1448,43 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
           if (mounted) setState(() => _page = 3);
         },
       ),
+      'Use microphone': (
+        Icons.mic_external_on_outlined,
+        () async {
+          await _audio!.requestMicrophone(id);
+          if (mounted) setState(() => _page = 3);
+        },
+      ),
+      if (Platform.isLinux || Platform.isWindows)
+        'Send laptop audio': (
+          Icons.speaker_outlined,
+          () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => SystemAudioPage(
+                  audio: _audio!,
+                  peer: id,
+                  name: peer['device_name'] as String,
+                ),
+              ),
+            );
+          },
+        ),
+      if (Platform.isLinux || Platform.isWindows)
+        'Use for meeting': (
+          Icons.video_call_outlined,
+          () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => MeetingPage(
+                  audio: _audio!,
+                  peer: id,
+                  name: peer['device_name'] as String,
+                ),
+              ),
+            );
+          },
+        ),
       'View camera': (Icons.videocam_outlined, () => _viewCamera(id)),
       if (peer['platform'] == 'android' || peer['platform'] == 'ios')
         'Phone companion': (
@@ -1691,6 +1754,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                   'file.transfer': 'Receive files automatically',
                   'clipboard.sync': 'Apply shared clipboard automatically',
                   'audio.output': 'Play shared audio',
+                  'audio.input': 'Share this device’s microphone',
                   'camera.stream': 'Share this device’s camera',
                   'file.browse': 'Browse and download from Shared folder',
                   if (_data['device']['platform'] != 'ios')
@@ -1738,6 +1802,9 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                         if (allow && entry.key == 'audio.output') {
                           await _audio?.setEnabled(true);
                         }
+                        if (allow && entry.key == 'audio.input') {
+                          await _audio?.setMicrophoneEnabled(true);
+                        }
                         if (allow && entry.key == 'camera.stream') {
                           await _audio?.setCameraEnabled(true);
                         }
@@ -1782,7 +1849,11 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     final files = _items('transfers').where((t) => t['status'] == 'pending');
     final media = _items('sessions').where(
       (s) =>
-          ['audio.output', 'camera.stream'].contains(s['capability']) &&
+          [
+            'audio.output',
+            'audio.input',
+            'camera.stream',
+          ].contains(s['capability']) &&
           s['state'] == 'requested' &&
           !(_audio?.links[s['id']]?.outgoing ?? false),
     );
@@ -1892,11 +1963,23 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       for (final s in media)
         _card(
           Icons.speaker_outlined,
-          '${s['capability'] == 'camera.stream' ? 'Camera request' : 'Audio'} from ${_peerName(s['peer_id'] as String)}',
-          'Allow this device’s microphone to play through your speakers?',
+          '${s['capability'] == 'camera.stream'
+              ? 'Camera request'
+              : s['capability'] == 'audio.input'
+              ? 'Microphone request'
+              : 'Audio'} from ${_peerName(s['peer_id'] as String)}',
+          s['capability'] == 'camera.stream'
+              ? 'Allow the requesting device to view this device’s camera?'
+              : s['capability'] == 'audio.input'
+              ? 'Allow the requesting device to listen to this device’s microphone?'
+              : 'Allow the requesting device to play audio through this device’s speakers?',
           [
             _button(
-              'Allow audio',
+              s['capability'] == 'camera.stream'
+                  ? 'Allow camera'
+                  : s['capability'] == 'audio.input'
+                  ? 'Allow microphone'
+                  : 'Allow audio',
               () => _command({'op': 'media_accept', 'id': s['id']}),
               primary: true,
             ),
@@ -2071,6 +2154,26 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
 
   List<Widget> _audioPage() => [
     SwitchListTile(
+      title: const Text('Microphone sharing'),
+      subtitle: const Text(
+        'Only devices with microphone permission can listen. Enable while Narad is visible before using it in the background.',
+      ),
+      value: _audio?.microphoneEnabled ?? false,
+      onChanged: (value) => _run(() async {
+        await _audio!.setMicrophoneEnabled(value);
+        if (mounted) setState(() {});
+      }),
+    ),
+    if (Platform.isAndroid || Platform.isIOS)
+      SwitchListTile(
+        title: const Text('Use loudspeaker'),
+        value: _audio?.speakerphone ?? true,
+        onChanged: (value) => _run(() async {
+          await _audio!.setSpeakerphone(value);
+          if (mounted) setState(() {});
+        }),
+      ),
+    SwitchListTile(
       title: const Text('Camera sharing'),
       subtitle: Text(
         Platform.isAndroid
@@ -2124,9 +2227,9 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
 
     Card(
       child: SwitchListTile(
-        title: const Text('Enable audio on this device'),
+        title: const Text('Audio playback'),
         subtitle: const Text(
-          'Permitted devices connect automatically. Microphone capture starts only for an authorized session.',
+          'Allow permitted devices to play sound through this device. This does not enable its microphone.',
         ),
         value: _audio?.enabled ?? false,
         onChanged: _busy
@@ -2163,7 +2266,11 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     _section('Audio and camera sessions'),
     for (final s in _items('sessions').where(
       (s) =>
-          ['audio.output', 'camera.stream'].contains(s['capability']) &&
+          [
+            'audio.output',
+            'audio.input',
+            'camera.stream',
+          ].contains(s['capability']) &&
           !['closed', 'denied', 'failed'].contains(s['state']),
     ))
       _card(

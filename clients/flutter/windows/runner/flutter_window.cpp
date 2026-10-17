@@ -170,6 +170,12 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     SetForegroundWindow(hwnd);
     return 0;
   }
+  if (message == WM_TIMER && wparam == 47001) {
+    KillTimer(hwnd, 47001);
+    quitting_ = true;
+    PostMessageW(hwnd, WM_CLOSE, 0, 0);
+    return 0;
+  }
   if (message == WM_CLOSE && !quitting_) {
     ShowWindow(hwnd, SW_HIDE);
     return 0;
@@ -193,9 +199,10 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
         ShowWindow(hwnd, SW_SHOW);
         SetForegroundWindow(hwnd);
       }
-      if (choice == 2) {
-        quitting_ = true;
-        PostMessageW(hwnd, WM_CLOSE, 0, 0);
+      if (choice == 2 && !quit_requested_) {
+        quit_requested_ = true;
+        SetTimer(hwnd, 47001, 30000, nullptr);
+        backend_channel_->InvokeMethod("prepareQuit", nullptr);
       }
     }
     return 0;

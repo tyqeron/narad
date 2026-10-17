@@ -35,6 +35,30 @@ void main() {
       expect(calls[2].arguments, {'enabled': true});
     },
   );
+  test('native tray quit waits for Dart media cleanup', () async {
+    final desktop = DesktopIntegration(channel: channel);
+    final events = <String>[];
+    desktop.onPrepareQuit(() async {
+      events.add('stop-media');
+      await Future<void>.delayed(Duration.zero);
+      events.add('unload-owned-routes');
+      await desktop.quit();
+    });
+    final result = await TestDefaultBinaryMessengerBinding
+        .instance
+        .defaultBinaryMessenger
+        .handlePlatformMessage(
+          channel.name,
+          const StandardMethodCodec().encodeMethodCall(
+            const MethodCall('prepareQuit'),
+          ),
+          (_) {},
+        );
+    expect(const StandardMethodCodec().decodeEnvelope(result!), isNull);
+    expect(events, ['stop-media', 'unload-owned-routes']);
+    expect(calls.single.method, 'quit');
+    channel.setMethodCallHandler(null);
+  });
   test('quit uses the native exit path instead of hiding the window', () async {
     await DesktopIntegration(channel: channel).quit();
     expect(calls.single.method, 'quit');

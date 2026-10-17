@@ -20,6 +20,32 @@ class PendingMediaApi implements NaradApi {
 }
 
 void main() {
+  test('system audio cannot fall back to a physical microphone', () async {
+    final api = PendingMediaApi();
+    final audio = AudioController(api, (e) => fail('$e'));
+    await expectLater(audio.start('peer', systemAudio: true), throwsStateError);
+    expect(api.commands, isEmpty);
+  });
+
+  test(
+    'receiving playback and requesting a remote microphone never enable local capture',
+    () async {
+      final api = PendingMediaApi();
+      final audio = AudioController(api, (e) => fail('$e'));
+      await audio.setEnabled(true);
+      expect(audio.microphoneEnabled, false);
+      expect(api.commands.last['microphone_ready'], false);
+      await audio.requestMicrophone('peer');
+      expect(audio.links['session']!.remoteMicrophone, true);
+      expect(audio.links['session']!.outgoing, true);
+      expect(audio.links['session']!.microphone, isNull);
+      await audio.setMicrophoneEnabled(false);
+      expect(audio.links.containsKey('session'), true);
+      await audio.setEnabled(false);
+      expect(audio.links, isEmpty);
+    },
+  );
+
   test(
     'no microphone or media negotiation occurs before receiver approval',
     () async {

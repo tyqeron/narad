@@ -86,6 +86,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Send file'), findsOneWidget);
     expect(find.text('Find device'), findsOneWidget);
+    expect(find.text('Send laptop audio'), findsOneWidget);
+    expect(find.text('Use for meeting'), findsOneWidget);
     expect(find.text('Stop ringing'), findsOneWidget);
     expect(
       api.calls.any((c) => c['op'] == 'media_ready' && c['ready'] == true),
@@ -118,6 +120,40 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(api.calls.where((c) => c['op'] == 'clipboard_accept').length, 1);
     expect(find.text('You’re all caught up'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('microphone approval clearly describes sharing local capture', (
+    tester,
+  ) async {
+    final api = FakeApi();
+    api.status['sessions'] = [
+      {
+        'id': 'mic',
+        'peer_id': 'peer',
+        'capability': 'audio.input',
+        'state': 'requested',
+      },
+    ];
+    await tester.pumpWidget(NaradApp(api: api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Inbox'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'Allow the requesting device to listen to this device’s microphone?',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Allow microphone'), findsOneWidget);
+    expect(api.calls.any((c) => c['op'] == 'media_accept'), false);
+    await tester.tap(find.text('Allow microphone'));
+    await tester.pumpAndSettle();
+    expect(
+      api.calls.any((c) => c['op'] == 'media_accept' && c['id'] == 'mic'),
+      true,
+    );
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
   });
@@ -362,8 +398,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Device settings'));
       await tester.pumpAndSettle();
-      expect(find.byType(SwitchListTile), findsNWidgets(9));
+      expect(find.byType(SwitchListTile), findsNWidgets(10));
       expect(find.text('Share this device’s camera'), findsOneWidget);
+      expect(find.text('Share this device’s microphone'), findsOneWidget);
       expect(find.text('Ring this device (Find device)'), findsOneWidget);
       await tester.tap(find.text('Receive files automatically'));
       await tester.pumpAndSettle();

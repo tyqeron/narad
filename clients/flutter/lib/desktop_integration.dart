@@ -9,6 +9,12 @@ class DesktopIntegration {
             Platform.isWindows ? 'dev.narad/windows' : 'dev.narad/desktop',
           );
   final MethodChannel channel;
+  void onPrepareQuit(Future<void> Function() shutdown) {
+    channel.setMethodCallHandler((call) async {
+      if (call.method == 'prepareQuit') await shutdown();
+    });
+  }
+
   Future<bool> autostart() async =>
       (await channel.invokeMapMethod<String, dynamic>(
         'desktopStatus',

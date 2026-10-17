@@ -27,7 +27,7 @@ static gboolean hide_on_close(GtkWidget* window,GdkEvent*,gpointer) {
   gtk_widget_hide(window);return TRUE;
 }
 static void open_narad(GtkMenuItem*,gpointer app) {g_application_activate(G_APPLICATION(app));}
-static void quit_narad(GtkMenuItem*,gpointer app) {g_application_quit(G_APPLICATION(app));}
+static void quit_narad(GtkMenuItem*,gpointer app) {narad_request_quit(GTK_APPLICATION(app));}
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 static void tray_open(GtkStatusIcon*,gpointer app) {g_application_activate(G_APPLICATION(app));}
