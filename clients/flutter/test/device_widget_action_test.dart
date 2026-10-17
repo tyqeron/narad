@@ -16,7 +16,7 @@ void main() {
     },
   };
   test('all device actions route to the selected paired device', () {
-    expect(DeviceWidgetAction.actions.length, 11);
+    expect(DeviceWidgetAction.actions.length, 12);
     for (final action in DeviceWidgetAction.actions) {
       final request = DeviceWidgetAction.parse({
         'peer_id': 'peer',

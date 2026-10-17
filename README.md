@@ -171,3 +171,5 @@ with Android-phone viewing and confirmation-only iPhone handoff, not full iPhone
 SMS/history/notification mirroring.
 
 Camera switching, saving photos/video and OBS webcam setup: [Camera guide](docs/CAMERA.md). Contact access and copying: [Phone integration](docs/PHONE_INTEGRATION.md#contacts).
+
+Ring an online paired phone, tablet or desktop: [Find device setup and platform limits](docs/FIND_DEVICE.md).

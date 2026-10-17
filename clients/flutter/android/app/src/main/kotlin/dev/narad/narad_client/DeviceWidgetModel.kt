@@ -4,6 +4,7 @@ package dev.narad.narad_client
 data class WidgetDeviceAction(val id:String,val label:String,val icon:Int=0)
 object DeviceWidgetModel {
     val actions=listOf(
+        WidgetDeviceAction("find","Find device"),
         WidgetDeviceAction("phone","Phone companion"),
         WidgetDeviceAction("file","Send file"),WidgetDeviceAction("clipboard","Send clipboard"),
         WidgetDeviceAction("audio","Send audio"),WidgetDeviceAction("camera","View camera"),

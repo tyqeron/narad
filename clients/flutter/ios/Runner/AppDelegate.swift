@@ -31,6 +31,7 @@ final class NaradMobileBridge: NSObject, UIDocumentPickerDelegate, MFMessageComp
   static weak var active: NaradMobileBridge?
   private let queue = DispatchQueue(label: "dev.narad.ios.backend")
   private let channel: FlutterMethodChannel
+  private var findPlayer: AVAudioPlayer?
   private var exportResult: FlutterResult?
   private var phoneTimer: Timer?
   private var backgroundObserver: NSObjectProtocol?
@@ -105,10 +106,19 @@ final class NaradMobileBridge: NSObject, UIDocumentPickerDelegate, MFMessageComp
     while let next = controller?.presentedViewController { controller = next }
     return controller
   }
-  func background() { queue.async { _ = try? self.native(["op": "stop"]) } }
+  func background() { findPlayer?.stop();findPlayer=nil; queue.async { _ = try? self.native(["op": "stop"]) } }
   private func handle(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
     let args = call.arguments as? [String: Any] ?? [:]
     switch call.method {
+    case "ringDevice":
+      do {
+        guard let path = args["path"] as? String, URL(fileURLWithPath: path).resolvingSymlinksInPath().path.hasPrefix(URL(fileURLWithPath: NSTemporaryDirectory()).resolvingSymlinksInPath().path + "/") else { throw NaradFailure(message: "Invalid alert file") }
+        findPlayer?.stop()
+        findPlayer = try AVAudioPlayer(contentsOf: URL(fileURLWithPath: path))
+        guard findPlayer?.play() == true else { throw NaradFailure(message: "Audio playback unavailable") }
+        result(nil)
+      } catch { result(FlutterError(code: "find_device", message: error.localizedDescription, details: nil)) }
+    case "stopFinding": findPlayer?.stop();findPlayer=nil;result(nil)
     case "getTheme": result(UserDefaults.standard.string(forKey: "narad.theme") ?? "system")
     case "setTheme": UserDefaults.standard.set(args["theme"] as? String ?? "system", forKey: "narad.theme"); result(nil)
     case "setDeviceName":

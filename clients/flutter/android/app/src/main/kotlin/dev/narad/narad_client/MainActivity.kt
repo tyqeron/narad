@@ -33,6 +33,7 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger,"dev.narad/android").setMethodCallHandler {call,result ->
             try {
                 when(call.method) {
+                    "stopFinding" -> {FindDeviceAlarm.stop();result.success(null)}
                     "importContact" -> {PhoneContacts.insert(this,org.json.JSONObject(call.arguments as Map<*,*>));result.success(null)}
                     "phoneSetup" -> {startActivity(Intent(this,PhoneSetupActivity::class.java));result.success(null)}
                     "getTheme" -> result.success(getSharedPreferences("narad",MODE_PRIVATE).getString("theme","system"))

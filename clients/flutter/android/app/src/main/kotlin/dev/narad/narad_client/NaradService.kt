@@ -42,6 +42,7 @@ class NaradService : Service() {
     private var mediaWake:PowerManager.WakeLock?=null
     fun prepareMedia(camera:Boolean,audio:Boolean) {
         var types=ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+        if(FindDeviceAlarm.actionId!=null)types=types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
         if(camera && Build.VERSION.SDK_INT>=30)types=types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
         if(audio && Build.VERSION.SDK_INT>=30)types=types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         if(Build.VERSION.SDK_INT>=29)startForeground(NOTIFICATION,connectionNotification(null),types)
@@ -52,6 +53,12 @@ class NaradService : Service() {
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION,connectionNotification(null))
         lastConnectionText=""
     }
+    fun mediaAlertChanged() {main.post {
+        if(!destroyed)try {prepareMedia(cameraReady,audioReady)} catch(_:Exception) {
+            // Keep the connection service alive if the OS rejects an alert type change.
+            if(FindDeviceAlarm.actionId!=null)FindDeviceAlarm.stop()
+        }
+    }}
     private val phoneSyncWorker=Executors.newSingleThreadExecutor()
     private val phoneSync by lazy{PhoneNotificationSync(this)}
     @Volatile private var phoneSyncBusy=false
@@ -82,6 +89,7 @@ class NaradService : Service() {
         main.postDelayed(platformPoll,3000)
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if(intent?.action==FindDeviceAlarm.STOP){FindDeviceAlarm.stop();return START_NOT_STICKY}
         if (intent?.action == STOP) { stopSelf(); return START_NOT_STICKY }
         if((intent?.action==CommandWidget.REFRESH || intent?.action==CommandWidget.RUN) && state=="running")worker.execute{refreshConnections();CommandWidget.refreshAll(this)}
         if (state == "starting") return START_NOT_STICKY
@@ -163,6 +171,10 @@ class NaradService : Service() {
     private fun pollPlatformEvents() {
         if(destroyed || state!="running")return
         try {
+            FindDeviceAlarm.actionId?.let { id ->
+                try {check(local(JSONObject().put("op","platform_validate").put("id",id)).optBoolean("ok"))}
+                catch(_:Exception){FindDeviceAlarm.stop()}
+            }
             val response=local(JSONObject().put("op","platform_events"))
             if(!response.optBoolean("ok"))return
             val clipboard=response.getJSONArray("clipboard")
@@ -183,6 +195,8 @@ class NaradService : Service() {
                     val validation=local(JSONObject().put("op","platform_validate").put("id",id))
                     check(validation.optBoolean("ok")){"Permission was revoked"}
                     when(action.getString("kind")) {
+                        "find" -> {FindDeviceAlarm.start(this,id);message="Ringing for up to 30 seconds"}
+                        "find_stop" -> {FindDeviceAlarm.stop();message="Ringing stopped"}
                         "lock" -> {
                             val manager=getSystemService(DevicePolicyManager::class.java)
                             check(manager.isAdminActive(ComponentName(this,NaradDeviceAdmin::class.java))){"Enable device administrator access in Narad device settings first"}
@@ -262,6 +276,7 @@ class NaradService : Service() {
     }
     override fun onDestroy() {
         instance=null
+        FindDeviceAlarm.stop()
         MediaRuntime.serviceStopped()
         mediaWake?.release();mediaWake=null
         cameraReady=false;audioReady=false

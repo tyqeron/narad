@@ -85,6 +85,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('actions-peer')));
     await tester.pumpAndSettle();
     expect(find.text('Send file'), findsOneWidget);
+    expect(find.text('Find device'), findsOneWidget);
+    expect(find.text('Stop ringing'), findsOneWidget);
     expect(
       api.calls.any((c) => c['op'] == 'media_ready' && c['ready'] == true),
       false,
@@ -360,8 +362,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Device settings'));
       await tester.pumpAndSettle();
-      expect(find.byType(SwitchListTile), findsNWidgets(8));
+      expect(find.byType(SwitchListTile), findsNWidgets(9));
       expect(find.text('Share this device’s camera'), findsOneWidget);
+      expect(find.text('Ring this device (Find device)'), findsOneWidget);
       await tester.tap(find.text('Receive files automatically'));
       await tester.pumpAndSettle();
       expect(

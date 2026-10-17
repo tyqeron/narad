@@ -25,7 +25,7 @@ class DeviceWidgetActionsService:RemoteViewsService() {
                 views.setTextColor(R.id.widget_action_label,foreground)
                 views.setImageViewResource(R.id.widget_action_icon,when(action.id){
                     "phone"->R.drawable.widget_phone;"file"->R.drawable.widget_file;"clipboard"->R.drawable.widget_clipboard;"audio"->R.drawable.widget_audio
-                    "camera"->R.drawable.widget_camera;"browse"->R.drawable.widget_folder;"command"->R.drawable.widget_terminal
+                    "find"->android.R.drawable.ic_lock_idle_alarm;"camera"->R.drawable.widget_camera;"browse"->R.drawable.widget_folder;"command"->R.drawable.widget_terminal
                     "lock"->R.drawable.widget_lock;"unlock"->R.drawable.widget_unlock;"settings"->R.drawable.widget_settings;else->R.drawable.widget_unpair
                 })
                 views.setInt(R.id.widget_action_icon,"setColorFilter",foreground)

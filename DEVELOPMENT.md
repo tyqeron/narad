@@ -659,3 +659,20 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - All 23 Rust tests and strict workspace/Windows-target Clippy pass. New coverage
   checks separate authorization, transport plane, single dispatch, rate limiting,
   stop and permission revocation, including the full capability advertisement.
+
+## 48. Cross-platform Find device alerts and controls
+
+- Add Find device/Stop ringing icons to device action menus and a Find device
+  Android widget shortcut. Add the separate Ring this device grant on all hosts.
+- Android uses a bounded native alarm with its own Stop ringing notification and
+  media-playback foreground type; the existing service validates active grants.
+  Linux uses paplay/aplay/ffplay, Windows uses PowerShell SoundPlayer, and the iOS
+  source preview uses AVAudioPlayer while foregrounded. No volume/DND settings or
+  location access are changed. Desktop/iOS show a local Stop ringing card.
+- Generated desktop/iOS chirps last 30 seconds; serialized player teardown stops
+  processes and removes temporary audio. Normal shutdown also stops the alert.
+- All 41 Flutter tests, analysis and eight native Android tests pass. New locator
+  tests cover denial, single dispatch, stop, timeout, revocation and PCM content.
+  An opt-in Linux check starts real playback, stops it and verifies temporary-file
+  cleanup. Windows/iOS physical audio runtime remains unverified on this host.
+- Android version advances to build 12, including the collapsible offline list.

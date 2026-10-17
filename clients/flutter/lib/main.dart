@@ -9,6 +9,7 @@ import 'api.dart';
 import 'app_settings.dart';
 import 'audio.dart';
 import 'camera_card.dart';
+import 'find_device.dart';
 import 'android_backend.dart';
 import 'ios_backend.dart';
 import 'device_widget_action.dart';
@@ -106,6 +107,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   bool? _autostart;
   bool _starting = false;
   bool _widgetDispatching = false;
+  FindDeviceController? _finder;
   bool _foreground = true;
   bool _restoredMedia = false;
   NaradApi? _api;
@@ -197,6 +199,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         state == AppLifecycleState.detached) {
       // Android keeps the process-owned media engine and foreground service alive.
       _foreground = false;
+      if (Platform.isIOS) unawaited(_finder?.stop());
       _restoredMedia = false;
       if (!Platform.isAndroid && _audio != null) {
         unawaited(
@@ -235,6 +238,9 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     }
     _connectionGeneration++;
     _restoredMedia = false;
+    final oldFinder = _finder;
+    if (oldFinder != null) unawaited(oldFinder.stop().catchError(_showError));
+    _finder = Platform.isAndroid ? null : FindDeviceController(api);
     final previous = _audio;
     if (previous != null) unawaited(previous.dispose().catchError(_showError));
     _api = api;
@@ -344,6 +350,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
             await audio.setCameraEnabled(true);
           }
         }
+        await _finder?.poll();
         await audio?.tick(data);
       } catch (error) {
         _showError(error);
@@ -376,6 +383,8 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
             ),
           );
         }
+      case 'find':
+        await _deviceAction(action.peerId, 'find');
       case 'file':
         await _sendFile(action.peerId);
       case 'clipboard':
@@ -439,6 +448,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
+    if (_finder != null) unawaited(_finder!.stop());
     if (_audio != null) unawaited(_audio!.dispose());
     _phoneSync?.dispose();
     _directory.dispose();
@@ -517,6 +527,23 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                               child: ListView(
                                 padding: EdgeInsets.all(wide ? 32 : 16),
                                 children: [
+                                  if (_finder?.ringing == true)
+                                    Card(
+                                      child: ListTile(
+                                        leading: const Icon(
+                                          Icons.notifications_active,
+                                        ),
+                                        title: const Text(
+                                          'A paired device is finding this device',
+                                        ),
+                                        trailing: TextButton(
+                                          onPressed: () => _run(() async {
+                                            await _finder!.stop();
+                                          }),
+                                          child: const Text('Stop ringing'),
+                                        ),
+                                      ),
+                                    ),
                                   Text(
                                     _titles[_page],
                                     style: Theme.of(context)
@@ -1375,6 +1402,14 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     final id = peer['device_id'] as String;
     final online = _isOnline(id);
     final actions = <String, (IconData, Future<void> Function())>{
+      'Find device': (
+        Icons.notifications_active_outlined,
+        () => _deviceAction(id, 'find'),
+      ),
+      'Stop ringing': (
+        Icons.notifications_off_outlined,
+        () => _deviceAction(id, 'find_stop'),
+      ),
       'Send file': (Icons.upload_file, () => _sendFile(id)),
       'Send clipboard': (Icons.content_paste, () => _sendClipboard(id)),
       'Send audio': (
@@ -1649,6 +1684,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                     'calls.control':
                         'Open call requests here (confirm on iPhone)',
                   },
+                  'device.find': 'Ring this device (Find device)',
                   'file.transfer': 'Receive files automatically',
                   'clipboard.sync': 'Apply shared clipboard automatically',
                   'audio.output': 'Play shared audio',

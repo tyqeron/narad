@@ -4,6 +4,7 @@ class DeviceWidgetAction {
   final String peerId;
   final String action;
   static const actions = {
+    'find',
     'phone',
     'file',
     'clipboard',
