@@ -155,3 +155,5 @@ or **Stop ringing** to end it. Both endpoints need the updated app. Keep Narad's
 background/tray service running. This uses the existing LAN connection; there is
 no GPS tracking or offline wake-up. See [Find device](FIND_DEVICE.md) for platform
 requirements, local Stop controls and volume/DND limitations.
+
+Phone speaker playback and meeting microphone/camera setup: [Meeting devices](MEETING.md).

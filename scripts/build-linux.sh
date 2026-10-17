@@ -35,6 +35,7 @@ ln -s narad-linux "$package/run.sh"
 install -m 755 scripts/install-linux.sh "$package/install.sh"
 install -m 644 docs/LINUX.md "$package/README.md"
 install -m 644 docs/FIND_DEVICE.md "$package/FIND_DEVICE.md"
+install -m 644 docs/MEETING.md "$package/MEETING.md"
 install -m 644 clients/flutter/assets/branding/MaterialIcons_LICENSE.txt "$package/MaterialIcons_LICENSE.txt"
 # Publish the archive only after staging is complete; existing state is never in a bundle.
 tar -czf "$stage/$name.tar.gz" -C "$stage" "$name"

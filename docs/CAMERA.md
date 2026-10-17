@@ -91,3 +91,5 @@ live camera, remote lens switch, Record/Stop/Save and Save image all succeeded.
 The saved H.264 MP4 fully decoded at 720 × 1280 without audio; the saved PNG decoded
 successfully. Uniquely named test files were removed afterward. Existing pairing
 and OS access/role settings were preserved on both devices.
+
+Phone speaker playback and meeting microphone/camera setup: [Meeting devices](MEETING.md).

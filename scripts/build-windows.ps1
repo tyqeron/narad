@@ -29,6 +29,7 @@ Copy-Item (Join-Path $Repo 'scripts/install-windows.ps1') $Package
 Copy-Item (Join-Path $Repo 'scripts/configure-windows-firewall.ps1') $Package
 Copy-Item (Join-Path $Repo 'docs/WINDOWS.md') (Join-Path $Package 'README.md')
 Copy-Item (Join-Path $Repo 'docs/FIND_DEVICE.md') (Join-Path $Package 'FIND_DEVICE.md')
+Copy-Item (Join-Path $Repo 'docs/MEETING.md') (Join-Path $Package 'MEETING.md')
 Copy-Item (Join-Path $Repo 'clients/flutter/assets/branding/MaterialIcons_LICENSE.txt') $Package
 $Archive = "$Package.zip"
 if (Test-Path $Archive) { Remove-Item $Archive -Force }

@@ -12,7 +12,7 @@ baseline. This document describes the actual implementation.
 | Sessions | Guarded transitions, ownership checks, timeout/lease cleanup, stop | Full reconnect/re-negotiation policy and persisted diagnostics |
 | Files | Persistent per-peer auto-grants or per-offer acceptance, scoped Shared-folder browsing, separate TLS plane, bounded checksummed chunks, resume/retry, cancellation, archive | Performance tuning, streaming transport optimization, disk quota management |
 | Clipboard | Opt-in receive permission, manual sending, persistent automatic receive grants or one-off acceptance, native system clipboard write | Optional background monitoring with platform privacy policies |
-| Audio | Flutter WebRTC microphone-to-speaker adapter, LAN host candidates, authorized signaling, stop/cleanup | Physical audio/latency tests, reconnection, output selection and diagnostics |
+| Audio | Separate playback/mic grants, remote microphone requests, desktop input/output selection, Linux system-output monitor and two-cable meeting routes; Windows cable selection | Meeting-app/latency/echo QA, Windows drivers/runtime, full reconnection |
 | Camera | Permissioned WebRTC viewing, lens switching, requester-only preview, PNG/MP4 saving and localhost OBS desktop feed | End-to-end OBS call-app selection, Windows/iOS runtime and physical quality matrix |
 | Controls | Locally configured command presets, bounded execution, Android force-lock and unlock-authentication notification, Linux loginctl | Physical lock/unlock matrix and desktop-session support |
 | Flutter client | Nearby/online/offline dashboard, per-device settings, saved Device/Light/Dark themes, grouped activity, Media, Inbox and transfers | Platform packaging/installers, accessibility/device QA |
@@ -182,3 +182,48 @@ screen. Build 10's requester/source behavior is covered by the 37-test client su
   16 native 64-bit ELF checks. Installed on the tablet; normal Devices UI verified.
   Linux release GUI/backend/installer build, with verified checksums and the Find
   device guide included. Windows/iOS packages have not been built on this Linux host.
+
+
+## Build 13: laptop audio and meeting devices
+
+- Device actions include Send laptop audio, Use microphone and Use for meeting.
+  Linux creates owned user-session PulseAudio/PipeWire routes; Windows exposes
+  input/output selectors for separately installed virtual cables. No system
+  default endpoints or arbitrary application streams are changed.
+- `audio.input` is separate from `audio.output`; microphone readiness and Android
+  microphone foreground type are independent from playback. SDP rejects extra
+  tracks and reversed directions before native receivers are created.
+- Meeting setup owns its streams, restores Narad playback on stop, unloads owned
+  Linux modules, and handles normal tray quit through Dart cleanup. Network stop
+  is bounded. A forced kill may leave silent virtual modules until session reset.
+- Generated-tone Linux native WebRTC test passes: real PCM reaches the owned
+  virtual microphone. Creating a monitor of the actual default output also passes
+  existence/default-preservation/cleanup checks without capturing audio.
+- 52 Flutter tests, 26 Rust tests, Linux/Windows-target strict Clippy and 16 live
+  two-daemon scenarios pass; multicast remains a separate opt-in test. Static
+  analysis is clean. Final release delivery checks are recorded below.
+- Selectable meeting camera uses the existing OBS Browser/Virtual Camera adapter.
+  OBS is installed on this laptop, but no v4l2loopback device/driver is available.
+  A live Google Meet call and Windows/iOS media runtime remain unverified. Mobile
+  Narad viewers do not register system-wide virtual peripherals for other apps.
+
+- Physical Android 15 tablet passes a temporary pairing with this Linux laptop:
+  playback readiness without microphone sharing/FGS, simultaneous background
+  speaker playback and microphone return, video-only camera reception, and remote
+  stop releasing all sessions. Live media is discarded without recording. Test
+  peer grants are removed afterward; real peer grants and OS roles are preserved.
+- Physical concurrency exposed an ICE signaling burst exceeding the local API
+  capacity. Bounded serialized signaling fixes it on both devices; two regression
+  tests cover concurrent sends and recovery after a failed send. Fresh invitation
+  validation also now tolerates bounded signed-frame clock skew; expired invites
+  and bad pins remain rejected.
+
+- Final build 13 passes all eight Android native tests. Universal release APK
+  passes signature verification, ZIP 16-KiB alignment and all 16 native 64-bit ELF
+  checks. Linux GUI/backend/installer builds successfully; seven installation,
+  upgrade, corruption and backend-ownership checks pass. APK, installer and tarball
+  checksums verify; the meeting guide is included in both desktop packages.
+- The tested debug APK is installed on the tablet. Updating it to the final
+  release APK was rejected by Android with INSTALL_FAILED_USER_RESTRICTED;
+  user unlock/installer approval is required before retrying. The verified release
+  APK remains available in dist. No Windows/iOS native package was built here.

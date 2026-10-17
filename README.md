@@ -176,3 +176,5 @@ Ring an online paired phone, tablet or desktop: [Find device setup and platform 
 
 Publish Windows, Linux and Android packages automatically when pushing a version
 tag: [GitHub release workflow and signing setup](docs/RELEASING.md).
+
+Phone speaker playback and meeting microphone/camera setup: [Meeting devices](docs/MEETING.md).

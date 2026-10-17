@@ -26,7 +26,8 @@ armeabi-v7a and x86_64. Each installation creates its own Keystore-wrapped ident
    it transfers without another acceptance prompt. Without that grant, accept in
    A's Inbox and retry **Send / resume** on B. Use **Save to device** to export it.
 6. Enable **Clipboard** for automatic delivery of manually sent text. Enable
-   **Audio** and/or **Camera** grants and the relevant adapter in **Media**; allow
+   **Play shared audio**, **Share this device’s microphone** and/or **Camera**
+   grants and the relevant adapter in **Media**; allow
    the Android microphone/camera prompt while Narad is visible. Sharing can then
    continue in the background with an ongoing notification. **View camera** requests
    the other device's camera without capturing your own microphone.
@@ -218,3 +219,5 @@ or **Stop ringing** to end it. Both endpoints need the updated app. Keep Narad's
 background/tray service running. This uses the existing LAN connection; there is
 no GPS tracking or offline wake-up. See [Find device](FIND_DEVICE.md) for platform
 requirements, local Stop controls and volume/DND limitations.
+
+Phone speaker playback and meeting microphone/camera setup: [Meeting devices](MEETING.md).
