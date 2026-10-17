@@ -7,6 +7,14 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Local development can use the debug key. Tag releases supply a stable CI key.
+val releaseSigningVariables = listOf("NARAD_ANDROID_KEYSTORE", "NARAD_ANDROID_STORE_PASSWORD",
+    "NARAD_ANDROID_KEY_ALIAS", "NARAD_ANDROID_KEY_PASSWORD")
+val hasReleaseSigning = releaseSigningVariables.all { !System.getenv(it).isNullOrBlank() }
+require(hasReleaseSigning || releaseSigningVariables.all { System.getenv(it).isNullOrBlank() }) {
+    "Provide all four NARAD_ANDROID signing environment variables, or none for a local development build"
+}
+
 android {
     namespace = "dev.narad.narad_client"
     compileSdk = flutter.compileSdkVersion
@@ -28,11 +36,18 @@ android {
         versionName = flutter.versionName
     }
 
+    if (hasReleaseSigning) {
+        signingConfigs.create("release") {
+            storeFile = File(System.getenv("NARAD_ANDROID_KEYSTORE"))
+            storePassword = System.getenv("NARAD_ANDROID_STORE_PASSWORD")
+            keyAlias = System.getenv("NARAD_ANDROID_KEY_ALIAS")
+            keyPassword = System.getenv("NARAD_ANDROID_KEY_PASSWORD")
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(if (hasReleaseSigning) "release" else "debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"),"proguard-rules.pro")
         }
     }

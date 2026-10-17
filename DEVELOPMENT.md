@@ -703,3 +703,12 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   delivery still require their respective build/test hosts. The Android test is
   a paired Linux-requester/tablet-receiver check; Linux playback has a separate
   real-process start/stop/cleanup check, not a physical speaker audibility claim.
+
+## 51. Persistent Android release signing
+
+- Support a complete NARAD_ANDROID keystore/password/alias environment for release
+  signing. Keep the local debug-key default when none is supplied; reject partial
+  signing configuration instead of silently producing a differently signed APK.
+- Gradle configuration compiles. A disposable keystore restored through the actual
+  workflow decoder has mode 0600, is selected by the release signing report, and
+  incomplete configuration fails. No production key is created, read or uploaded.
