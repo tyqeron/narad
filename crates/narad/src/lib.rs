@@ -1,7 +1,9 @@
+mod clipboard;
 mod controls;
 mod discovery;
 mod handler;
 mod phone;
+mod preferences;
 mod state;
 pub mod transport;
 

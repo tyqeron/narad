@@ -245,7 +245,17 @@ pub fn remote(s: &mut State, peer: &Peer, p: &Value, file_plane: bool) -> Result
                 Ok(json!({"ok":true,"path":path}))
             }
         }
-        "clipboard_offer" => {
+        "clipboard_offer" | "clipboard_push" => {
+            if op == "clipboard_push" {
+                ensure!(
+                    s.preferences.clipboard_sync,
+                    "Automatic clipboard sync is off"
+                );
+                ensure!(
+                    s.automatic(&peer.device_id, "clipboard.sync"),
+                    "Automatic clipboard permission denied"
+                );
+            }
             s.trust.authorize(peer, "clipboard.sync", true)?;
             let text = string(p, "text")?;
             ensure!(
@@ -354,6 +364,9 @@ pub fn remote(s: &mut State, peer: &Peer, p: &Value, file_plane: bool) -> Result
 
 pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
     let op = string(&p, "op")?.to_string();
+    if op == "clipboard_publish" {
+        return crate::clipboard::publish(shared, &p).await;
+    }
     if matches!(
         op.as_str(),
         "phone_request" | "phone_bridge_ready" | "phone_jobs" | "phone_validate" | "phone_result"
@@ -385,11 +398,18 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
     let mut s = shared.lock().await;
     s.expire();
     match op.as_str() {
+        "clipboard_sync" => {
+            s.preferences.clipboard_sync =
+                p["enabled"].as_bool().context("Expected enabled boolean")?;
+            s.save_preferences()?;
+            s.clipboard_digest = None;
+            Ok(ok())
+        }
         "status" => {
             let offset = p["offset"].as_u64().unwrap_or(0) as usize;
             let clipboard=s.clipboard.values().skip(offset).take(32).map(|c|json!({"id":c.id,"peer_id":c.peer_id,"status":c.status,"preview":c.text.chars().take(160).collect::<String>(),"expires_at":c.expires_at})).collect::<Vec<_>>();
             Ok(
-                json!({"ok":true,"device":s.own,"paired":s.trust.peers.iter().skip(offset).take(32).collect::<std::collections::BTreeMap<_,_>>(),"automatic_permissions":s.trust.automatic.iter().skip(offset).take(256).collect::<std::collections::BTreeMap<_,_>>(),"presence":s.presence,"shared_directory":s.dir.join("shared"),"commands":s.commands.values().collect::<Vec<_>>(),"permissions":s.trust.permissions.iter().skip(offset).take(96).collect::<std::collections::BTreeMap<_,_>>(),"pairings":s.pairings.values().skip(offset).take(32).collect::<Vec<_>>(),"transfers":s.transfers.values().skip(offset).take(32).collect::<Vec<_>>(),"sessions":s.sessions.values().skip(offset).take(32).collect::<Vec<_>>(),"clipboard":clipboard,"events":s.events.iter().rev().take(100).collect::<Vec<_>>(),"outbound":s.outbound.values().skip(offset).take(32).collect::<Vec<_>>(),"media_ready":s.media_ready,"camera_ready":s.camera_ready,"microphone_ready":s.microphone_ready,"offset":offset,"has_more":([s.trust.peers.len(),s.pairings.len(),s.transfers.len(),s.sessions.len(),s.clipboard.len(),s.outbound.len()].into_iter().max().unwrap_or(0)>offset+32)}),
+                json!({"ok":true,"device":s.own,"paired":s.trust.peers.iter().skip(offset).take(32).collect::<std::collections::BTreeMap<_,_>>(),"automatic_permissions":s.trust.automatic.iter().skip(offset).take(256).collect::<std::collections::BTreeMap<_,_>>(),"presence":s.presence,"shared_directory":s.dir.join("shared"),"clipboard_sync":s.preferences.clipboard_sync,"shared_folders":s.preferences.shares,"commands":s.commands.values().collect::<Vec<_>>(),"permissions":s.trust.permissions.iter().skip(offset).take(96).collect::<std::collections::BTreeMap<_,_>>(),"pairings":s.pairings.values().skip(offset).take(32).collect::<Vec<_>>(),"transfers":s.transfers.values().skip(offset).take(32).collect::<Vec<_>>(),"sessions":s.sessions.values().skip(offset).take(32).collect::<Vec<_>>(),"clipboard":clipboard,"events":s.events.iter().rev().take(100).collect::<Vec<_>>(),"outbound":s.outbound.values().skip(offset).take(32).collect::<Vec<_>>(),"media_ready":s.media_ready,"camera_ready":s.camera_ready,"microphone_ready":s.microphone_ready,"offset":offset,"has_more":([s.trust.peers.len(),s.pairings.len(),s.transfers.len(),s.sessions.len(),s.clipboard.len(),s.outbound.len()].into_iter().max().unwrap_or(0)>offset+32)}),
             )
         }
         "command_set" => {
@@ -716,6 +736,7 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
                 ["pending", "automatic"].contains(&offer.status.as_str()),
                 "clipboard already handled"
             );
+            s.clipboard_digest = Some(*blake3::hash(offer.text.as_bytes()).as_bytes());
             s.clipboard.remove(id);
             s.sessions.get_mut(id).unwrap().close();
             s.event("clipboard.accepted", json!({"id":id}));
@@ -1399,6 +1420,53 @@ mod tests {
         let p = json!({"op":"pair_begin","nonce":nonce});
         remote(&mut s, &peer, &p, false).unwrap();
         assert!(remote(&mut s, &peer, &p, false).is_err());
+    }
+    #[tokio::test]
+    async fn automatic_clipboard_requires_both_switch_and_grant_and_does_not_echo() {
+        let (_d, mut s, peer) = setup();
+        s.trust
+            .permissions
+            .insert(permission_key(&peer.device_id, "clipboard.sync"), true);
+        s.trust
+            .automatic
+            .insert(permission_key(&peer.device_id, "clipboard.sync"), true);
+        let push = json!({"op":"clipboard_push","text":"generated clipboard fixture"});
+        assert!(remote(&mut s, &peer, &push, false).is_err());
+        s.preferences.clipboard_sync = true;
+        s.trust
+            .automatic
+            .insert(permission_key(&peer.device_id, "clipboard.sync"), false);
+        assert!(remote(&mut s, &peer, &push, false).is_err());
+        s.trust
+            .automatic
+            .insert(permission_key(&peer.device_id, "clipboard.sync"), true);
+        remote(&mut s, &peer, &push, false).unwrap();
+        let events = crate::controls::platform_events(&mut s).unwrap();
+        assert_eq!(events["clipboard"][0]["text"], push["text"]);
+        let shared = Arc::new(Mutex::new(s));
+        assert_eq!(
+            local(
+                shared.clone(),
+                json!({"op":"clipboard_publish","text":push["text"]})
+            )
+            .await
+            .unwrap()["sent"],
+            0
+        );
+        local(
+            shared.clone(),
+            json!({"op":"clipboard_sync","enabled":false}),
+        )
+        .await
+        .unwrap();
+        let state = shared.lock().await;
+        let saved: crate::preferences::Preferences = narad_core::storage::load_encrypted(
+            &state.dir.join("preferences.enc"),
+            &state.identity.storage_key(),
+        )
+        .unwrap();
+        assert!(!saved.clipboard_sync);
+        assert!(state.clipboard.is_empty());
     }
     #[test]
     fn microphone_requires_separate_readiness_and_permission() {

@@ -8,6 +8,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'api.dart';
 import 'app_settings.dart';
 import 'audio.dart';
+import 'clipboard_sync.dart';
 import 'meeting_page.dart';
 import 'system_audio_page.dart';
 import 'desktop_audio_routes.dart';
@@ -16,6 +17,7 @@ import 'find_device.dart';
 import 'android_backend.dart';
 import 'ios_backend.dart';
 import 'device_widget_action.dart';
+import 'device_actions_page.dart';
 import 'phone_page.dart';
 import 'phone_sync.dart';
 import 'windows_backend.dart';
@@ -107,6 +109,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   WindowsBackend? _windows;
   DesktopIntegration? _desktop;
   PhoneSync? _phoneSync;
+  ClipboardSync? _clipboardSync;
   bool? _autostart;
   bool _starting = false;
   bool _widgetDispatching = false;
@@ -121,14 +124,19 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   String? _error;
   int _page = 0;
   int _connectionGeneration = 0;
-  static const _titles = ['Devices', 'Inbox', 'Transfers', 'Media', 'Activity'];
+  static const _titles = ['Devices', 'Media', 'Activity', 'Settings'];
+  final _status = ValueNotifier<Map<String, dynamic>>({});
   static const _icons = [
     Icons.devices_rounded,
-    Icons.inbox_outlined,
-    Icons.swap_vert_rounded,
-    Icons.graphic_eq_rounded,
+    Icons.perm_media_outlined,
     Icons.monitor_heart_outlined,
+    Icons.settings_outlined,
   ];
+
+  void _openTab(int index) {
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    if (mounted) setState(() => _page = index);
+  }
 
   @override
   void initState() {
@@ -256,6 +264,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
 
   void _attach(NaradApi api) {
     _phoneSync?.dispose();
+    _clipboardSync?.dispose();
     if (_desktop != null) {
       _phoneSync = PhoneSync(api, _desktop!.phoneNotification);
     }
@@ -267,6 +276,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     final previous = _audio;
     if (previous != null) unawaited(previous.dispose().catchError(_showError));
     _api = api;
+    _clipboardSync = ClipboardSync(api);
     _audio = AudioController(api, _showError);
     unawaited(_refresh());
     _timer?.cancel();
@@ -327,6 +337,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       if (!mounted || generation != _connectionGeneration) return;
       setState(() {
         _data = data;
+        _status.value = Map<String, dynamic>.from(data);
         _online = true;
         _error = null;
       });
@@ -378,6 +389,12 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
             await audio.setCameraEnabled(true);
           }
         }
+        unawaited(
+          _clipboardSync?.tick(
+            enabled: data['clipboard_sync'] == true,
+            canRead: _foreground || !(Platform.isAndroid || Platform.isIOS),
+          ),
+        );
         await _finder?.poll();
         await audio?.tick(data);
       } catch (error) {
@@ -419,10 +436,10 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         await _sendClipboard(action.peerId);
       case 'audio':
         await _audio!.start(action.peerId);
-        if (mounted) setState(() => _page = 3);
+        if (mounted) _openTab(1);
       case 'microphone':
         await _audio!.requestMicrophone(action.peerId);
-        if (mounted) setState(() => _page = 3);
+        if (mounted) _openTab(1);
       case 'camera':
         await _viewCamera(action.peerId);
       case 'browse':
@@ -482,6 +499,8 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     if (_finder != null) unawaited(_finder!.stop());
     if (_audio != null) unawaited(_audio!.dispose());
     _phoneSync?.dispose();
+    _clipboardSync?.dispose();
+    _status.dispose();
     _directory.dispose();
     _port.dispose();
     super.dispose();
@@ -510,14 +529,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
             IconButton(
               tooltip: 'Settings',
               icon: const Icon(Icons.settings_outlined),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (context) => StatefulBuilder(
-                    builder: (context, update) =>
-                        _settingsPage(context, refresh: () => update(() {})),
-                  ),
-                ),
-              ),
+              onPressed: () => _openTab(3),
             ),
             if (_online)
               Padding(
@@ -595,29 +607,21 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                                         ),
                                   ),
                                   const SizedBox(height: 24),
-                                  if (_page != 1)
-                                    for (final pair in _items('pairings').where(
-                                      (p) =>
-                                          p['nearby'] == true &&
-                                          p['outgoing'] != true &&
-                                          p['status'] == 'pending',
-                                    ))
-                                      _card(
-                                        Icons.link,
-                                        'Pairing request from ${(pair['peer'] as Map)['device_name']}',
-                                        'Review this device before accepting a connection.',
-                                        [
-                                          _button('Review request', () async {
-                                            setState(() => _page = 1);
-                                          }),
-                                        ],
-                                      ),
                                   ...switch (_page) {
-                                    0 => _devices(),
-                                    1 => _inbox(),
-                                    2 => _transfers(),
-                                    3 => _audioPage(),
-                                    _ => _activity(),
+                                    0 => [
+                                      if (_hasRequests) ...[
+                                        _section('Requests'),
+                                        ..._inbox(),
+                                      ],
+                                      ..._devices(),
+                                    ],
+                                    1 => _audioPage(),
+                                    2 => [
+                                      _section('File transfers'),
+                                      ..._transfers(),
+                                      ..._activity(),
+                                    ],
+                                    _ => _settingsContent(context),
                                   },
                                 ],
                               ),
@@ -650,7 +654,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     final count = _items(
       'pairings',
     ).where((p) => p['outgoing'] != true && p['status'] == 'pending').length;
-    return index == 1 && count > 0
+    return index == 0 && count > 0
         ? Badge.count(count: count, child: Icon(_icons[index]))
         : Icon(_icons[index]);
   }
@@ -660,132 +664,127 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     return '${date.day}/${date.month} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
   }
 
-  Widget _settingsPage(BuildContext context, {VoidCallback? refresh}) {
+  List<Widget> _settingsContent(BuildContext context) {
     final settings = AppSettingsScope.of(context);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          Text('Appearance', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 12),
-          SegmentedButton<ThemeMode>(
-            segments: const [
-              ButtonSegment(
-                value: ThemeMode.system,
-                icon: Icon(Icons.brightness_auto),
-                label: Text('Device'),
-              ),
-              ButtonSegment(
-                value: ThemeMode.light,
-                icon: Icon(Icons.light_mode_outlined),
-                label: Text('Light'),
-              ),
-              ButtonSegment(
-                value: ThemeMode.dark,
-                icon: Icon(Icons.dark_mode_outlined),
-                label: Text('Dark'),
-              ),
-            ],
-            selected: {settings.mode},
-            onSelectionChanged: (m) async {
-              try {
-                await settings.change(m.single);
-              } catch (e) {
-                _showError(e);
-              }
-            },
-          ),
-          const Padding(
-            padding: EdgeInsets.only(top: 12, bottom: 24),
-            child: Text(
-              'Device follows your system appearance. Your choice is saved on this device.',
-            ),
-          ),
-          if (_desktop != null) ...[
-            _section('Background operation'),
-            const Text(
-              'Closing the window keeps Narad connected in the background. Reopen it from the application menu or tray. Use Quit Narad to stop it.',
-            ),
-            SwitchListTile(
-              title: const Text('Start after login'),
-              subtitle: const Text('Run quietly after reboot when you sign in'),
-              value: _autostart ?? false,
-              onChanged: _autostart == null
-                  ? null
-                  : (enabled) async {
-                      try {
-                        await _desktop!.setAutostart(enabled);
-                        if (mounted) setState(() => _autostart = enabled);
-                        refresh?.call();
-                      } catch (e) {
-                        _showError(e);
-                      }
-                    },
-            ),
-            _button('Quit Narad', _shutdown),
-          ],
-          if (_android != null) ...[
-            _section('Phone integration'),
-            ListTile(
-              leading: const Icon(Icons.smartphone),
-              title: const Text('Notifications, SMS and calls'),
-              subtitle: Text(
-                Platform.isIOS
-                    ? 'View Android phone data; learn about iOS source limitations'
-                    : 'Choose Android access and optional default-dialer role',
-              ),
-              onTap: () => _android!.phoneSetup(),
-            ),
-            if (!Platform.isIOS) _section('Home-screen device actions'),
-            if (!Platform.isIOS)
-              const Text(
-                'Long-press your Android home screen, choose Widgets → Narad Devices, then select a paired device. Its actions appear as a scrollable list. Each action uses the same permissions and pickers as the app.',
-              ),
-          ],
-          if (_online) ...[
-            _section('Shared folder'),
-            const Text(
-              'Only files placed in this folder are available to peers with file browsing permission. Private Narad data is never exposed by browsing.',
-            ),
-            const SizedBox(height: 12),
-            _button('Add file to Shared folder', _addSharedFile),
-            const SizedBox(height: 12),
-            _button('View Shared folder', _localSharedFiles),
-            if (!Platform.isIOS) ...[
-              _section('Command presets'),
-              const Text(
-                'Devices with command permission can run only the presets configured here. Commands run as your user on Linux/Windows and inside Narad’s app sandbox on Android.',
-              ),
-              for (final raw in (_data['commands'] as List? ?? []))
-                ListTile(
-                  title: Text(raw['label'] as String),
-                  subtitle: const Text('Available to permitted devices'),
-                  trailing: IconButton(
-                    tooltip: 'Remove command',
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: () async {
-                      await _run(
-                        () =>
-                            _command({'op': 'command_remove', 'id': raw['id']}),
-                      );
-                      if (context.mounted) refresh?.call();
-                    },
-                  ),
-                ),
-              _button('Add command preset', () async {
-                await _addCommand();
-                refresh?.call();
-              }),
-            ],
-            _section('Connection details'),
-            SelectableText(
-              'This device: ${_data['device']['device_name']}\nLocal address: ${_data['device']['address']}\n${_paired.length} paired devices',
-            ),
-          ],
-        ],
+    return [
+      _section('Clipboard'),
+      SwitchListTile(
+        title: const Text('Automatic clipboard sync'),
+        subtitle: const Text(
+          'Send newly copied text to online devices that enabled sync and gave this device clipboard permission. Android and iOS can read the clipboard only while Narad is in the foreground.',
+        ),
+        value: _data['clipboard_sync'] == true,
+        onChanged: (enabled) =>
+            _run(() => _command({'op': 'clipboard_sync', 'enabled': enabled})),
       ),
-    );
+      Text('Appearance', style: Theme.of(context).textTheme.titleLarge),
+      const SizedBox(height: 12),
+      SegmentedButton<ThemeMode>(
+        segments: const [
+          ButtonSegment(
+            value: ThemeMode.system,
+            icon: Icon(Icons.brightness_auto),
+            label: Text('Device'),
+          ),
+          ButtonSegment(
+            value: ThemeMode.light,
+            icon: Icon(Icons.light_mode_outlined),
+            label: Text('Light'),
+          ),
+          ButtonSegment(
+            value: ThemeMode.dark,
+            icon: Icon(Icons.dark_mode_outlined),
+            label: Text('Dark'),
+          ),
+        ],
+        selected: {settings.mode},
+        onSelectionChanged: (m) async {
+          try {
+            await settings.change(m.single);
+          } catch (e) {
+            _showError(e);
+          }
+        },
+      ),
+      const Padding(
+        padding: EdgeInsets.only(top: 12, bottom: 24),
+        child: Text(
+          'Device follows your system appearance. Your choice is saved on this device.',
+        ),
+      ),
+      if (_desktop != null) ...[
+        _section('Background operation'),
+        const Text(
+          'Closing the window keeps Narad connected in the background. Reopen it from the application menu or tray. Use Quit Narad to stop it.',
+        ),
+        SwitchListTile(
+          title: const Text('Start after login'),
+          subtitle: const Text('Run quietly after reboot when you sign in'),
+          value: _autostart ?? false,
+          onChanged: _autostart == null
+              ? null
+              : (enabled) async {
+                  try {
+                    await _desktop!.setAutostart(enabled);
+                    if (mounted) setState(() => _autostart = enabled);
+                    if (mounted) setState(() {});
+                  } catch (e) {
+                    _showError(e);
+                  }
+                },
+        ),
+        _button('Quit Narad', _shutdown),
+      ],
+      if (_android != null) ...[
+        _section('Phone integration'),
+        ListTile(
+          leading: const Icon(Icons.smartphone),
+          title: const Text('Notifications, SMS and calls'),
+          subtitle: Text(
+            Platform.isIOS
+                ? 'View Android phone data; learn about iOS source limitations'
+                : 'Choose Android access and optional default-dialer role',
+          ),
+          onTap: () => _android!.phoneSetup(),
+        ),
+        if (!Platform.isIOS) _section('Home-screen device actions'),
+        if (!Platform.isIOS)
+          const Text(
+            'Long-press your Android home screen, choose Widgets → Narad Devices, then select a paired device. Its actions appear as a scrollable list. Each action uses the same permissions and pickers as the app.',
+          ),
+      ],
+      if (_online) ...[
+        if (!Platform.isIOS) ...[
+          _section('Command presets'),
+          const Text(
+            'Devices with command permission can run only the presets configured here. Commands run as your user on Linux/Windows and inside Narad’s app sandbox on Android.',
+          ),
+          for (final raw in (_data['commands'] as List? ?? []))
+            ListTile(
+              title: Text(raw['label'] as String),
+              subtitle: const Text('Available to permitted devices'),
+              trailing: IconButton(
+                tooltip: 'Remove command',
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () async {
+                  await _run(
+                    () => _command({'op': 'command_remove', 'id': raw['id']}),
+                  );
+                  if (context.mounted) if (mounted) setState(() {});
+                },
+              ),
+            ),
+          _button('Add command preset', () async {
+            await _addCommand();
+            if (mounted) setState(() {});
+          }),
+        ],
+        _section('Connection details'),
+        SelectableText(
+          'This device: ${_data['device']['device_name']}\nLocal address: ${_data['device']['address']}\n${_paired.length} paired devices',
+        ),
+      ],
+    ];
   }
 
   Future<void> _addCommand() async {
@@ -961,7 +960,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
 
   Future<void> _viewCamera(String peer) async {
     await _audio!.startCamera(peer);
-    if (mounted) setState(() => _page = 3);
+    if (mounted) _openTab(1);
     _notice(
       'Camera requested. The other app must have camera sharing enabled.',
     );
@@ -1104,14 +1103,25 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
 
   String _subtitle() => switch (_page) {
     0 =>
-      'Connect nearby devices. Pairing gives you trust; permissions stay in your hands.',
-    1 => 'Review pairing, file, clipboard, and audio requests.',
-    2 =>
-      'Files travel directly between your devices. Interrupted transfers can resume.',
-    3 =>
-      'Share speakers, microphone and camera with permitted devices over your LAN.',
-    _ => 'Connection details and recent decisions, kept on this device.',
+      'Your nearby, paired and available devices. Review connection requests here.',
+    1 => 'Cameras, sound and shared folders across your devices.',
+    2 => 'Transfers and recent activity, grouped for easy review.',
+    _ => 'Appearance, clipboard sync and preferences for this device.',
   };
+
+  bool get _hasRequests =>
+      _items('pairings').any(
+        (p) =>
+            p['status'] == 'pending' ||
+            (p['nearby'] == true && p['status'] == 'denied'),
+      ) ||
+      _items('transfers').any((t) => t['status'] == 'pending') ||
+      _items('clipboard').isNotEmpty ||
+      _items('sessions').any(
+        (m) =>
+            m['state'] == 'requested' &&
+            !(_audio?.links[m['id']]?.outgoing ?? false),
+      );
 
   Widget _connection() => _android != null
       ? Center(
@@ -1430,9 +1440,10 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       ),
     ],
   ];
-  Widget _pairedCard(Map<String, dynamic> peer) {
+  Map<String, (IconData, Future<void> Function())> _deviceActions(
+    Map<String, dynamic> peer,
+  ) {
     final id = peer['device_id'] as String;
-    final online = _isOnline(id);
     final actions = <String, (IconData, Future<void> Function())>{
       'Find device': (
         Icons.notifications_active_outlined,
@@ -1448,14 +1459,14 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         Icons.mic_outlined,
         () async {
           await _audio!.start(id);
-          if (mounted) setState(() => _page = 3);
+          if (mounted) _openTab(1);
         },
       ),
       'Use microphone': (
         Icons.mic_external_on_outlined,
         () async {
           await _audio!.requestMicrophone(id);
-          if (mounted) setState(() => _page = 3);
+          if (mounted) _openTab(1);
         },
       ),
       if (Platform.isLinux || Platform.isWindows)
@@ -1511,47 +1522,39 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         'Request unlock': (Icons.lock_open, () => _deviceAction(id, 'unlock')),
       'Unpair': (Icons.link_off, () => _unpair(peer)),
     };
+    return actions;
+  }
+
+  Widget _pairedCard(Map<String, dynamic> peer) {
+    final id = peer['device_id'] as String;
+    final online = _isOnline(id);
     return Card(
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        key: ValueKey('device-$id'),
         leading: Icon(
           online ? Icons.check_circle_outline : Icons.cloud_off_outlined,
         ),
         title: Text(peer['device_name'] as String),
         subtitle: Text('${peer['platform']} · ${_presenceText(id)}'),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              key: ValueKey('settings-$id'),
-              tooltip: 'Device settings',
-              icon: const Icon(Icons.settings_outlined),
-              onPressed: _busy
-                  ? null
-                  : () => _permissions(peer).catchError(_showError),
-            ),
-            PopupMenuButton<String>(
-              key: ValueKey('actions-$id'),
-              tooltip: 'Device actions',
-              enabled: !_busy,
-              icon: const Icon(Icons.more_vert),
-              onSelected: (name) => _run(actions[name]!.$2),
-              itemBuilder: (_) => [
-                for (final entry in actions.entries)
-                  PopupMenuItem(
-                    value: entry.key,
-                    enabled: online || entry.key == 'Unpair',
-                    child: Row(
-                      children: [
-                        Icon(entry.value.$1, size: 20),
-                        const SizedBox(width: 12),
-                        Flexible(child: Text(entry.key)),
-                      ],
-                    ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => DeviceActionsPage(
+              peerId: id,
+              name: peer['device_name'] as String,
+              status: _status,
+              settings: () => _permissions(peer).catchError(_showError),
+              actions: [
+                for (final entry in _deviceActions(peer).entries)
+                  DeviceAction(
+                    entry.key,
+                    entry.value.$1,
+                    () => _run(entry.value.$2),
+                    requiresOnline: entry.key != 'Unpair',
                   ),
               ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -1560,9 +1563,9 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   Future<void> _requestPairing(Map<String, dynamic> peer) async {
     await _api!.call({'op': 'pair_nearby', 'peer': peer});
     if (!mounted) return;
-    setState(() => _page = 1);
+    _openTab(0);
     _notice(
-      'Request sent to ${peer['device_name']}. Accept it in their Inbox to connect.',
+      'Request sent to ${peer['device_name']}. Accept it on their Devices tab to connect.',
     );
   }
 
@@ -1646,7 +1649,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     _notice(
       'Compare code ${result['code']} on both devices, then approve in Inbox.',
     );
-    if (mounted) setState(() => _page = 1);
+    if (mounted) _openTab(0);
   }
 
   Future<void> _enterInvitation() async {
@@ -2019,7 +2022,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
           ? 'File offered. After the other device accepts, press Send / resume.'
           : 'Transfer ${result['status']}',
     );
-    if (mounted) setState(() => _page = 2);
+    if (mounted) _openTab(2);
   }
 
   Future<void> _sendClipboard(String peer) async {
@@ -2156,26 +2159,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   ];
 
   List<Widget> _audioPage() => [
-    SwitchListTile(
-      title: const Text('Microphone sharing'),
-      subtitle: const Text(
-        'Only devices with microphone permission can listen. Enable while Narad is visible before using it in the background.',
-      ),
-      value: _audio?.microphoneEnabled ?? false,
-      onChanged: (value) => _run(() async {
-        await _audio!.setMicrophoneEnabled(value);
-        if (mounted) setState(() {});
-      }),
-    ),
-    if (Platform.isAndroid || Platform.isIOS)
-      SwitchListTile(
-        title: const Text('Use loudspeaker'),
-        value: _audio?.speakerphone ?? true,
-        onChanged: (value) => _run(() async {
-          await _audio!.setSpeakerphone(value);
-          if (mounted) setState(() {});
-        }),
-      ),
+    _section('Camera'),
     SwitchListTile(
       title: const Text('Camera sharing'),
       subtitle: Text(
@@ -2228,6 +2212,27 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
           ),
         ),
 
+    _section('Speaker and microphone'),
+    SwitchListTile(
+      title: const Text('Microphone sharing'),
+      subtitle: const Text(
+        'Only devices with microphone permission can listen. Enable while Narad is visible before using it in the background.',
+      ),
+      value: _audio?.microphoneEnabled ?? false,
+      onChanged: (value) => _run(() async {
+        await _audio!.setMicrophoneEnabled(value);
+        if (mounted) setState(() {});
+      }),
+    ),
+    if (Platform.isAndroid || Platform.isIOS)
+      SwitchListTile(
+        title: const Text('Use loudspeaker'),
+        value: _audio?.speakerphone ?? true,
+        onChanged: (value) => _run(() async {
+          await _audio!.setSpeakerphone(value);
+          if (mounted) setState(() {});
+        }),
+      ),
     Card(
       child: SwitchListTile(
         title: const Text('Audio playback'),
@@ -2266,14 +2271,10 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
           ],
         ),
     ],
-    _section('Audio and camera sessions'),
+    _section('Audio sessions'),
     for (final s in _items('sessions').where(
       (s) =>
-          [
-            'audio.output',
-            'audio.input',
-            'camera.stream',
-          ].contains(s['capability']) &&
+          ['audio.output', 'audio.input'].contains(s['capability']) &&
           !['closed', 'denied', 'failed'].contains(s['state']),
     ))
       _card(
@@ -2294,6 +2295,12 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
           }),
         ],
       ),
+    _section('Shared folders'),
+    const Text(
+      'Choose folders that permitted devices can browse and exchange files with.',
+    ),
+    _button('Add file to Shared folder', _addSharedFile),
+    _button('View Shared folder', _localSharedFiles),
   ];
 
   String _activityCategory(String kind) {

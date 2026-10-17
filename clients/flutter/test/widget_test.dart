@@ -82,13 +82,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('My phone'), findsOneWidget);
     expect(find.text('Send file'), findsNothing);
-    await tester.tap(find.byKey(const ValueKey('actions-peer')));
+    await tester.tap(find.byKey(const ValueKey('device-peer')));
     await tester.pumpAndSettle();
     expect(find.text('Send file'), findsOneWidget);
     expect(find.text('Find device'), findsOneWidget);
-    expect(find.text('Send laptop audio'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Use for meeting'), 160);
     expect(find.text('Use for meeting'), findsOneWidget);
-    expect(find.text('Stop ringing'), findsOneWidget);
+
     expect(
       api.calls.any((c) => c['op'] == 'media_ready' && c['ready'] == true),
       false,
@@ -111,7 +111,6 @@ void main() {
     ];
     await tester.pumpWidget(NaradApp(api: api));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Inbox'));
     await tester.pumpAndSettle();
     expect(find.text('approved text'), findsOneWidget);
     expect(api.calls.any((c) => c['op'] == 'clipboard_accept'), false);
@@ -119,7 +118,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(api.calls.where((c) => c['op'] == 'clipboard_accept').length, 1);
-    expect(find.text('You’re all caught up'), findsOneWidget);
+    expect(find.text('Requests'), findsNothing);
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
   });
@@ -138,7 +137,6 @@ void main() {
     ];
     await tester.pumpWidget(NaradApp(api: api));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Inbox'));
     await tester.pumpAndSettle();
     expect(
       find.text(
@@ -173,7 +171,6 @@ void main() {
     ];
     await tester.pumpWidget(NaradApp(api: api));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Inbox'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Codes match · approve'));
     await tester.pump();
@@ -220,7 +217,10 @@ void main() {
       api.calls.any((c) => c['op'] == 'invite' || c['op'] == 'pair'),
       isFalse,
     );
-    expect(find.textContaining('Accept it in their Inbox'), findsOneWidget);
+    expect(
+      find.textContaining('Accept it on their Devices tab'),
+      findsOneWidget,
+    );
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
   });
@@ -241,11 +241,9 @@ void main() {
       ];
       await tester.pumpWidget(NaradApp(api: api));
       await tester.pumpAndSettle();
-      expect(find.text('Pairing request from Nearby phone'), findsOneWidget);
+      expect(find.text('Pair with Nearby phone'), findsOneWidget);
       expect(find.byType(Badge), findsOneWidget);
       expect(api.calls.any((c) => c['op'] == 'pair_approve'), isFalse);
-      await tester.tap(find.text('Review request'));
-      await tester.pumpAndSettle();
       await tester.tap(find.text('Accept request'));
       await tester.pumpAndSettle();
       expect(api.calls.where((c) => c['op'] == 'pair_approve').single, {
@@ -275,7 +273,6 @@ void main() {
       ];
       await tester.pumpWidget(NaradApp(api: api));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Inbox'));
       await tester.pumpAndSettle();
       expect(find.textContaining('Waiting for acceptance'), findsOneWidget);
       expect(find.text('Confirm both devices'), findsNothing);
@@ -327,20 +324,30 @@ void main() {
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(find.text('Sleeping laptop'), 150);
       await tester.pumpAndSettle();
-      final settings = find.byKey(const ValueKey('settings-offline'));
-      expect(tester.widget<IconButton>(settings).onPressed, isNotNull);
-      await tester.tap(find.byKey(const ValueKey('actions-offline')));
+      await tester.tap(find.byKey(const ValueKey('device-offline')));
       await tester.pumpAndSettle();
       expect(
         tester
-            .widget<PopupMenuItem<String>>(
+            .widget<IconButton>(
+              find.byWidgetPredicate(
+                (w) =>
+                    w is IconButton &&
+                    w.tooltip == 'Device settings and permissions',
+              ),
+            )
+            .onPressed,
+        isNotNull,
+      );
+      expect(
+        tester
+            .widget<ListTile>(
               find.ancestor(
                 of: find.text('Send file'),
-                matching: find.byType(PopupMenuItem<String>),
+                matching: find.byType(ListTile),
               ),
             )
             .enabled,
-        isFalse,
+        false,
       );
       await tester.pumpWidget(const SizedBox());
       await tester.pumpAndSettle();
@@ -390,13 +397,13 @@ void main() {
       final api = FakeApi();
       await tester.pumpWidget(NaradApp(api: api));
       await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(find.byTooltip('Device settings'), 150);
-      await Scrollable.ensureVisible(
-        tester.element(find.byTooltip('Device settings')),
-        alignment: 0.5,
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('device-peer')),
+        150,
       );
+      await tester.tap(find.byKey(const ValueKey('device-peer')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Device settings'));
+      await tester.tap(find.byTooltip('Device settings and permissions'));
       await tester.pumpAndSettle();
       expect(find.byType(SwitchListTile), findsNWidgets(10));
       expect(find.text('Share this device’s camera'), findsOneWidget);
@@ -471,8 +478,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('My phone'), 150);
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('actions-peer')));
+    await tester.tap(find.byKey(const ValueKey('device-peer')));
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Lock'), 160);
     expect(find.text('Lock'), findsOneWidget);
     expect(find.text('Request unlock'), findsNothing);
     await tester.pumpWidget(const SizedBox());
@@ -489,10 +497,19 @@ void main() {
     await tester.pumpWidget(NaradApp(api: FakeApi()));
     await tester.pumpAndSettle();
     expect(find.byType(NavigationBar), findsOneWidget);
+    expect(
+      tester
+          .widget<NavigationBar>(find.byType(NavigationBar))
+          .destinations
+          .length,
+      4,
+    );
+    expect(find.text('Media'), findsOneWidget);
+    expect(find.text('Activity'), findsOneWidget);
+    expect(find.text('Settings'), findsOneWidget);
     expect(tester.takeException(), isNull);
-    await tester.tap(find.text('Inbox'));
     await tester.pumpAndSettle();
-    expect(find.text('You’re all caught up'), findsOneWidget);
+    expect(find.text('Requests'), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();

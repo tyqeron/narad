@@ -357,6 +357,7 @@ pub fn platform_events(state: &mut State) -> Result<Value> {
         let offer = state.clipboard[&id].clone();
         let peer = state.peer(&offer.peer_id)?;
         if state.session(&id, &peer, "clipboard.sync").is_ok() {
+            state.clipboard_digest = Some(*blake3::hash(offer.text.as_bytes()).as_bytes());
             clipboard.push(json!({"id":id,"text":offer.text}));
             state.clipboard.remove(&id);
             state.sessions.get_mut(&id).unwrap().close();

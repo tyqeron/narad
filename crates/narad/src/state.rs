@@ -72,6 +72,8 @@ pub struct PlatformAction {
     pub message: String,
 }
 pub struct State {
+    pub preferences: crate::preferences::Preferences,
+    pub clipboard_digest: Option<[u8; 32]>,
     pub dir: PathBuf,
     pub identity: Identity,
     pub own: Peer,
@@ -143,7 +145,14 @@ impl State {
         } else {
             BTreeMap::new()
         };
+        let preferences = if dir.join("preferences.enc").exists() {
+            load_encrypted(&dir.join("preferences.enc"), &identity.storage_key())?
+        } else {
+            crate::preferences::Preferences::default()
+        };
         let mut state = Self {
+            preferences,
+            clipboard_digest: None,
             dir,
             identity,
             own,
@@ -257,6 +266,15 @@ impl State {
             }
             self.signals.clear();
             self.clipboard.clear();
+            return Err(e);
+        }
+        Ok(())
+    }
+    pub fn save_preferences(&mut self) -> Result<()> {
+        let path = self.dir.join("preferences.enc");
+        if let Err(e) = save_encrypted(&path, &self.identity.storage_key(), &self.preferences) {
+            self.preferences =
+                load_encrypted(&path, &self.identity.storage_key()).unwrap_or_default();
             return Err(e);
         }
         Ok(())
