@@ -655,14 +655,29 @@ class AudioController {
     link.candidates.clear();
   }
 
-  Future<void> _signal(AudioLink link, Map<String, dynamic> data) async {
-    if (!links.containsKey(link.id)) return;
-    await api.call({
-      'op': 'media_send',
-      'id': link.id,
-      'peer_id': link.peer,
-      'data': data,
-    });
+  Future<void> _signalTail = Future<void>.value();
+  int _pendingSignals = 0;
+  Future<void> _signal(AudioLink link, Map<String, dynamic> data) {
+    if (!links.containsKey(link.id)) return Future<void>.value();
+    if (_pendingSignals >= 128) {
+      return Future<void>.error(StateError('Too many pending media signals'));
+    }
+    _pendingSignals++;
+    // Multiple peer connections gather ICE simultaneously. Keep this burst within
+    // the daemon's bounded local API capacity, preserving offer/candidate order.
+    final task = _signalTail
+        .then((_) async {
+          if (!links.containsKey(link.id)) return;
+          await api.call({
+            'op': 'media_send',
+            'id': link.id,
+            'peer_id': link.peer,
+            'data': data,
+          });
+        })
+        .whenComplete(() => _pendingSignals--);
+    _signalTail = task.catchError((Object _) {});
+    return task;
   }
 
   Future<void> stop(String id, {bool notify = true}) async {

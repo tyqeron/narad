@@ -42,6 +42,9 @@ class _SystemAudioPageState extends State<SystemAudioPage> {
     _devices = (await navigator.mediaDevices.enumerateDevices())
         .where((d) => d.kind == 'audioinput')
         .toList();
+    if (!_devices.any((d) => d.deviceId == _input)) {
+      _input = null;
+    }
     if (_route != null) {
       _input = null;
       for (final d in _devices) {
