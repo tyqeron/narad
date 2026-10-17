@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Opt-in physical Android/Linux interoperability check using this app's debug API.
 
-Install/launch the debug APK first. No personal files, clipboard or microphone are
-accessed. Only generated fixtures and a temporary test pairing are used. The explicit
---desktop-camera option also streams live camera video without recording it.
+Install/launch the debug APK first. Default checks use generated fixtures and a
+temporary pairing, without personal file, clipboard or microphone access. Explicit
+--desktop-camera streams live video; --desktop-audio streams the tablet microphone
+without saving it and plays a generated tone through the tablet speaker.
 """
 import argparse
 import contextlib
@@ -29,6 +30,7 @@ def main():
     parser.add_argument('--pairing', choices=['invitation', 'nearby'], default='invitation')
     parser.add_argument('--controls', action='store_true', help='Also test persistent grants, shared files and command presets')
     parser.add_argument('--widget', action='store_true', help='Test the debug-only real widget host and connected notification')
+    parser.add_argument('--desktop-audio', action='store_true', help='Only test generated Linux audio to tablet and a live microphone return, discarded without recording')
     parser.add_argument('--desktop-camera', action='store_true', help='Explicitly stream the Android camera to a Linux viewer; never record')
     parser.add_argument('--find-device', action='store_true', help='Briefly ring the tablet in background, then stop it from Linux')
     parser.add_argument('--find-only', action='store_true', help='Run only temporary pairing and the Find device check')
@@ -143,6 +145,54 @@ def main():
                 else:
                     desktop(op='pair_confirm', id=pair['id'], code=pair['code'])
                     print('PASS Android/Linux TLS pairing with both-side code approval')
+
+                if args.desktop_audio:
+                    microphone_was_ready = phone(op='status').get('microphone_ready', False)
+                    if args.desktop_camera:
+                        phone(op='permission', peer_id=host_id, capability='camera.stream', allow=True, automatic=True)
+                    phone(op='permission', peer_id=host_id, capability='audio.output', allow=True, automatic=True)
+                    run('shell', 'input', 'keyevent', 'KEYCODE_HOME')
+                    time.sleep(.5)
+                    run('shell', 'am', 'start', '-W', '-n', f'{PACKAGE}/.MainActivity')
+                    deadline = time.monotonic() + 20
+                    while not phone(op='status').get('media_ready'):
+                        if time.monotonic() > deadline:
+                            raise RuntimeError('Open Narad and enable audio playback on the tablet')
+                        time.sleep(.2)
+                    if not microphone_was_ready:
+                        assert not phone(op='status').get('microphone_ready'), 'Speaker grant enabled microphone capture'
+                        services = run('shell', 'dumpsys', 'activity', 'services', PACKAGE).decode()
+                        types = re.search(r'isForeground=true foregroundId=81 types=0x([0-9a-fA-F]+)', services)
+                        assert types and int(types.group(1), 16) & 2, 'Playback FGS type missing'
+                        assert not int(types.group(1), 16) & 0x80, 'Speaker playback requires microphone FGS'
+                    print('PASS tablet playback readiness does not enable microphone sharing')
+                    phone(op='permission', peer_id=host_id, capability='audio.input', allow=True, automatic=True)
+                    run('shell', 'input', 'keyevent', 'KEYCODE_HOME')
+                    time.sleep(.5)
+                    run('shell', 'am', 'start', '-W', '-n', f'{PACKAGE}/.MainActivity')
+                    deadline = time.monotonic() + 20
+                    while not phone(op='status').get('microphone_ready'):
+                        if time.monotonic() > deadline:
+                            raise RuntimeError('Open Narad and enable microphone sharing on the tablet')
+                        time.sleep(.2)
+                    # Begin both streams while Android is already backgrounded.
+                    run('shell', 'input', 'keyevent', 'KEYCODE_HOME')
+                    cleanup.append(lambda: run('shell', 'am', 'start', '-n', f'{PACKAGE}/.MainActivity'))
+                    prefix = ['dbus-run-session', '--'] if shutil.which('dbus-run-session') else []
+                    subprocess.run(prefix + [os.environ.get('FLUTTER_BIN', 'flutter'), 'test',
+                        'integration_test/desktop_audio_test.dart', '-d', 'linux'],
+                        cwd=Path(__file__).resolve().parents[1]/'clients/flutter',
+                        env={**os.environ, 'GDK_BACKEND':'x11', 'NARAD_AUDIO_STATE':str(state),
+                             'NARAD_AUDIO_PORT':str(api), 'NARAD_AUDIO_PEER':phone_id,
+                             'NARAD_AUDIO_CAMERA':'1' if args.desktop_camera else '0'},
+                        check=True, timeout=300)
+                    deadline = time.monotonic() + 10
+                    while any(s['peer_id'] == host_id and s['state'] not in ['closed','denied','failed'] for s in phone(op='status')['sessions']):
+                        if time.monotonic() > deadline:
+                            raise RuntimeError('Tablet did not release media after desktop stop')
+                        time.sleep(.2)
+                    print('PASS Linux/tablet simultaneous background speaker and microphone media, and remote stop cleanup')
+                    return
 
                 if args.find_device:
                     def wait_action(result):

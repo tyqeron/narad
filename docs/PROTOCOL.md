@@ -250,3 +250,7 @@ the wrong direction before setting remote descriptions. Playback readiness never
 implicitly enables microphone capture. Disabling source microphone readiness closes
 its capture sessions while retaining authorized outgoing microphone requests when
 playback remains ready. Unknown media kinds are rejected.
+
+Invitation validation permits the same bounded 60-second future clock skew as
+signed frames. The issuer still expires its one-time nonce after 300 seconds;
+expired invitations and invalid certificate pins remain rejected.
