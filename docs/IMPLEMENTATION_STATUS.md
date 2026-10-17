@@ -223,7 +223,8 @@ screen. Build 10's requester/source behavior is covered by the 37-test client su
   checks. Linux GUI/backend/installer builds successfully; seven installation,
   upgrade, corruption and backend-ownership checks pass. APK, installer and tarball
   checksums verify; the meeting guide is included in both desktop packages.
-- The tested debug APK is installed on the tablet. Updating it to the final
-  release APK was rejected by Android with INSTALL_FAILED_USER_RESTRICTED;
-  user unlock/installer approval is required before retrying. The verified release
-  APK remains available in dist. No Windows/iOS native package was built here.
+- After user unlock/installer approval, the final release APK installed on the
+  tablet successfully with versionCode 13. Cold launch and normal Narad Devices,
+  Inbox, Media and Activity navigation labels are verified. The in-place update
+  preserves application data and existing pairings. No Windows/iOS native package
+  was built here.
