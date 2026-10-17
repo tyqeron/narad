@@ -8,7 +8,7 @@ use narad_core::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     path::PathBuf,
 };
 
@@ -89,6 +89,8 @@ pub struct State {
     pub phone_seen: u64,
     pub media_ready: bool,
     pub camera_ready: bool,
+    pub microphone_ready: bool,
+    pub outgoing_media: HashSet<String>,
     pub presence: BTreeMap<String, Presence>,
     pub platform_actions: BTreeMap<String, PlatformAction>,
     pub commands: BTreeMap<String, SavedCommand>,
@@ -159,6 +161,8 @@ impl State {
             phone_seen: 0,
             media_ready: false,
             camera_ready: false,
+            microphone_ready: false,
+            outgoing_media: HashSet::new(),
             presence: BTreeMap::new(),
             platform_actions: BTreeMap::new(),
             commands,
@@ -324,19 +328,28 @@ impl State {
     }
     pub fn expire(&mut self) {
         let t = now();
-        if (self.media_ready || self.camera_ready) && t.saturating_sub(self.media_seen) > 15 {
+        if (self.media_ready || self.camera_ready || self.microphone_ready)
+            && t.saturating_sub(self.media_seen) > 15
+        {
             self.media_ready = false;
             self.camera_ready = false;
-            self.own
-                .capabilities
-                .retain(|c| !["audio.output", "camera.stream"].contains(&c.as_str()));
+            self.microphone_ready = false;
+            self.own.capabilities.retain(|c| {
+                !["audio.output", "audio.input", "camera.stream"].contains(&c.as_str())
+            });
             for s in self.sessions.values_mut() {
-                if ["audio.output", "camera.stream"].contains(&s.capability.as_str()) {
+                if ["audio.output", "audio.input", "camera.stream"].contains(&s.capability.as_str())
+                {
                     s.close();
                 }
             }
             self.signals.clear();
         }
+        self.outgoing_media.retain(|id| {
+            self.sessions
+                .get(id)
+                .is_some_and(|s| s.state != SessionState::Closed)
+        });
         self.platform_actions.retain(|_, a| a.expires_at > t);
         self.invitations.retain(|_, i| i.expires_at > t);
         self.pairings.retain(|_, p| p.expires_at > t);

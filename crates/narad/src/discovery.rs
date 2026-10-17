@@ -69,6 +69,7 @@ pub fn start(peer: &Peer, peers: Discovered) -> Result<ServiceDaemon> {
                                     "file.transfer",
                                     "clipboard.sync",
                                     "audio.output",
+                                    "audio.input",
                                     "camera.stream",
                                     "file.browse",
                                     "command.run",
