@@ -712,3 +712,22 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
 - Gradle configuration compiles. A disposable keystore restored through the actual
   workflow decoder has mode 0600, is selected by the release signing report, and
   incomplete configuration fails. No production key is created, read or uploaded.
+
+## 52. GitHub tag-triggered multiplatform releases
+
+- Add release.yml: validate a version tag against pubspec and its Android build
+  number, build Windows x64 ZIP, Linux x64 installer/archive and signed universal
+  Android APK on native hosted runners, then collect and verify four checksums.
+- Publish only after every platform passes. Create/resume a draft, upload all
+  assets and publish last; prerelease tags remain prereleases. Published releases
+  are not overwritten. Tag deletion is ignored, and branch checks avoid duplicate
+  tag builds. Update official Actions to their current Node 24-based releases.
+- Document four required signing secrets, persistent-key/upgrade requirements,
+  version tagging, artifacts and failure recovery. Existing local build scripts
+  remain the platform build entry points; no hosted release or tag is created here.
+- actionlint 1.7.12 validates both workflows; five release-metadata tests pass.
+  Signing restoration/configuration tests pass with a disposable key. A mocked
+  CLI dry run verifies new/resumed draft ordering, all eight assets, corruption
+  rejection and published-release protection, without contacting GitHub. Windows
+  CRLF checksums also validate on the Linux publisher. First hosted execution
+  remains required to validate the GitHub runners and repository secrets.

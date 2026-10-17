@@ -77,8 +77,10 @@ FLUTTER_BIN=/opt/flutter/bin/flutter ./scripts/build-android.sh
 Gradle builds the Rust libraries automatically. The build script checks all three
 embedded backend ABIs and 16 KiB alignment of the 64-bit native libraries. Do not copy identities or state
 folders between devices. APKs and build outputs are ignored by Git. Release-mode
-APKs currently use the development signing key; store publishing needs a dedicated
-signing setup. Keep the same key for APK upgrades to preserve existing app data.
+Local APKs use the development signing key unless release signing is configured.
+GitHub tag releases require a persistent signing key through Actions secrets;
+see [release setup](RELEASING.md). Keep the same key for APK upgrades to preserve
+existing app data.
 
 ```sh
 adb devices -l

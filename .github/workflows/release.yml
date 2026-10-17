@@ -1,0 +1,227 @@
+name: Build and publish release
+
+on:
+  push:
+    tags: ['**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: '3.44.8'
+  CARGO_TERM_COLOR: always
+
+jobs:
+  prepare:
+    if: ${{ !github.event.deleted }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Validate tag and embedded app version
+        id: version
+        run: |
+          python3 tests/release_metadata.py
+          python3 scripts/release-metadata.py
+
+  linux:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.88.0'
+          components: rustfmt, clippy
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Install Linux build and test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libpulse-dev libasound2-dev ffmpeg
+      - run: cargo fmt --all --check
+      - run: cargo test --workspace --locked
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Check Flutter
+        working-directory: clients/flutter
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+      - run: ./scripts/build-linux-installer.sh
+      - run: python3 tests/linux_packaging.py dist/narad-linux-x64-release.run
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-linux
+          overwrite: true
+          if-no-files-found: error
+          compression-level: 0
+          path: |
+            dist/narad-linux-x64-release.run
+            dist/narad-linux-x64-release.run.sha256
+            dist/narad-linux-x64-release.tar.gz
+            dist/narad-linux-x64-release.tar.gz.sha256
+
+  windows:
+    needs: prepare
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.88.0'
+          targets: x86_64-pc-windows-msvc
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: cargo test --workspace --locked
+      - run: ./scripts/build-windows.ps1
+        shell: pwsh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-windows
+          overwrite: true
+          if-no-files-found: error
+          compression-level: 0
+          path: |
+            dist/narad-windows-x64-release.zip
+            dist/narad-windows-x64-release.zip.sha256
+
+  android:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.workers.max=2
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Restore release signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import base64, os
+          from pathlib import Path
+          names = {'KEYSTORE_BASE64': 'ANDROID_KEYSTORE_BASE64', 'STORE_PASSWORD': 'ANDROID_KEYSTORE_PASSWORD',
+                   'KEY_ALIAS': 'ANDROID_KEY_ALIAS', 'KEY_PASSWORD': 'ANDROID_KEY_PASSWORD'}
+          missing = [secret for name, secret in names.items() if not os.environ.get(name)]
+          if missing:
+              raise SystemExit('Set repository Actions secrets first: ' + ', '.join(missing))
+          key = Path(os.environ['RUNNER_TEMP']) / 'narad-release.jks'
+          key.write_bytes(base64.b64decode(os.environ['KEYSTORE_BASE64'], validate=True))
+          key.chmod(0o600)
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as output:
+              output.write(f'NARAD_ANDROID_KEYSTORE={key}\n')
+          PY
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.88.0'
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;28.2.13676358"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Build signed universal APK
+        env:
+          NARAD_ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          NARAD_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          NARAD_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          ./scripts/build-android.sh
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify dist/narad-android-release.apk
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 4 dist/narad-android-release.apk
+      - name: Native Android tests
+        working-directory: clients/flutter/android
+        # Tests use debug signing; do not leave a partial release-signing environment.
+        env:
+          NARAD_ANDROID_KEYSTORE: ''
+        run: ./gradlew :app:testDebugUnitTest
+      - name: Remove signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/narad-release.jks"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-android
+          overwrite: true
+          if-no-files-found: error
+          compression-level: 0
+          path: |
+            dist/narad-android-release.apk
+            dist/narad-android-release.apk.sha256
+
+  publish:
+    needs: [prepare, linux, windows, android]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Verify complete release assets
+        working-directory: dist
+        run: |
+          test -s narad-linux-x64-release.run
+          test -s narad-linux-x64-release.tar.gz
+          test -s narad-windows-x64-release.zip
+          test -s narad-android-release.apk
+          test "$(find . -maxdepth 1 -name '*.sha256' | wc -l)" -eq 4
+          sha256sum -c -- *.sha256
+      - name: Publish release with all packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+        run: |
+          flags=()
+          if [[ "$PRERELEASE" == true ]]; then flags+=(--prerelease); fi
+          if draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft' 2>/dev/null); then
+            if [[ "$draft" != true ]]; then
+              echo "Release is already published; use a new tag rather than replacing published assets."
+              exit 1
+            fi
+          else
+            gh release create "$RELEASE_TAG" --draft --verify-tag --generate-notes \
+              --title "Narad $RELEASE_TAG" "${flags[@]}"
+          fi
+          gh release upload "$RELEASE_TAG" dist/* --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --prerelease="$PRERELEASE"

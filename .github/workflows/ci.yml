@@ -1,6 +1,7 @@
 name: Narad checks
 on:
   push:
+    branches: ['**']
   pull_request:
 permissions:
   contents: read
@@ -8,7 +9,7 @@ jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.88.0'
@@ -21,7 +22,7 @@ jobs:
   flutter:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.88.0'
@@ -46,12 +47,12 @@ jobs:
   android:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.88.0'
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -65,7 +66,7 @@ jobs:
       - run: ./scripts/build-android.sh
       - run: ./gradlew :app:testDebugUnitTest
         working-directory: clients/flutter/android
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: narad-android-development
           path: |
@@ -75,13 +76,13 @@ jobs:
   windows:
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.88.0'
           components: rustfmt, clippy
           targets: x86_64-pc-windows-msvc
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - uses: subosito/flutter-action@v2
@@ -110,7 +111,7 @@ jobs:
           }
       - run: ./scripts/build-windows.ps1
         shell: pwsh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: narad-windows-x64-development
           path: |
@@ -120,7 +121,7 @@ jobs:
   ios:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.88.0'

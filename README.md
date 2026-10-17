@@ -173,3 +173,6 @@ SMS/history/notification mirroring.
 Camera switching, saving photos/video and OBS webcam setup: [Camera guide](docs/CAMERA.md). Contact access and copying: [Phone integration](docs/PHONE_INTEGRATION.md#contacts).
 
 Ring an online paired phone, tablet or desktop: [Find device setup and platform limits](docs/FIND_DEVICE.md).
+
+Publish Windows, Linux and Android packages automatically when pushing a version
+tag: [GitHub release workflow and signing setup](docs/RELEASING.md).
