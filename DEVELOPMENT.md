@@ -676,3 +676,16 @@ permission and recovery cases. Record unsupported or untested behavior honestly.
   An opt-in Linux check starts real playback, stops it and verifies temporary-file
   cleanup. Windows/iOS physical audio runtime remains unverified on this host.
 - Android version advances to build 12, including the collapsible offline list.
+
+## 49. Physical Find device verification
+
+- Add --find-device and focused --find-only modes to the Android/Linux harness:
+  verify denial without the specific grant, ring through Home/backgrounding,
+  confirm native media-playback foreground state, request Stop and verify playback
+  type is removed. Use only a temporary Linux peer and remove it after the check.
+- Physical tablet focused check passes. The initial full harness lost ADB during
+  its unrelated app-restart check; reconnecting allowed explicit removal of its
+  generated transfer/peer before rerunning the focused test. The user's existing
+  paired devices, OS access grants and default roles remain untouched.
+- Settings → Quit Narad now awaits desktop locator cleanup. Document the bounded
+  desktop player lifetime if abruptly terminated or quitting through native tray.

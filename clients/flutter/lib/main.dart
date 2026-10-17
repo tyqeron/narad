@@ -692,7 +692,10 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                       }
                     },
             ),
-            _button('Quit Narad', () => _desktop!.quit()),
+            _button('Quit Narad', () async {
+              await _finder?.stop();
+              await _desktop!.quit();
+            }),
           ],
           if (_android != null) ...[
             _section('Phone integration'),

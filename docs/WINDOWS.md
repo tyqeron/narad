@@ -146,3 +146,12 @@ an explicit camera-access error. The updated backend cross-compiles for Windows;
 physical Windows camera capture/viewing still requires native testing.
 
 Phone companion setup, platform support and cellular audio limitations: [Phone integration](PHONE_INTEGRATION.md).
+
+## Find device
+
+Enable **Ring this device (Find device)** for a paired requester in Device settings.
+From an online device's actions choose **Find device** to ring for up to 30 seconds,
+or **Stop ringing** to end it. Both endpoints need the updated app. Keep Narad's
+background/tray service running. This uses the existing LAN connection; there is
+no GPS tracking or offline wake-up. See [Find device](FIND_DEVICE.md) for platform
+requirements, local Stop controls and volume/DND limitations.

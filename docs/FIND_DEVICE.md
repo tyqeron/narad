@@ -28,10 +28,13 @@ restrictions. Narad does not change those settings. A successful playback start
 is an acknowledgement of the alert request, not proof that a speaker is audible.
 Requests are rate-limited to one start per paired requester every 30 seconds;
 Stop ringing is not rate-limited. Revocation/unpairing stops an active alert on
-the next receiver poll. All alerts stop on timeout or normal Narad shutdown.
+the next receiver poll. All alerts stop on timeout. Stop Narad stops the Android alarm, and Settings →
+Quit Narad stops desktop playback. Abrupt termination or the native desktop tray
+Quit can leave the separate desktop player finishing its bounded 30-second file.
 The daemon alone queues desktop alerts; the running GUI handles their playback.
 
 For a physical Android check, install/open the normal debug app and run the
-opt-in Android integration harness with `--find-device`. This briefly sounds the
+opt-in Android integration harness with `--find-only` (`--find-device` also runs
+the existing file/restart checks). This briefly sounds the
 alarm, backgrounds Narad, verifies media-playback foreground state and stops it
 from the paired Linux test peer. It does not read personal media or location.

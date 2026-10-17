@@ -133,8 +133,8 @@ Every command uses a JSON payload containing `op` plus the fields below.
 | `shared_read` | `path,offset` | file.browse; max 48 KiB base64 chunk, size and offset |
 | `command_list` | — | command.run; preset IDs and labels, no scripts |
 | `command` | `id` | command.run; configured preset, 10s limit, stdout/stderr max 8 KiB each |
-| `device_action` | `kind` | device.lock or device.unlock; native action or Linux loginctl |
-| `device_action_status` | `id` | owner-only Android action status |
+| `device_action` | `kind` | lock/unlock require device.lock/device.unlock; find/find_stop require device.find and queue a bounded alert |
+| `device_action_status` | `id` | owner-only queued platform-action status |
 
 | File-plane command | Fields | Gate |
 | --- | --- | --- |
@@ -233,3 +233,10 @@ be reached by skipping approval, and terminal sessions cannot reactivate.
 File resume creates a fresh authorized in-memory lifecycle for the persisted
 transfer ID after local approval. Ownership and current permissions are checked
 again on every privileged data operation.
+
+Find device uses its own default-off `device.find` permission. Alerts run for up
+to 30 seconds; starts are limited to one per requester per 30 seconds, while
+stops remain available. Platform adapters revalidate acknowledged find actions
+until playback stops so revocation/unpairing takes effect on their next poll.
+Peer advertisements permit at most 32 bounded capability names, accommodating
+all media and phone features alongside Find device; update both endpoints.

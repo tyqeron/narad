@@ -9,6 +9,7 @@ import argparse
 import contextlib
 import json
 import os
+import re
 from pathlib import Path
 import socket
 import shutil
@@ -29,7 +30,10 @@ def main():
     parser.add_argument('--controls', action='store_true', help='Also test persistent grants, shared files and command presets')
     parser.add_argument('--widget', action='store_true', help='Test the debug-only real widget host and connected notification')
     parser.add_argument('--desktop-camera', action='store_true', help='Explicitly stream the Android camera to a Linux viewer; never record')
+    parser.add_argument('--find-device', action='store_true', help='Briefly ring the tablet in background, then stop it from Linux')
+    parser.add_argument('--find-only', action='store_true', help='Run only temporary pairing and the Find device check')
     args = parser.parse_args()
+    if args.find_only: args.find_device = True
     adb = ['adb', '-s', args.serial]
 
     def run(*command, **kwargs):
@@ -139,6 +143,45 @@ def main():
                 else:
                     desktop(op='pair_confirm', id=pair['id'], code=pair['code'])
                     print('PASS Android/Linux TLS pairing with both-side code approval')
+
+                if args.find_device:
+                    def wait_action(result):
+                        deadline = time.monotonic() + 15
+                        while result['status'] in ['pending', 'dispatched']:
+                            if time.monotonic() > deadline:
+                                raise RuntimeError('Find device receiver did not acknowledge')
+                            time.sleep(.25)
+                            result = desktop(op='device_action_status', peer_id=phone_id, id=result['id'])
+                        assert result['status'] == 'completed', result
+                    def playback_active():
+                        services = run('shell', 'dumpsys', 'activity', 'services', PACKAGE).decode()
+                        types = re.search(r'isForeground=true foregroundId=81 types=0x([0-9a-fA-F]+)', services)
+                        return bool(types and int(types.group(1), 16) & 2)
+                    try:
+                        desktop(op='device_action', peer_id=phone_id, kind='find')
+                        raise AssertionError('Find device must require its own grant')
+                    except RuntimeError as error:
+                        assert 'permission denied' in str(error), error
+                    phone(op='permission', peer_id=host_id, capability='device.find', allow=True, automatic=True)
+                    try:
+                        run('shell', 'input', 'keyevent', 'KEYCODE_HOME')
+                        wait_action(desktop(op='device_action', peer_id=phone_id, kind='find'))
+                        deadline = time.monotonic() + 5
+                        while not playback_active():
+                            if time.monotonic() > deadline: raise RuntimeError('Background alert playback service is not active')
+                            time.sleep(.25)
+                        wait_action(desktop(op='device_action', peer_id=phone_id, kind='find_stop'))
+                        deadline = time.monotonic() + 5
+                        while playback_active():
+                            if time.monotonic() > deadline: raise RuntimeError('Remote Stop did not stop alert playback')
+                            time.sleep(.25)
+                        print('PASS Find device separately authorized, rings Android in background and stops from Linux')
+                    finally:
+                        with contextlib.suppress(Exception):
+                            desktop(op='device_action', peer_id=phone_id, kind='find_stop')
+                        phone(op='permission', peer_id=host_id, capability='device.find', allow=False)
+                        run('shell', 'am', 'start', '-n', f'{PACKAGE}/.MainActivity')
+                if args.find_only: return
 
                 data = os.urandom(256 * 1024 + 9)
                 source = root / 'narad-generated-test.bin'
@@ -270,7 +313,6 @@ def main():
                     phone(op='permission', peer_id=host_id, capability='camera.stream', allow=False)
                     print('PASS Linux renders Android camera through real Narad signaling with audio denied')
                 if args.widget:
-                    import re
                     import xml.etree.ElementTree as ET
                     run('shell', 'appwidget', 'grantbind', '--package', PACKAGE)
                     try:
@@ -373,7 +415,8 @@ def main():
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=5)
-        run('forward', '--remove', f'tcp:{forward}')
+        with contextlib.suppress(subprocess.CalledProcessError):
+            run('forward', '--remove', f'tcp:{forward}')
 
 
 if __name__ == '__main__':

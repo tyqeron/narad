@@ -161,3 +161,20 @@ screen. Build 10's requester/source behavior is covered by the 37-test client su
 - Build 11 release APK signature/checksum and ZIP/ELF 16 KiB alignment checks pass.
   Installed on the tablet; the normal Devices page renders and connected-device +
   camera foreground types remain active after Home. Phone is not updated in this run.
+
+### Find device (build 12)
+
+- Separate permission, Find device/Stop ringing actions and Android widget action
+  for online paired devices. Native Android bounded alarm with local Stop
+  notification; generated desktop/iOS alert with local Stop card. See FIND_DEVICE.md.
+- 23 Rust tests and strict workspace/Windows-target Clippy pass. 41 Flutter tests
+  and analysis pass; eight native Android tests pass. An additional opt-in Linux
+  playback test passes real start/stop and temporary-file cleanup.
+- Physical Android 15 tablet passes temporary Linux pairing, permission-denied
+  request, permitted ring while backgrounded, media-playback foreground type
+  activation, remote Stop and removal of playback type. Temporary test pairing is
+  removed. An earlier full harness run lost wireless ADB during app restart; its
+  generated peer/transfer were explicitly removed after reconnecting. No phone
+  default roles, sensitive access or real peer grants are changed.
+- Windows/iOS native audio runtime remains unverified; iOS is foreground-only.
+  No GPS/cloud tracking or offline wake-up is provided.
