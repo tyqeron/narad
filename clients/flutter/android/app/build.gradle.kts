@@ -89,6 +89,8 @@ android.sourceSets.getByName("main").jniLibs.srcDir("build/generated/rustJniLibs
 tasks.named("preBuild").configure { dependsOn(buildRustAndroid) }
 
 dependencies {
+    // Keep aligned with flutter_webrtc's locked SDK for remote-track PCM sinks.
+    implementation("io.github.webrtc-sdk:android:150.7871.01")
     implementation("androidx.documentfile:documentfile:1.0.0")
     testImplementation("junit:junit:4.13.2")
 }

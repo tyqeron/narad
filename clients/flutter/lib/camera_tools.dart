@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 /// The plugin uses one temporary PNG path: serialize captures and remove that file.
@@ -100,7 +100,13 @@ class CameraFeed {
 }
 
 class CameraTools {
-  CameraTools(this.track, this.onError, {this.capture});
+  CameraTools(this.track, this.onError, {this.capture, this.audioTrack});
+  final MediaStreamTrack Function()? audioTrack;
+  bool get recordsAudio => audioTrack != null;
+  String? _audioId, _audioPath;
+  MethodChannel get _audioChannel => MethodChannel(
+    Platform.isAndroid ? 'dev.narad/media' : 'FlutterWebRTC.Method',
+  );
   final Future<Uint8List> Function()? capture;
   final MediaStreamTrack Function() track;
   final void Function(Object) onError;
@@ -183,7 +189,10 @@ class CameraTools {
     if (_disposed || recording) {
       throw StateError('Camera unavailable or already recording');
     }
-    _directory ??= await Directory.systemTemp.createTemp('narad-camera-');
+    final temporary = Platform.isAndroid || Platform.isIOS
+        ? await getTemporaryDirectory()
+        : Directory.systemTemp;
+    _directory ??= await temporary.createTemp('narad-camera-');
     final path =
         '${_directory!.path}/${DateTime.now().microsecondsSinceEpoch}.mp4';
     try {
@@ -229,6 +238,17 @@ class CameraTools {
         });
         _ensurePump();
       }
+      recordingStarted = DateTime.now();
+      if (audioTrack != null && !Platform.isIOS) {
+        final id = audioTrack!().id;
+        final wav = '$path.wav';
+        await _audioChannel.invokeMethod<void>('naradAudioStart', {
+          'trackId': id,
+          'path': wav,
+        });
+        _audioId = id;
+        _audioPath = wav;
+      }
       if (_disposed) {
         await _native?.stop();
         _native = null;
@@ -237,7 +257,6 @@ class CameraTools {
         throw StateError('Camera session ended');
       }
       recordingPath = path;
-      recordingStarted = DateTime.now();
       _limit = Timer.periodic(const Duration(seconds: 2), (_) async {
         if (!recording) return;
         if (DateTime.now().difference(recordingStarted!).inMinutes >= 10 ||
@@ -256,7 +275,23 @@ class CameraTools {
         }
       });
     } catch (e) {
+      if (_audioId != null) {
+        try {
+          await _audioChannel.invokeMethod<void>('naradAudioStop', {
+            'trackId': _audioId,
+          });
+        } catch (_) {}
+      }
+      _audioId = null;
+      if (_audioPath != null && await File(_audioPath!).exists()) {
+        await File(_audioPath!).delete();
+      }
+      _audioPath = null;
+      try {
+        await _native?.stop();
+      } catch (_) {}
       recordingPath = null;
+      recordingStarted = null;
       _native = null;
       _encoder?.kill();
       _encoder = null;
@@ -277,7 +312,20 @@ class CameraTools {
     final encoder = _encoder;
     _encoder = null;
     _stopIdlePump();
+    final audioId = _audioId, audioPath = _audioPath;
+    _audioId = null;
+    _audioPath = null;
     try {
+      Object? audioError;
+      if (audioId != null) {
+        try {
+          await _audioChannel.invokeMethod<void>('naradAudioStop', {
+            'trackId': audioId,
+          });
+        } catch (e) {
+          audioError = e;
+        }
+      }
       if (native != null) await native.stop();
       if (encoder != null) {
         await encoder.stdin.close();
@@ -297,11 +345,22 @@ class CameraTools {
       if (!await File(path).exists() || await File(path).length() == 0) {
         throw StateError('No recorded video frames');
       }
-      completed.add(path);
-      return path;
+      if (audioError != null) throw audioError;
+      var completedPath = path;
+      if (audioPath != null) {
+        completedPath = '$path.audio.mp4';
+        await muxCameraAudio(path, audioPath, completedPath);
+        await File(path).delete();
+      }
+      completed.add(completedPath);
+      return completedPath;
     } catch (e) {
       if (await File(path).exists()) await File(path).delete();
       rethrow;
+    } finally {
+      if (audioPath != null && await File(audioPath).exists()) {
+        await File(audioPath).delete();
+      }
     }
   }
 
@@ -337,5 +396,46 @@ class CameraTools {
     if (_directory != null && await _directory!.exists()) {
       await _directory!.delete(recursive: true);
     }
+  }
+}
+
+/// Mux the selected session's PCM track; never record a global audio monitor.
+Future<void> muxCameraAudio(String video, String audio, String output) async {
+  if (Platform.isAndroid) {
+    await const MethodChannel('dev.narad/media').invokeMethod<void>(
+      'naradMuxRecording',
+      {'video': video, 'audio': audio, 'output': output},
+    );
+    return;
+  }
+  final result = await Process.run('ffmpeg', [
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-nostdin',
+    '-i',
+    video,
+    '-i',
+    audio,
+    '-map',
+    '0:v:0',
+    '-map',
+    '1:a:0',
+    '-c:v',
+    'copy',
+    '-c:a',
+    'aac',
+    '-af',
+    'apad',
+    '-shortest',
+    '-movflags',
+    '+faststart',
+    '-y',
+    output,
+  ]);
+  if (result.exitCode != 0) {
+    final file = File(output);
+    if (await file.exists()) await file.delete();
+    throw StateError('Unable to combine camera video and audio');
   }
 }

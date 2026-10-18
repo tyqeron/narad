@@ -101,6 +101,8 @@ pub struct Session {
     pub id: String,
     pub peer_id: String,
     pub capability: String,
+    #[serde(default)]
+    pub with_audio: bool,
     pub state: SessionState,
     pub updated_at: u64,
 }
@@ -181,6 +183,7 @@ mod tests {
             id: "s".into(),
             peer_id: "p".into(),
             capability: "file.transfer".into(),
+            with_audio: false,
             state: SessionState::Requested,
             updated_at: now(),
         };

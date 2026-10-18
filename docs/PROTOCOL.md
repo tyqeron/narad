@@ -277,3 +277,11 @@ Mobile document providers use authenticated local `storage_jobs`,
 validate before filesystem work and publication; results are revalidated by Rust.
 Jobs expire, have bounded queues and are discarded after share/permission removal.
 The document-provider URI stays local to the source device.
+
+
+Camera offers may set `with_audio:true` only with `kind:camera`. The source requires
+camera readiness and permission plus microphone readiness and an existing automatic
+`audio.input` grant before creating a session. Session status preserves the flag;
+the requester rejects mismatched responses. Microphone disable/revocation closes
+source AV sessions and each subsequent source session operation rechecks microphone
+permission. Camera-only offers do not negotiate or record an audio track.

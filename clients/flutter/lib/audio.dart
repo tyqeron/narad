@@ -11,6 +11,7 @@ class AudioLink {
     this.peer,
     this.outgoing, {
     this.camera = false,
+    this.withAudio = false,
     this.remoteMicrophone = false,
     this.inputDeviceId,
     this.systemAudio = false,
@@ -19,13 +20,16 @@ class AudioLink {
   final String peer;
   final bool outgoing;
   final bool camera;
+  final bool withAudio;
   final bool remoteMicrophone;
   final String? inputDeviceId;
   final bool systemAudio;
   RTCPeerConnection? connection;
   MediaStream? microphone;
+  MediaStream? cameraOriginalAudio;
   RTCVideoRenderer? renderer;
   CameraTools? tools;
+  MediaStreamTrack? cameraVideo, cameraAudio;
   bool switching = false;
   String? cameraDevice;
   bool remoteReady = false;
@@ -74,12 +78,25 @@ class AudioController {
         'Camera viewing tools are available only on the requesting device',
       );
     }
-    return link.tools ??= CameraTools(() {
-      final tracks =
-          (link.microphone ?? link.renderer?.srcObject)?.getVideoTracks() ?? [];
-      if (tracks.isEmpty) throw StateError('Wait for camera video');
-      return tracks.first;
-    }, onError);
+    return link.tools ??= CameraTools(
+      () {
+        if (link.cameraVideo != null) return link.cameraVideo!;
+        final tracks =
+            (link.microphone ?? link.renderer?.srcObject)?.getVideoTracks() ??
+            [];
+        if (tracks.isEmpty) throw StateError('Wait for camera video');
+        return tracks.first;
+      },
+      onError,
+      audioTrack: link.withAudio
+          ? () {
+              if (link.cameraAudio == null) {
+                throw StateError('Wait for camera audio');
+              }
+              return link.cameraAudio!;
+            }
+          : null,
+    );
   }
 
   Future<void> switchCamera(String id) async {
@@ -126,10 +143,14 @@ class AudioController {
           await sender.replaceTrack(replacement.getVideoTracks().first);
           link.microphone = replacement;
           link.cameraDevice = next.deviceId;
-          for (final track in stream.getTracks()) {
+          for (final track in stream.getVideoTracks()) {
             await track.stop();
           }
-          await stream.dispose();
+          if (link.withAudio && stream.getAudioTracks().isNotEmpty) {
+            link.cameraOriginalAudio = stream;
+          } else {
+            await stream.dispose();
+          }
         } catch (_) {
           for (final track in replacement.getTracks()) {
             await track.stop();
@@ -181,7 +202,10 @@ class AudioController {
     enabled = value;
     if (!value) {
       microphoneEnabled = false;
-      for (final link in links.values.where((l) => !l.camera).toList()) {
+      for (final link
+          in links.values
+              .where((l) => !l.camera || l.outgoing || l.withAudio)
+              .toList()) {
         await stop(link.id);
       }
     }
@@ -205,9 +229,12 @@ class AudioController {
           in links.values
               .where(
                 (l) =>
-                    !l.camera &&
-                    ((l.remoteMicrophone && !l.outgoing) ||
-                        (!l.remoteMicrophone && l.outgoing && !l.systemAudio)),
+                    (l.withAudio && !l.outgoing) ||
+                    (!l.camera &&
+                        ((l.remoteMicrophone && !l.outgoing) ||
+                            (!l.remoteMicrophone &&
+                                l.outgoing &&
+                                !l.systemAudio))),
               )
               .toList()) {
         await stop(link.id);
@@ -224,7 +251,8 @@ class AudioController {
     if (value) await _prepareBackground(true, microphoneEnabled);
     cameraEnabled = value;
     if (!value) {
-      for (final link in links.values.where((l) => l.camera).toList()) {
+      for (final link
+          in links.values.where((l) => l.camera && !l.outgoing).toList()) {
         await stop(link.id);
       }
     }
@@ -235,15 +263,16 @@ class AudioController {
     }
   }
 
-  Future<String> startCamera(String peer) async {
-    if (!cameraEnabled) await setCameraEnabled(true);
+  Future<String> startCamera(String peer, {bool withAudio = false}) async {
+    if (!enabled) await setEnabled(true);
     final result = await api.call({
       'op': 'media_start',
       'peer_id': peer,
       'kind': 'camera',
+      'with_audio': withAudio,
     });
     final id = result['id'] as String;
-    links[id] = AudioLink(id, peer, true, camera: true);
+    links[id] = AudioLink(id, peer, true, camera: true, withAudio: withAudio);
     return id;
   }
 
@@ -339,6 +368,7 @@ class AudioController {
           signal['peer_id'] as String,
           false,
           camera: session['capability'] == 'camera.stream',
+          withAudio: session['with_audio'] == true,
           remoteMicrophone: session['capability'] == 'audio.input',
         ),
       );
@@ -401,14 +431,21 @@ class AudioController {
           init: RTCRtpTransceiverInit(direction: TransceiverDirection.RecvOnly),
         );
       }
+      if (link.withAudio) {
+        await link.connection!.addTransceiver(
+          kind: RTCRtpMediaType.RTCRtpMediaTypeAudio,
+          init: RTCRtpTransceiverInit(direction: TransceiverDirection.RecvOnly),
+        );
+      }
       if (!links.containsKey(link.id)) return;
       final offer = await link.connection!.createOffer({
-        'offerToReceiveAudio': link.remoteMicrophone,
+        'offerToReceiveAudio': link.remoteMicrophone || link.withAudio,
         'offerToReceiveVideo': link.camera,
       });
       validateMediaSdp(
         offer.sdp ?? '',
         video: link.camera,
+        withAudio: link.withAudio,
         direction: (link.camera || link.remoteMicrophone)
             ? 'recvonly'
             : 'sendonly',
@@ -454,38 +491,64 @@ class AudioController {
         );
       }
     };
-    pc.onTrack = (event) async {
-      if (!links.containsKey(link.id)) return;
-      final receives = (link.camera || link.remoteMicrophone)
-          ? link.outgoing
-          : !link.outgoing;
-      if (!receives || event.track.kind != (link.camera ? 'video' : 'audio')) {
-        await event.track.stop();
-        await stop(link.id);
-        onError(StateError('Unexpected media track for this permission'));
-        return;
-      }
-      if (event.streams.isEmpty) return;
-      final renderer = RTCVideoRenderer();
-      try {
-        await renderer.initialize();
-        if (!links.containsKey(link.id)) {
-          await renderer.dispose();
-          return;
-        }
-        await link.renderer?.dispose();
-        link.renderer = renderer;
-        renderer.srcObject = event.streams.first;
-        if (!link.camera && playbackDeviceId != null) {
-          await Helper.selectAudioOutput(playbackDeviceId!);
-        }
-        if (!link.camera && (Platform.isAndroid || Platform.isIOS)) {
-          await Helper.setSpeakerphoneOn(speakerphone);
-        }
-      } catch (error) {
-        await renderer.dispose();
-        onError(error);
-      }
+    var trackEvents = Future<void>.value();
+    pc.onTrack = (event) {
+      trackEvents = trackEvents
+          .then((_) async {
+            if (!links.containsKey(link.id)) return;
+            final receives = (link.camera || link.remoteMicrophone)
+                ? link.outgoing
+                : !link.outgoing;
+            if (!receives ||
+                !(event.track.kind == (link.camera ? 'video' : 'audio') ||
+                    (link.withAudio && event.track.kind == 'audio'))) {
+              await event.track.stop();
+              await stop(link.id);
+              onError(StateError('Unexpected media track for this permission'));
+              return;
+            }
+            if (event.streams.isEmpty) return;
+            if (link.camera) {
+              if (event.track.kind == 'video') link.cameraVideo = event.track;
+              if (event.track.kind == 'audio') link.cameraAudio = event.track;
+              if (event.track.kind == 'audio' &&
+                  link.cameraVideo != null &&
+                  link.renderer != null) {
+                if (playbackDeviceId != null) {
+                  await Helper.selectAudioOutput(playbackDeviceId!);
+                }
+                if (Platform.isAndroid || Platform.isIOS) {
+                  await Helper.setSpeakerphoneOn(speakerphone);
+                }
+                return;
+              }
+            }
+            final renderer = RTCVideoRenderer();
+            try {
+              await renderer.initialize();
+              if (!links.containsKey(link.id)) {
+                await renderer.dispose();
+                return;
+              }
+              await link.renderer?.dispose();
+              link.renderer = renderer;
+              renderer.srcObject = event.streams.first;
+              if ((!link.camera || link.withAudio) &&
+                  playbackDeviceId != null) {
+                await Helper.selectAudioOutput(playbackDeviceId!);
+              }
+              if ((!link.camera || link.withAudio) &&
+                  (Platform.isAndroid || Platform.isIOS)) {
+                await Helper.setSpeakerphoneOn(speakerphone);
+              }
+            } catch (error) {
+              await renderer.dispose();
+              onError(error);
+            }
+          })
+          .catchError((Object error) {
+            if (links.containsKey(link.id)) onError(error);
+          });
     };
     pc.onConnectionState = (state) async {
       if (!links.containsKey(link.id)) return;
@@ -565,6 +628,7 @@ class AudioController {
       validateMediaSdp(
         data['sdp'] as String,
         video: link.camera,
+        withAudio: link.withAudio,
         direction: (link.camera || link.remoteMicrophone)
             ? 'recvonly'
             : 'sendonly',
@@ -574,14 +638,16 @@ class AudioController {
         RTCSessionDescription(data['sdp'] as String, 'offer'),
       );
       if (link.camera || link.remoteMicrophone) {
-        if (link.remoteMicrophone && !microphoneEnabled) {
+        if ((link.remoteMicrophone || link.withAudio) && !microphoneEnabled) {
           throw StateError('Microphone sharing is disabled');
         }
         if (link.camera && !cameraEnabled) {
           throw StateError('Camera sharing is disabled');
         }
         final stream = await navigator.mediaDevices.getUserMedia({
-          'audio': link.remoteMicrophone ? audioCaptureConstraints() : false,
+          'audio': (link.remoteMicrophone || link.withAudio)
+              ? audioCaptureConstraints()
+              : false,
           'video': link.camera ? {'facingMode': 'environment'} : false,
         });
         if ((link.camera ? stream.getVideoTracks() : stream.getAudioTracks())
@@ -608,8 +674,17 @@ class AudioController {
           await Helper.selectAudioOutput(playbackDeviceId!);
         }
         await api.call({'op': 'session_touch', 'id': link.id});
+        if (link.withAudio && stream.getAudioTracks().isEmpty) {
+          for (final track in stream.getTracks()) {
+            await track.stop();
+          }
+          await stream.dispose();
+          throw StateError('No microphone track available');
+        }
         for (final track
-            in link.camera
+            in link.withAudio
+                ? stream.getTracks()
+                : link.camera
                 ? stream.getVideoTracks()
                 : stream.getAudioTracks()) {
           await link.connection!.addTrack(track, stream);
@@ -621,6 +696,7 @@ class AudioController {
       validateMediaSdp(
         answer.sdp ?? '',
         video: link.camera,
+        withAudio: link.withAudio,
         direction: (link.camera || link.remoteMicrophone)
             ? 'sendonly'
             : 'recvonly',
@@ -634,6 +710,7 @@ class AudioController {
       validateMediaSdp(
         data['sdp'] as String,
         video: link.camera,
+        withAudio: link.withAudio,
         direction: (link.camera || link.remoteMicrophone)
             ? 'sendonly'
             : 'recvonly',
@@ -705,6 +782,11 @@ class AudioController {
         await link.connection?.dispose();
       } finally {
         await link.microphone?.dispose();
+        for (final track
+            in link.cameraOriginalAudio?.getTracks() ?? <MediaStreamTrack>[]) {
+          await track.stop();
+        }
+        await link.cameraOriginalAudio?.dispose();
         await link.renderer?.dispose();
       }
     }
@@ -760,21 +842,38 @@ Map<String, dynamic> audioCaptureConstraints({
 void validateMediaSdp(
   String sdp, {
   required bool video,
+  bool withAudio = false,
   required String direction,
 }) {
   final lines = sdp.split(RegExp(r'\r?\n'));
-  final media = lines.where((line) => line.startsWith('m=')).toList();
-  if (media.length != 1 ||
-      !media.single.startsWith(video ? 'm=video ' : 'm=audio ')) {
-    throw StateError('Media description does not match the authorized track');
+  final indices = <int>[];
+  for (var i = 0; i < lines.length; i++) {
+    if (lines[i].startsWith('m=')) indices.add(i);
   }
-  final index = lines.indexOf(media.single);
+  final expected = video
+      ? <String>['video', if (withAudio) 'audio']
+      : <String>['audio'];
+  final actual = indices
+      .map((i) => lines[i].substring(2).split(' ').first)
+      .toList();
+  if (indices.length != expected.length ||
+      actual.toSet().length != expected.length ||
+      !actual.toSet().containsAll(expected)) {
+    throw StateError('Media description does not match the authorized tracks');
+  }
   const modes = {'a=recvonly', 'a=sendonly', 'a=sendrecv', 'a=inactive'};
-  var directions = lines.skip(index + 1).where(modes.contains).toSet();
-  if (directions.isEmpty) {
-    directions = lines.take(index).where(modes.contains).toSet();
-  }
-  if (directions.length != 1 || directions.single != 'a=$direction') {
-    throw StateError('Media direction does not match this permission');
+  for (var n = 0; n < indices.length; n++) {
+    final index = indices[n];
+    final end = n + 1 < indices.length ? indices[n + 1] : lines.length;
+    var directions = lines
+        .sublist(index + 1, end)
+        .where(modes.contains)
+        .toSet();
+    if (directions.isEmpty) {
+      directions = lines.take(indices.first).where(modes.contains).toSet();
+    }
+    if (directions.length != 1 || directions.single != 'a=$direction') {
+      throw StateError('Media direction does not match this permission');
+    }
   }
 }

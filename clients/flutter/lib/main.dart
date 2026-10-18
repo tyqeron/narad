@@ -992,11 +992,13 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _viewCamera(String peer) async {
-    await _audio!.startCamera(peer);
+  Future<void> _viewCamera(String peer, {bool withAudio = false}) async {
+    await _audio!.startCamera(peer, withAudio: withAudio);
     if (mounted) _openTab(1);
     _notice(
-      'Camera requested. The other app must have camera sharing enabled.',
+      withAudio
+          ? 'Camera and microphone requested. Enable both on the source device and grant microphone permission.'
+          : 'Camera requested. The other app must have camera sharing enabled.',
     );
   }
 
@@ -2061,7 +2063,9 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
               ? 'Microphone request'
               : 'Audio'} from ${_peerName(s['peer_id'] as String)}',
           s['capability'] == 'camera.stream'
-              ? 'Allow the requesting device to view this device’s camera?'
+              ? (s['with_audio'] == true
+                    ? 'Allow the requesting device to view this device’s camera and listen to its microphone?'
+                    : 'Allow the requesting device to view this device’s camera?')
               : s['capability'] == 'audio.input'
               ? 'Allow the requesting device to listen to this device’s microphone?'
               : 'Allow the requesting device to play audio through this device’s speakers?',
@@ -2259,6 +2263,30 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         setState(() {});
       }),
     ),
+    if (!_pairedPeers.any((p) => _isOnline(p['device_id'] as String)))
+      const ListTile(
+        leading: Icon(Icons.videocam_off_outlined),
+        title: Text('No cameras online'),
+        subtitle: Text('Connect a paired device to use its camera here.'),
+      ),
+    for (final peer in _pairedPeers.where(
+      (p) => _isOnline(p['device_id'] as String),
+    ))
+      _card(
+        Icons.videocam_outlined,
+        peer['device_name'] as String,
+        'Use this device’s camera. Audio also requires its microphone permission.',
+        [
+          _button(
+            'View camera',
+            () => _viewCamera(peer['device_id'] as String),
+          ),
+          _button(
+            'Camera with audio',
+            () => _viewCamera(peer['device_id'] as String, withAudio: true),
+          ),
+        ],
+      ),
     for (final link
         in _audio?.links.values.where((l) => l.camera) ?? <AudioLink>[])
       CameraCard(
@@ -2334,29 +2362,46 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
               }),
       ),
     ),
-    if (_audio?.enabled == true) ...[
-      _section('Send microphone audio'),
-      if (_paired.isEmpty)
-        _empty(
-          'Pair a device first',
-          'Your paired devices will appear here.',
-          Icons.link,
+    if (!_pairedPeers.any((p) => _isOnline(p['device_id'] as String)))
+      const ListTile(
+        leading: Icon(Icons.speaker_outlined),
+        title: Text('No audio devices online'),
+        subtitle: Text(
+          'Connect a paired device to use its speaker or microphone.',
         ),
-      for (final record in _paired.values)
-        _card(
-          Icons.mic_none,
-          (record as Map)['peer']['device_name'] as String,
-          'Play your microphone through this device’s speakers.',
-          [
-            _button('Request audio', () async {
-              await _audio!.start(record['peer']['device_id'] as String);
-              _notice(
-                'Connecting audio using the receiving device’s permissions.',
+      ),
+    for (final peer in _pairedPeers.where(
+      (p) => _isOnline(p['device_id'] as String),
+    ))
+      _card(
+        Icons.speaker_outlined,
+        peer['device_name'] as String,
+        'Choose which microphone or speaker to use.',
+        [
+          _button(
+            'Use microphone',
+            () => _audio!
+                .requestMicrophone(peer['device_id'] as String)
+                .then((_) {}),
+          ),
+          _button(
+            'Send microphone',
+            () => _audio!.start(peer['device_id'] as String).then((_) {}),
+          ),
+          if (Platform.isLinux || Platform.isWindows)
+            _button('Send laptop audio', () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => SystemAudioPage(
+                    audio: _audio!,
+                    peer: peer['device_id'] as String,
+                    name: peer['device_name'] as String,
+                  ),
+                ),
               );
-            }, primary: true),
-          ],
-        ),
-    ],
+            }),
+        ],
+      ),
     _section('Audio sessions'),
     for (final s in _items('sessions').where(
       (s) =>
@@ -2426,7 +2471,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   ];
 
   String _activityCategory(String kind) {
-    if (kind.startsWith('file.')) return 'Files';
+    if (kind.startsWith('file.') || kind.startsWith('browse.')) return 'Files';
     if (kind.startsWith('clipboard.')) return 'Clipboard';
     if (kind.startsWith('media.') || kind.startsWith('camera.')) {
       return 'Audio and camera';

@@ -499,6 +499,23 @@ class NaradIntegration(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "permission denied"):
             self.b.call(op="media_send", peer_id=self.aid, id=session, data={"type": "candidate"})
 
+    def test_camera_audio_needs_both_grants_and_stops_with_microphone(self):
+        self.pair()
+        self.a.call(op="media_ready", audio_ready=True, camera_ready=False, microphone_ready=False)
+        self.b.call(op="media_ready", audio_ready=True, camera_ready=True, microphone_ready=True)
+        self.b.call(op="permission", peer_id=self.aid, capability="camera.stream", allow=True)
+        with self.assertRaisesRegex(RuntimeError, "microphone permission"):
+            self.a.call(op="media_start", peer_id=self.bid, kind="camera", with_audio=True)
+        self.b.call(op="permission", peer_id=self.aid, capability="audio.input", allow=True)
+        session = self.a.call(op="media_start", peer_id=self.bid, kind="camera", with_audio=True)["id"]
+        status = self.a.call(op="media_poll", peer_id=self.bid, id=session)["session"]
+        self.assertTrue(status["with_audio"])
+        self.assertEqual(status["state"], "authorized")
+        self.a.call(op="media_send", peer_id=self.bid, id=session, data={"type":"offer","sdp":"fixture"})
+        self.b.call(op="media_send", peer_id=self.aid, id=session, data={"type":"answer","sdp":"fixture"})
+        self.b.call(op="media_ready", audio_ready=True, camera_ready=True, microphone_ready=False)
+        self.assertEqual(self.a.call(op="media_poll", peer_id=self.bid, id=session)["session"]["state"], "closed")
+
     def test_media_signaling_gated_by_approval_and_stops_on_revocation(self):
         self.pair()
         self.a.call(op="media_ready", ready=True)

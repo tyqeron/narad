@@ -20,6 +20,23 @@ class PendingMediaApi implements NaradApi {
 }
 
 void main() {
+  test(
+    'remote camera viewing never enables this device camera or microphone',
+    () async {
+      final api = PendingMediaApi();
+      final audio = AudioController(api, (e) => fail('$e'));
+      await audio.startCamera('peer', withAudio: true);
+      expect(audio.cameraEnabled, false);
+      expect(audio.microphoneEnabled, false);
+      expect(audio.links['session']!.withAudio, true);
+      await audio.setCameraEnabled(false);
+      expect(audio.links.containsKey('session'), true);
+      await audio.setMicrophoneEnabled(false);
+      expect(audio.links.containsKey('session'), true);
+      await audio.setEnabled(false);
+      expect(audio.links, isEmpty);
+    },
+  );
   test('system audio cannot fall back to a physical microphone', () async {
     final api = PendingMediaApi();
     final audio = AudioController(api, (e) => fail('$e'));

@@ -286,6 +286,22 @@ pub fn remote(s: &mut State, peer: &Peer, p: &Value, file_plane: bool) -> Result
         }
         "media_offer" => {
             let cap = media_capability(p)?;
+            let with_audio = p["with_audio"].as_bool().unwrap_or(false);
+            if with_audio {
+                ensure!(
+                    cap == "camera.stream",
+                    "Audio is only supported with camera video"
+                );
+                ensure!(
+                    s.microphone_ready,
+                    "Enable microphone sharing on the camera device"
+                );
+                ensure!(
+                    s.automatic(&peer.device_id, "audio.input"),
+                    "Grant this device microphone permission before requesting camera audio"
+                );
+                s.trust.authorize(peer, "audio.input", true)?;
+            }
             ensure!(
                 match cap {
                     "camera.stream" => s.camera_ready,
@@ -304,6 +320,7 @@ pub fn remote(s: &mut State, peer: &Peer, p: &Value, file_plane: bool) -> Result
             let id = string(p, "id")?;
             ensure!(uuid::Uuid::parse_str(id).is_ok(), "invalid session ID");
             s.new_session(id, &peer.device_id, cap, s.automatic(&peer.device_id, cap))?;
+            s.sessions.get_mut(id).unwrap().with_audio = with_audio;
             s.event("media.requested", json!({"id":id,"peer_id":peer.device_id}));
             Ok(ok())
         }
@@ -328,7 +345,8 @@ pub fn remote(s: &mut State, peer: &Peer, p: &Value, file_plane: bool) -> Result
                 .clone();
             ensure!(
                 match cap.as_str() {
-                    "camera.stream" => s.camera_ready,
+                    "camera.stream" =>
+                        s.camera_ready || (s.outgoing_media.contains(id) && s.media_ready),
                     "audio.input" if !s.outgoing_media.contains(id) => s.microphone_ready,
                     _ => s.media_ready,
                 },
@@ -635,8 +653,14 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
                     action.status = "failed".into();
                     action.message = "Permission revoked".into();
                 }
+                let outgoing = s.outgoing_media.clone();
                 for session in s.sessions.values_mut() {
-                    if session.peer_id == id && session.capability == cap {
+                    if session.peer_id == id
+                        && (session.capability == cap
+                            || (cap == "audio.input"
+                                && session.with_audio
+                                && !outgoing.contains(&session.id)))
+                    {
                         session.close();
                     }
                 }
@@ -730,6 +754,7 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
                     id: id.into(),
                     peer_id: peer.device_id,
                     capability: "file.transfer".into(),
+                    with_audio: false,
                     state: SessionState::Active,
                     updated_at: now(),
                 },
@@ -772,6 +797,15 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
             s.media_seen = now();
             let outgoing = s.outgoing_media.clone();
             let playback_ready = s.media_ready;
+            if !s.microphone_ready {
+                for session in s
+                    .sessions
+                    .values_mut()
+                    .filter(|session| session.with_audio && !outgoing.contains(&session.id))
+                {
+                    session.close();
+                }
+            }
             for (cap, ready) in [
                 ("audio.output", s.media_ready),
                 ("audio.input", s.microphone_ready),
@@ -784,7 +818,9 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
                     s.own.capabilities.retain(|c| c != cap);
                     for session in s.sessions.values_mut().filter(|s| {
                         s.capability == cap
-                            && !(cap == "audio.input" && outgoing.contains(&s.id) && playback_ready)
+                            && !(["audio.input", "camera.stream"].contains(&cap)
+                                && outgoing.contains(&s.id)
+                                && playback_ready)
                     }) {
                         session.close();
                     }
@@ -804,6 +840,13 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
             let id = string(&p, "id")?;
             let session = s.sessions.get(id).context("unknown session")?.clone();
             let peer = s.peer(&session.peer_id)?;
+            if session.with_audio {
+                ensure!(
+                    s.microphone_ready && s.automatic(&peer.device_id, "audio.input"),
+                    "Microphone sharing or permission was revoked"
+                );
+                s.trust.authorize(&peer, "audio.input", true)?;
+            }
             ensure!(
                 ["audio.output", "audio.input", "camera.stream"]
                     .contains(&session.capability.as_str())
@@ -1075,7 +1118,7 @@ async fn outgoing(shared: Arc<Mutex<State>>, op: &str, p: &Value) -> Result<Valu
         "device_action_status" => json!({"op":"device_action_status","id":p["id"]}),
         "media_start" => {
             media_capability(p)?;
-            json!({"op":"media_offer","id":uuid::Uuid::new_v4().to_string(),"kind":p["kind"]})
+            json!({"op":"media_offer","id":uuid::Uuid::new_v4().to_string(),"kind":p["kind"],"with_audio":p["with_audio"]})
         }
         "media_poll" => json!({"op":"media_status","id":p["id"]}),
         "media_send" => json!({"op":"media_signal","id":p["id"],"data":p["data"]}),
@@ -1107,6 +1150,7 @@ async fn outgoing(shared: Arc<Mutex<State>>, op: &str, p: &Value) -> Result<Valu
         let id = string(&payload, "id")?;
         let cap = media_capability(p)?;
         s.new_session(id, peer_id, cap, false)?;
+        s.sessions.get_mut(id).unwrap().with_audio = p["with_audio"].as_bool().unwrap_or(false);
         s.outgoing_media.insert(id.to_string());
         return Ok(json!({"ok":true,"id":id}));
     }
@@ -1121,7 +1165,9 @@ async fn outgoing(shared: Arc<Mutex<State>>, op: &str, p: &Value) -> Result<Valu
         ensure!(
             ["audio.output", "audio.input", "camera.stream"].contains(&expected_cap.as_str())
                 && result["session"]["capability"] == expected_cap
-                && result["session"]["id"] == id,
+                && result["session"]["id"] == id
+                && result["session"]["with_audio"].as_bool().unwrap_or(false)
+                    == s.sessions[id].with_audio,
             "media response does not match local session"
         );
         let state: SessionState = serde_json::from_value(result["session"]["state"].clone())?;
@@ -1513,6 +1559,42 @@ mod tests {
         assert!(media_capability(&json!({"kind":"unsupported"})).is_err());
     }
     #[tokio::test]
+    async fn camera_audio_requires_microphone_grant_and_stops_when_revoked() {
+        let (_d, mut s, peer) = setup();
+        s.camera_ready = true;
+        s.media_seen = now();
+        let id = uuid::Uuid::new_v4().to_string();
+        let offer = json!({"op":"media_offer","id":id,"kind":"camera","with_audio":true});
+        s.trust
+            .permissions
+            .insert(permission_key(&peer.device_id, "camera.stream"), true);
+        s.trust
+            .automatic
+            .insert(permission_key(&peer.device_id, "camera.stream"), true);
+        assert!(remote(&mut s, &peer, &offer, false).is_err());
+        s.microphone_ready = true;
+        assert!(remote(&mut s, &peer, &offer, false).is_err());
+        s.trust
+            .permissions
+            .insert(permission_key(&peer.device_id, "audio.input"), true);
+        assert!(remote(&mut s, &peer, &offer, false).is_err());
+        s.trust
+            .automatic
+            .insert(permission_key(&peer.device_id, "audio.input"), true);
+        remote(&mut s, &peer, &offer, false).unwrap();
+        assert!(s.sessions[&id].with_audio);
+        s.session(&id, &peer, "camera.stream").unwrap();
+        s.microphone_ready = false;
+        assert!(s.session(&id, &peer, "camera.stream").is_err());
+        s.microphone_ready = true;
+        let shared = Arc::new(Mutex::new(s));
+        local(shared.clone(),json!({"op":"permission","peer_id":peer.device_id,"capability":"audio.input","allow":false})).await.unwrap();
+        assert_eq!(
+            shared.lock().await.sessions[&id].state,
+            SessionState::Closed
+        );
+    }
+    #[tokio::test]
     async fn microphone_disabled_closes_capture_but_keeps_remote_listening() {
         let (_d, mut s, peer) = setup();
         let incoming = uuid::Uuid::new_v4().to_string();
@@ -1547,6 +1629,30 @@ mod tests {
             shared.lock().await.sessions[&outgoing].state,
             SessionState::Closed
         );
+    }
+    #[tokio::test]
+    async fn camera_viewing_does_not_require_local_camera_or_microphone_capture() {
+        let (_d, mut s, peer) = setup();
+        let id = uuid::Uuid::new_v4().to_string();
+        s.new_session(&id, &peer.device_id, "camera.stream", true)
+            .unwrap();
+        s.sessions.get_mut(&id).unwrap().with_audio = true;
+        s.outgoing_media.insert(id.clone());
+        s.trust
+            .permissions
+            .insert(permission_key(&peer.device_id, "camera.stream"), true);
+        let shared = Arc::new(Mutex::new(s));
+        local(shared.clone(),json!({"op":"media_ready","audio_ready":true,"camera_ready":false,"microphone_ready":false})).await.unwrap();
+        let mut state = shared.lock().await;
+        assert_ne!(state.sessions[&id].state, SessionState::Closed);
+        remote(
+            &mut state,
+            &peer,
+            &json!({"op":"media_signal","id":id,"data":{"type":"answer","sdp":"fixture"}}),
+            false,
+        )
+        .unwrap();
+        assert!(!state.camera_ready && !state.microphone_ready);
     }
     #[test]
     fn media_requires_live_adapter_and_explicit_approval() {

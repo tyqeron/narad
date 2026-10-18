@@ -202,7 +202,7 @@ async fn execute(
         let system =
             std::env::var_os("SystemRoot").context("Windows system directory unavailable")?;
         let mut command_builder =
-            tokio::process::Command::new(PathBuf::from(system).join("System32/cmd.exe"));
+            tokio::process::Command::new(std::path::PathBuf::from(system).join("System32/cmd.exe"));
         command_builder.args(["/D", "/S", "/C"]).arg(command);
         command_builder.creation_flags(0x08000000 | 0x00000004); // NO_WINDOW | SUSPENDED
         command_builder

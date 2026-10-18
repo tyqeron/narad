@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
@@ -8,6 +9,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:narad_client/audio.dart';
 import 'package:narad_client/desktop_audio_routes.dart';
+import 'package:narad_client/camera_tools.dart';
 
 /// Uses only generated tones and owned virtual devices, never a hardware microphone.
 void main() {
@@ -26,6 +28,9 @@ void main() {
     });
     final renderer = RTCVideoRenderer();
     MediaStream? stream;
+    MediaStreamTrack? remoteAudio;
+    CameraTools? cameraTools;
+    final recordingErrors = <Object>[];
     Process? tone, recorder;
     final directory = await Directory.systemTemp.createTemp(
       'narad-audio-test-',
@@ -75,6 +80,7 @@ void main() {
       );
       await renderer.initialize();
       receiver.onTrack = (event) {
+        if (event.track.kind == 'audio') remoteAudio = event.track;
         if (event.streams.isNotEmpty) renderer.srcObject = event.streams.first;
       };
       stream = await navigator.mediaDevices.getUserMedia({
@@ -112,6 +118,21 @@ void main() {
       for (final c in queuedSender) {
         await sender.addCandidate(c);
       }
+      final trackDeadline = DateTime.now().add(const Duration(seconds: 10));
+      while (remoteAudio == null && DateTime.now().isBefore(trackDeadline)) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+      expect(remoteAudio, isNotNull);
+      final png = base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAGUlEQVR4nGOUq9jCQApgIkn1qIZRDUNKAwAjwgFqf9sx/AAAAABJRU5ErkJggg==',
+      );
+      cameraTools = CameraTools(
+        () => throw StateError('Generated fixture must not access a camera'),
+        recordingErrors.add,
+        capture: () async => png,
+        audioTrack: () => remoteAudio!,
+      );
+      await cameraTools.startRecording();
       // Record only the owned virtual microphone endpoint for objective PCM verification.
       recorder = await Process.start('parecord', [
         '--raw',
@@ -144,6 +165,56 @@ void main() {
       unawaited(tone.stderr.drain<void>());
       expect(await tone.exitCode.timeout(const Duration(seconds: 15)), 0);
       await Future<void>.delayed(const Duration(seconds: 1));
+      final recording = await cameraTools.stopRecording();
+      expect(recordingErrors, isEmpty);
+      expect(recording, isNotNull);
+      final probe = await Process.run('ffprobe', [
+        '-v',
+        'error',
+        '-show_streams',
+        '-of',
+        'json',
+        recording!,
+      ]);
+      expect(probe.exitCode, 0);
+      final tracks = jsonDecode(probe.stdout as String)['streams'] as List;
+      expect(tracks.where((s) => s['codec_type'] == 'video'), hasLength(1));
+      expect(tracks.where((s) => s['codec_type'] == 'audio'), hasLength(1));
+      final decode = await Process.run('ffmpeg', [
+        '-v',
+        'error',
+        '-i',
+        recording,
+        '-f',
+        'null',
+        '-',
+      ]);
+      expect(decode.exitCode, 0);
+      final audioDecode = await Process.run('ffmpeg', [
+        '-v',
+        'error',
+        '-i',
+        recording,
+        '-vn',
+        '-f',
+        's16le',
+        '-',
+      ], stdoutEncoding: null);
+      expect(audioDecode.exitCode, 0);
+      final recordedPcm = Uint8List.fromList(audioDecode.stdout as List<int>);
+      final recordedData = ByteData.sublistView(recordedPcm);
+      var recordedPeak = 0;
+      for (var i = 0; i + 1 < recordedPcm.length; i += 2) {
+        recordedPeak = max(
+          recordedPeak,
+          recordedData.getInt16(i, Endian.little).abs(),
+        );
+      }
+      expect(
+        recordedPeak,
+        greaterThan(1000),
+        reason: 'MP4 must contain the generated remote tone',
+      );
       final stats = await receiver.getStats();
       final inbound = stats.where((s) => s.type == 'inbound-rtp').toList();
       expect(inbound, isNotEmpty);
@@ -170,6 +241,7 @@ void main() {
             'Virtual microphone must receive the generated tone, not just silent RTP packets',
       );
     } finally {
+      await cameraTools?.dispose();
       tone?.kill();
       recorder?.kill();
       for (final track in stream?.getTracks() ?? <MediaStreamTrack>[]) {

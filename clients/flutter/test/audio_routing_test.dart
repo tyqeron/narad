@@ -48,6 +48,33 @@ void main() {
       );
     }
   });
+  test('camera audio validates direction independently for both tracks', () {
+    const both =
+        'v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=recvonly\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=recvonly\r\n';
+    validateMediaSdp(both, video: true, withAudio: true, direction: 'recvonly');
+    expect(
+      () => validateMediaSdp(both, video: true, direction: 'recvonly'),
+      throwsStateError,
+    );
+    expect(
+      () => validateMediaSdp(
+        both.replaceFirst('a=recvonly', 'a=sendrecv'),
+        video: true,
+        withAudio: true,
+        direction: 'recvonly',
+      ),
+      throwsStateError,
+    );
+    expect(
+      () => validateMediaSdp(
+        both.replaceFirst('m=audio', 'm=video'),
+        video: true,
+        withAudio: true,
+        direction: 'recvonly',
+      ),
+      throwsStateError,
+    );
+  });
   test(
     'meeting routes use separate cables and unload only owned modules',
     () async {

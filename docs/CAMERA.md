@@ -15,9 +15,15 @@ or image/recording/webcam controls.
 - **Record video → Stop recording → Save recorded video** creates an MP4, then opens
   the save picker. Until saved it is temporary. Discard removes it; closing Narad
   removes unsaved recordings. Disconnection finalizes a recording for saving in Media.
-  Capture is video-only, without microphone/cellular audio. Limits: ten minutes or
+  **View camera** records video only. **Media → Camera with audio** also requests
+  the source microphone and includes that selected session’s audio in recordings.
+  Enable both sharing switches and grant the viewer microphone permission on the
+  source first; camera permission alone never grants microphone access.
+  Cellular-call audio is not captured. Limits: ten minutes or
   approximately 128 MB, checked every two seconds. Android/iOS use their native
-  recorder; desktop uses FFmpeg with libx264 on PATH, capturing up to eight frames
+  video recorder; Android encodes the selected track’s PCM to AAC and muxes it
+  into MP4. Desktop records the selected remote PCM track and uses FFmpeg with
+  libx264 and AAC on PATH, capturing up to eight frames
   per second. Desktop recordings use wall-clock timestamps; slow capture reduces frame rate.
 
 On Android, enable camera/audio sharing while Narad is visible and approve the OS
@@ -93,3 +99,12 @@ successfully. Uniquely named test files were removed afterward. Existing pairing
 and OS access/role settings were preserved on both devices.
 
 Phone speaker playback and meeting microphone/camera setup: [Meeting devices](MEETING.md).
+
+
+The Linux generated-media integration verifies a remote WebRTC PCM sink, generated
+video frames, MP4 audio/video decoding and a non-silent tone in the recorded AAC
+track. Run `dbus-run-session -- env GDK_BACKEND=x11 flutter test
+integration_test/linux_audio_test.dart -d linux`. Android's generated mux regression
+is `ADB=<adb> FLUTTER_BIN=<flutter> python3 tests/android_recording.py --serial
+<ADB-IP:port>`; it reads only its named temporary fixtures and needs no camera or
+microphone access. Windows and iOS recorder runtime QA requires those platforms.

@@ -251,6 +251,10 @@ activity-logged. Android only publishes clipboard changes while Narad has focus,
 as required by Android's clipboard access rules. Receiving already-approved text
 continues through the existing service.
 
-Remote camera recording with synchronized audio is still pending; current camera
-recordings remain video-only. Do not describe the existing recording button as
-capturing a remote microphone.
+Camera-with-audio sessions now explicitly require source microphone readiness and
+a separate persistent microphone grant. SDP validates both media sections and their
+directions. Source microphone revocation stops AV capture. Linux and Android
+record selected remote PCM tracks and mux AAC with recorded video; Linux generated
+WebRTC/audio/video integration passed. Android generated-media mux QA passed on the Xiaomi tablet: H.264 video and AAC
+audio decoded and the generated tone was verified. Windows/iOS runtime QA remains unverified. Camera-only sessions
+continue to record video only.

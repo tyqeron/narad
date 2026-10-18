@@ -24,6 +24,7 @@ object MediaRuntime {
         val created = FlutterEngine(app)
         engine = created
         MethodChannel(created.dartExecutor.binaryMessenger,"dev.narad/media").setMethodCallHandler { call, result ->
+            if(TrackRecording.handle(app,call,result))return@setMethodCallHandler
             if(call.method != "prepare") { result.notImplemented(); return@setMethodCallHandler }
             val camera = call.argument<Boolean>("camera") == true
             val audio = call.argument<Boolean>("audio") == true

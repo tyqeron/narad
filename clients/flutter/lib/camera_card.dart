@@ -80,8 +80,10 @@ class _CameraCardState extends State<CameraCard> {
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.videocam_outlined),
                 title: Text('Sharing camera with ${widget.name}'),
-                subtitle: const Text(
-                  'Video is shown only on the requesting device.',
+                subtitle: Text(
+                  link.withAudio
+                      ? 'Camera and microphone are shared with the requesting device.'
+                      : 'Video is shown only on the requesting device.',
                 ),
               ),
               TextButton.icon(
@@ -122,7 +124,7 @@ class _CameraCardState extends State<CameraCard> {
               ),
             if (tools.recording)
               Text(
-                '● Recording video · ${DateTime.now().difference(tools.recordingStarted!).inSeconds}s',
+                '● Recording ${tools.recordsAudio ? 'video with audio' : 'video'} · ${DateTime.now().difference(tools.recordingStarted!).inSeconds}s',
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             Wrap(
@@ -166,7 +168,11 @@ class _CameraCardState extends State<CameraCard> {
                     tools.recording ? Icons.stop : Icons.fiber_manual_record,
                   ),
                   label: Text(
-                    tools.recording ? 'Stop recording' : 'Record video',
+                    tools.recording
+                        ? 'Stop recording'
+                        : tools.recordsAudio
+                        ? 'Record video with audio'
+                        : 'Record video',
                   ),
                 ),
                 if (Platform.isLinux || Platform.isWindows)

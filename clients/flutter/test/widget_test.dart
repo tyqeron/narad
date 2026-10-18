@@ -134,6 +134,31 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
   });
+  testWidgets('media offers camera and audio controls for online peers', (
+    tester,
+  ) async {
+    final api = FakeApi();
+    (api.status['paired'] as Map)['offline'] = {
+      'peer': {
+        'device_id': 'offline',
+        'device_name': 'Offline laptop',
+        'platform': 'linux',
+      },
+    };
+    (api.status['presence'] as Map)['offline'] = {'online': false};
+    await tester.pumpWidget(NaradApp(api: api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Media').last);
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Camera with audio'), 150);
+    expect(find.text('View camera'), findsOneWidget);
+    expect(find.text('Offline laptop'), findsNothing);
+    await tester.scrollUntilVisible(find.text('Use microphone'), 200);
+    expect(find.text('Send microphone'), findsOneWidget);
+    expect(find.text('Offline laptop'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
 
   testWidgets('clipboard remains pending until explicit acceptance', (
     tester,

@@ -1,4 +1,4 @@
-use anyhow::{ensure, Result};
+use anyhow::{ensure, Context, Result};
 use narad_core::{
     identity::Identity,
     model::{now, Invitation, Peer, Session, SessionState, TrustState},
@@ -200,6 +200,7 @@ impl State {
                         id: t.id.clone(),
                         peer_id: t.peer_id.clone(),
                         capability: "file.transfer".into(),
+                        with_audio: false,
                         state: SessionState::Active,
                         updated_at: now(),
                     },
@@ -309,6 +310,11 @@ impl State {
             .clone())
     }
     pub fn session(&self, id: &str, peer: &Peer, capability: &str) -> Result<()> {
+        let session = self.sessions.get(id).context("unknown session")?;
+        if session.with_audio && !self.outgoing_media.contains(id) {
+            ensure!(self.microphone_ready, "Microphone sharing is disabled");
+            self.trust.authorize(peer, "audio.input", true)?;
+        }
         self.trust.authorize_session(
             peer,
             self.sessions
@@ -340,6 +346,7 @@ impl State {
                 id: id.into(),
                 peer_id: peer.into(),
                 capability: capability.into(),
+                with_audio: false,
                 state: if approved {
                     SessionState::Authorized
                 } else {
