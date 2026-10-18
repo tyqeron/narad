@@ -243,7 +243,8 @@ Browsing/downloading requires `file.browse`; uploading additionally requires the
 new per-peer `file.upload` grant and the folder's **Allow uploads** switch.
 Uploads are checksummed, staged and never intentionally replace existing files.
 Stopping a share or revoking permission invalidates pending document jobs.
-iOS document-provider hosting still needs its native bridge implementation.
+iOS has a foreground document-provider bridge using security-scoped bookmarks
+and coordinated file access; its native build and device QA require an Apple host.
 
 Automatic clipboard publishing is opt-in in Settings and requires each receiving
 peer's automatic clipboard grant. Text is deduplicated in memory, bounded and not

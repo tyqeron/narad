@@ -41,3 +41,20 @@ and reinstall behavior, local-network denial/recovery, invitation and QR pairing
 foreground lifecycle/capture cleanup, file export, and cancellation/delivery
 semantics of phone-side composer/call handoff. No signing or Apple eligibility
 settings have been changed automatically.
+
+
+## Shared folders
+
+Media → Share a directory opens the system folder picker. Narad stores the selected
+folder's minimal security-scoped bookmark inside its encrypted preferences.
+While the foreground runtime is active, a dedicated storage queue coordinates
+listing, chunked reads and verified uploads with the file provider. Stopping a
+share or revoking peer permissions invalidates pending jobs. Uploads need both
+`file.upload` and the folder's upload switch, and existing destinations fail.
+Folder access is released after each operation; a stale bookmark requires choosing
+the folder again. Background suspension can interrupt requests.
+
+This bridge follows Apple's [directory access guidance](https://developer.apple.com/documentation/uikit/providing-access-to-directories).
+The implementation has been reviewed on Linux; compiling and exercising iCloud,
+local folders and third-party providers still requires macOS/Xcode and an iOS
+or iPadOS device. Those native checks have not run here.

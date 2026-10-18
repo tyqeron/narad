@@ -6,6 +6,7 @@ import ContactsUI
 import Security
 import AVFoundation
 import Darwin
+import UniformTypeIdentifiers
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -33,6 +34,9 @@ final class NaradMobileBridge: NSObject, UIDocumentPickerDelegate, MFMessageComp
   private let channel: FlutterMethodChannel
   private var findPlayer: AVAudioPlayer?
   private var exportResult: FlutterResult?
+  private var folderResult: FlutterResult?
+  private let storageQueue = DispatchQueue(label: "dev.narad.ios.storage")
+  private var storageBusy = false
   private var phoneTimer: Timer?
   private var backgroundObserver: NSObjectProtocol?
   init(messenger: FlutterBinaryMessenger) {
@@ -44,6 +48,13 @@ final class NaradMobileBridge: NSObject, UIDocumentPickerDelegate, MFMessageComp
       guard UIApplication.shared.applicationState == .active else { return }
       let smsAvailable = MFMessageComposeViewController.canSendText()
       self?.queue.async { self?.pollPhone(smsAvailable: smsAvailable) }
+      if let bridge = self, !bridge.storageBusy {
+        bridge.storageBusy = true
+        bridge.storageQueue.async {
+          bridge.pollStorage()
+          DispatchQueue.main.async { bridge.storageBusy = false }
+        }
+      }
     }
     channel.setMethodCallHandler { [weak self] call, result in self?.handle(call, result) }
   }
@@ -147,9 +158,14 @@ final class NaradMobileBridge: NSObject, UIDocumentPickerDelegate, MFMessageComp
       alert.addAction(UIAlertAction(title: "Stop contacts sharing", style: .destructive) { _ in UserDefaults.standard.set(false, forKey: "narad.contactsSharing") })
       alert.addAction(UIAlertAction(title: "Done", style: .cancel))
       presenter()?.present(alert, animated: true); result(nil)
+    case "chooseSharedDirectory":
+      guard folderResult == nil, exportResult == nil, let view = presenter() else { result(FlutterError(code: "folder", message: "Close the current file picker first", details: nil)); return }
+      let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: false)
+      picker.allowsMultipleSelection = false; picker.delegate = self
+      folderResult = result; view.present(picker, animated: true)
     case "saveReceivedFile":
       do {
-        guard exportResult == nil, let id = args["id"] as? String, UUID(uuidString: id) != nil, let name = args["name"] as? String, !name.contains("/"), !name.contains("\\"), name != ".", name != ".." else { throw NaradFailure(message: "Invalid completed transfer") }
+        guard exportResult == nil, folderResult == nil, let id = args["id"] as? String, UUID(uuidString: id) != nil, let name = args["name"] as? String, !name.contains("/"), !name.contains("\\"), name != ".", name != ".." else { throw NaradFailure(message: "Invalid completed transfer") }
         let file = try directory().appendingPathComponent("downloads").appendingPathComponent(id).appendingPathComponent(name)
         guard FileManager.default.fileExists(atPath: file.path), let view = presenter() else { throw NaradFailure(message: "Completed download unavailable") }
         let picker = UIDocumentPickerViewController(forExporting: [file], asCopy: true)
@@ -256,6 +272,132 @@ final class NaradMobileBridge: NSObject, UIDocumentPickerDelegate, MFMessageComp
   }
   func contactViewController(_ viewController: CNContactViewController, didCompleteWith contact: CNContact?) { viewController.navigationController?.dismiss(animated: true) }
   func messageComposeViewController(_ controller: MFMessageComposeViewController, didFinishWith result: MessageComposeResult) { controller.dismiss(animated: true) }
-  func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { exportResult?(false); exportResult = nil }
-  func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) { exportResult?(!urls.isEmpty); exportResult = nil }
+  func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+    folderResult?(nil); folderResult = nil; exportResult?(false); exportResult = nil
+  }
+  func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+    if let result = folderResult {
+      folderResult = nil
+      do {
+        guard let url = urls.first, url.startAccessingSecurityScopedResource() else { throw NaradFailure(message: "Folder access unavailable") }
+        defer { url.stopAccessingSecurityScopedResource() }
+        guard try url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else { throw NaradFailure(message: "Choose a directory") }
+        let bookmark = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+        result(["path": "bookmark:" + bookmark.base64EncodedString(), "label": url.lastPathComponent, "writable": FileManager.default.isWritableFile(atPath: url.path)])
+      } catch { result(FlutterError(code: "folder", message: error.localizedDescription, details: nil)) }
+      return
+    }
+    exportResult?(!urls.isEmpty); exportResult = nil
+  }
+}
+
+// Security-scoped folder access is foreground-only, like the iOS runtime itself.
+private extension NaradMobileBridge {
+  func storageCall(_ command: [String: Any]) throws -> [String: Any] {
+    try native(["op": "bridge", "command": command])
+  }
+  func storageValidate(_ id: String) throws { _ = try storageCall(["op": "storage_validate", "id": id]) }
+  func storageName(_ name: String) -> Bool {
+    !name.isEmpty && name != "." && name != ".." && !name.contains("/") && !name.contains("\\") && !name.contains("\0")
+  }
+  func storageNode(_ root: URL, _ path: String) throws -> URL {
+    guard path.utf8.count <= 1024, !path.hasPrefix("/") else { throw NaradFailure(message: "Invalid shared path") }
+    var node = root
+    for part in path.split(separator: "/", omittingEmptySubsequences: true) {
+      let name = String(part)
+      guard storageName(name) else { throw NaradFailure(message: "Invalid shared path") }
+      node.appendPathComponent(name)
+      let values = try node.resourceValues(forKeys: [.isSymbolicLinkKey])
+      guard values.isSymbolicLink != true else { throw NaradFailure(message: "Shared symbolic links are unavailable") }
+    }
+    let resolved = node.resolvingSymlinksInPath().standardizedFileURL
+    let base = root.resolvingSymlinksInPath().standardizedFileURL.path
+    let privatePath = try directory().resolvingSymlinksInPath().path
+    guard (resolved.path == base || resolved.path.hasPrefix(base + "/")), resolved.path != privatePath, !resolved.path.hasPrefix(privatePath + "/") else { throw NaradFailure(message: "Shared path unavailable") }
+    return node
+  }
+  func storageCoordinate(_ node: URL, writing: Bool, operation: @escaping (URL) throws -> [String: Any]) throws -> [String: Any] {
+    var value: [String: Any]?
+    var failure: Error?
+    var coordinationError: NSError?
+    let coordinator = NSFileCoordinator(filePresenter: nil)
+    let accessor: (URL) -> Void = { url in
+      do { value = try operation(url) } catch { failure = error }
+    }
+    if writing { coordinator.coordinate(writingItemAt: node, options: .forMerging, error: &coordinationError, byAccessor: accessor) }
+    else { coordinator.coordinate(readingItemAt: node, options: .withoutChanges, error: &coordinationError, byAccessor: accessor) }
+    if let error = failure { throw error }
+    if let error = coordinationError { throw error }
+    guard let result = value else { throw NaradFailure(message: "Folder provider unavailable") }
+    return result
+  }
+  func storageJob(_ job: [String: Any], id: String) throws -> [String: Any] {
+    try storageValidate(id)
+    guard let encoded = job["root"] as? String, encoded.hasPrefix("bookmark:"), let bookmark = Data(base64Encoded: String(encoded.dropFirst(9))), let kind = job["kind"] as? String, let args = job["args"] as? [String: Any], let path = args["path"] as? String else { throw NaradFailure(message: "Invalid folder job") }
+    var stale = false
+    let root = try URL(resolvingBookmarkData: bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &stale)
+    guard !stale, root.startAccessingSecurityScopedResource() else { throw NaradFailure(message: "Choose the shared folder again") }
+    defer { root.stopAccessingSecurityScopedResource() }
+    let node = try storageNode(root, path)
+    return try storageCoordinate(node, writing: kind == "publish") { [self] coordinated in
+      try storageValidate(id)
+      let current = try storageNode(root, path)
+      guard current.standardizedFileURL == coordinated.standardizedFileURL else { throw NaradFailure(message: "Folder moved during request") }
+      switch kind {
+      case "list":
+        var entries: [[String: Any]] = []; var bytes = 0
+        let children = FileManager.default.enumerator(at: coordinated, includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey], options: [.skipsSubdirectoryDescendants])
+        while let child = children?.nextObject() as? URL, entries.count < 257 {
+          let values = try child.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+          guard storageName(child.lastPathComponent), values.isSymbolicLink != true, values.isDirectory == true || values.isRegularFile == true else { continue }
+          _ = try storageNode(root, path.isEmpty ? child.lastPathComponent : path + "/" + child.lastPathComponent)
+          let entry: [String: Any] = ["name": child.lastPathComponent, "directory": values.isDirectory == true, "size": values.fileSize ?? 0]
+          bytes += try JSONSerialization.data(withJSONObject: entry).count
+          if bytes > 58000 { break }; entries.append(entry)
+        }
+        return ["ok": true, "entries": entries]
+      case "read":
+        guard let offset = args["offset"] as? NSNumber, offset.int64Value >= 0 else { throw NaradFailure(message: "Invalid read offset") }
+        let values = try coordinated.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        guard values.isRegularFile == true, let size = values.fileSize, offset.uint64Value <= UInt64(size) else { throw NaradFailure(message: "Shared file unavailable") }
+        let handle = try FileHandle(forReadingFrom: coordinated); defer { try? handle.close() }
+        try handle.seek(toOffset: offset.uint64Value)
+        let data = try handle.read(upToCount: 48 * 1024) ?? Data()
+        return ["ok": true, "data": data.base64EncodedString(), "size": size, "offset": offset, "next": offset.uint64Value + UInt64(data.count)]
+      case "publish":
+        guard let name = args["name"] as? String, storageName(name), let sourcePath = args["source"] as? String, let upload = args["upload_id"] as? String, UUID(uuidString: upload) != nil else { throw NaradFailure(message: "Invalid upload") }
+        let source = URL(fileURLWithPath: sourcePath).resolvingSymlinksInPath()
+        let staging = try directory().appendingPathComponent("share-completed", isDirectory: true).resolvingSymlinksInPath()
+        guard source.path.hasPrefix(staging.path + "/"), try coordinated.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else { throw NaradFailure(message: "Invalid upload source") }
+        let destination = coordinated.appendingPathComponent(name)
+        let temporary = coordinated.appendingPathComponent(".narad-upload-\(upload).part")
+        guard !FileManager.default.fileExists(atPath: destination.path), !FileManager.default.fileExists(atPath: temporary.path), FileManager.default.createFile(atPath: temporary.path, contents: nil) else { throw NaradFailure(message: "Upload destination exists or is read-only") }
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let input = try FileHandle(forReadingFrom: source); defer { try? input.close() }
+        let output = try FileHandle(forWritingTo: temporary); defer { try? output.close() }
+        var total = 0; var checkAt = 0
+        while let data = try input.read(upToCount: 64 * 1024), !data.isEmpty {
+          if total >= checkAt { try storageValidate(id); checkAt = total + 1024 * 1024 }
+          try output.write(contentsOf: data); total += data.count
+        }
+        try output.synchronize(); try output.close(); try storageValidate(id)
+        // FileManager.moveItem fails if the destination already exists.
+        try FileManager.default.moveItem(at: temporary, to: destination)
+        return ["ok": true]
+      default: throw NaradFailure(message: "Unknown shared folder operation")
+      }
+    }
+  }
+  func pollStorage() {
+    do {
+      let response = try storageCall(["op": "storage_jobs"])
+      for job in response["jobs"] as? [[String: Any]] ?? [] {
+        guard let id = job["id"] as? String else { continue }
+        let result: [String: Any]
+        do { result = try storageJob(job, id: id) }
+        catch { result = ["ok": false, "error": "Shared folder unavailable, read-only, or file already exists. Reopen Narad and check folder access on the source device."] }
+        _ = try? storageCall(["op": "storage_result", "id": id, "result": result])
+      }
+    } catch { /* Foreground runtime stopped; do not retry native actions. */ }
+  }
 }
