@@ -231,3 +231,14 @@ speaker/microphone and shared-directory sections. Enable Automatic clipboard syn
 in Settings on both participants; Android reads source clipboard changes only
 while Narad has focus. Camera with audio requires the camera source's microphone
 sharing switch and microphone grant, separately from camera access.
+
+
+### Choose shared directories per device (build 15)
+
+Open Devices, select a paired device, then use its top-right settings button.
+Under **Directories shared with this device**, select existing folders or choose
+**Share a directory with this device**. You can also use **Media → Shared folders
+→ Choose devices** on each folder. Selections persist for offline devices.
+The device still needs browse permission and, for writes, upload permission plus
+the folder upload switch. Existing folders, including the app Shared folder,
+require explicit device selection after upgrading; their files are preserved.

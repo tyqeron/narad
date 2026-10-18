@@ -158,3 +158,14 @@ no GPS tracking or offline wake-up. See [Find device](FIND_DEVICE.md) for platfo
 requirements, local Stop controls and volume/DND limitations.
 
 Phone speaker playback and meeting microphone/camera setup: [Meeting devices](MEETING.md).
+
+
+### Choose shared directories per device (build 15)
+
+Open Devices, select a paired device, then use its top-right settings button.
+Under **Directories shared with this device**, select existing folders or choose
+**Share a directory with this device**. You can also use **Media → Shared folders
+→ Choose devices** on each folder. Selections persist for offline devices.
+The device still needs browse permission and, for writes, upload permission plus
+the folder upload switch. Existing folders, including the app Shared folder,
+require explicit device selection after upgrading; their files are preserved.

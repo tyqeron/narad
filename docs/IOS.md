@@ -58,3 +58,14 @@ This bridge follows Apple's [directory access guidance](https://developer.apple.
 The implementation has been reviewed on Linux; compiling and exercising iCloud,
 local folders and third-party providers still requires macOS/Xcode and an iOS
 or iPadOS device. Those native checks have not run here.
+
+
+### Choose shared directories per device (build 15)
+
+Open Devices, select a paired device, then use its top-right settings button.
+Under **Directories shared with this device**, select existing folders or choose
+**Share a directory with this device**. You can also use **Media → Shared folders
+→ Choose devices** on each folder. Selections persist for offline devices.
+The device still needs browse permission and, for writes, upload permission plus
+the folder upload switch. Existing folders, including the app Shared folder,
+require explicit device selection after upgrading; their files are preserved.
