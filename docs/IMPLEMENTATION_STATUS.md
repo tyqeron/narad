@@ -269,7 +269,8 @@ continue to record video only.
   APK verification passed for ARM64/ARMv7/x86_64 backends and 16 aligned 64-bit
   native libraries.
 - 57 Flutter tests passed (one opt-in hardware case skipped), analyzer clean;
-  32 Rust workspace tests passed. Windows Rust cross-check and strict Clippy passed.
+  32 Rust workspace tests and 8 Android native unit tests passed. Windows Rust
+  cross-check and strict Clippy passed.
 - Selected-folder uploads/downloads, persistence, overwrite rejection and revocation
   passed real two-daemon TLS integration. The full pre-AV integration run passed
   17 enabled scenarios; final camera-only, media revocation and AV grant/signaling
