@@ -85,6 +85,7 @@ impl Identity {
                     "file.transfer".into(),
                     "clipboard.sync".into(),
                     "file.browse".into(),
+                    "file.upload".into(),
                     "command.run".into(),
                     "device.lock".into(),
                     "device.find".into(),

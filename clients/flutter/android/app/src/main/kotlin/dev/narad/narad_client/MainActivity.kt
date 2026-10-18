@@ -22,6 +22,7 @@ class MainActivity : FlutterActivity() {
     override fun onResume() {super.onResume();MediaRuntime.activity=this;MediaRuntime.visible=true;MediaRuntime.finishPermission(this)}
     override fun onPause() {MediaRuntime.visible=false;super.onPause()}
 
+    private var sharedFolderResult:MethodChannel.Result?=null
     private var cameraResult:MethodChannel.Result?=null
     private var adminResult:MethodChannel.Result?=null
     private var exportResult:MethodChannel.Result?=null
@@ -33,6 +34,12 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger,"dev.narad/android").setMethodCallHandler {call,result ->
             try {
                 when(call.method) {
+                    "chooseSharedDirectory" -> {
+                        check(sharedFolderResult==null){"Folder picker already open"}
+                        sharedFolderResult=result
+                        try {startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION),1906)}
+                        catch(error:Exception){sharedFolderResult=null;throw error}
+                    }
                     "stopFinding" -> {FindDeviceAlarm.stop();result.success(null)}
                     "importContact" -> {PhoneContacts.insert(this,org.json.JSONObject(call.arguments as Map<*,*>));result.success(null)}
                     "phoneSetup" -> {startActivity(Intent(this,PhoneSetupActivity::class.java));result.success(null)}
@@ -103,6 +110,19 @@ class MainActivity : FlutterActivity() {
     @Deprecated("Activity result API retained for the FlutterActivity host")
     override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?) {
         super.onActivityResult(requestCode,resultCode,data)
+        if(requestCode==1906){
+            val pending=sharedFolderResult;sharedFolderResult=null
+            val uri=data?.data
+            if(resultCode!=Activity.RESULT_OK || data==null || uri==null){pending?.success(null);return}
+            try {
+                val flags=data.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                contentResolver.takePersistableUriPermission(uri,flags)
+                val folder=androidx.documentfile.provider.DocumentFile.fromTreeUri(this,uri) ?: error("Cannot access selected folder")
+                check(folder.isDirectory && folder.canRead()){"Selected folder is unavailable"}
+                pending?.success(mapOf("path" to uri.toString(),"label" to (folder.name ?: "Shared folder"),"writable" to folder.canWrite()))
+            }catch(error:Exception){pending?.error("shared_folder",error.message,null)}
+            return
+        }
         if(requestCode==1903){
             val pending=adminResult;adminResult=null
             pending?.success(getSystemService(DevicePolicyManager::class.java).isAdminActive(ComponentName(this,NaradDeviceAdmin::class.java)))
@@ -123,6 +143,7 @@ class MainActivity : FlutterActivity() {
     override fun onDestroy() {
         flutterEngine?.let { MethodChannel(it.dartExecutor.binaryMessenger,"dev.narad/android").setMethodCallHandler(null) }
         MediaRuntime.detach(this)
+        sharedFolderResult?.error("cancelled","Folder selection cancelled",null);sharedFolderResult=null
         cameraResult?.error("cancelled","Camera permission cancelled",null);cameraResult=null
         adminResult?.error("cancelled","Device admin setup cancelled",null);adminResult=null
         exportResult?.error("cancelled","Save cancelled",null);exportResult=null;exportSource=null

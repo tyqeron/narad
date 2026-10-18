@@ -7,39 +7,8 @@ use anyhow::{ensure, Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use narad_core::model::{now, Peer};
 use serde_json::{json, Value};
-use std::{
-    path::{Component, Path, PathBuf},
-    sync::Arc,
-    time::Duration,
-};
+use std::{path::Path, sync::Arc, time::Duration};
 use tokio::{io::AsyncReadExt, sync::Mutex};
-
-pub fn shared_path(state: &State, relative: &str) -> Result<PathBuf> {
-    ensure!(
-        relative.len() <= 1024 && !relative.contains('\\'),
-        "invalid shared path"
-    );
-    ensure!(
-        Path::new(relative)
-            .components()
-            .all(|c| matches!(c, Component::Normal(_))),
-        "path must stay in the shared folder"
-    );
-    #[cfg(windows)]
-    for part in relative.split('/').filter(|p| !p.is_empty()) {
-        narad_core::transfer::validate_windows_name(part)?;
-    }
-    let root = state.dir.join("shared");
-    narad_core::storage::private_dir(&root)?;
-    ensure!(
-        !root.symlink_metadata()?.file_type().is_symlink(),
-        "shared root cannot be a symbolic link"
-    );
-    let root = root.canonicalize()?;
-    let path = root.join(relative).canonicalize()?;
-    ensure!(path.starts_with(&root), "path escapes the shared folder");
-    Ok(path)
-}
 
 pub async fn remote(
     shared: Arc<Mutex<State>>,
@@ -48,6 +17,14 @@ pub async fn remote(
     file_plane: bool,
 ) -> Result<Value> {
     let op = handler::string(payload, "op")?;
+    match op {
+        "browse" => return crate::sharing::browse(shared, peer, payload, file_plane).await,
+        "shared_read" => return crate::sharing::read(shared, peer, payload, file_plane).await,
+        "shared_upload_begin" | "shared_upload_chunk" | "shared_upload_finish" => {
+            return crate::sharing::upload(shared, peer, payload, file_plane).await
+        }
+        _ => {}
+    }
     if op == "phone_request" {
         return crate::phone::remote(shared, peer, payload, file_plane).await;
     }
@@ -86,59 +63,6 @@ pub async fn remote(
         if op == "command_list" {
             return Ok(
                 json!({"ok":true,"commands":state.commands.values().map(|c|json!({"id":c.id,"label":c.label})).collect::<Vec<_>>()}),
-            );
-        }
-        if op == "browse" {
-            let relative = payload["path"].as_str().unwrap_or("");
-            let path = shared_path(&state, relative)?;
-            ensure!(path.is_dir(), "not a directory");
-            let mut entries = vec![];
-            let mut encoded_size = 0usize;
-            let mut truncated = false;
-            for entry in std::fs::read_dir(&path)? {
-                if entries.len() >= 256 {
-                    truncated = true;
-                    break;
-                }
-                let entry = entry?;
-                let name = entry
-                    .file_name()
-                    .into_string()
-                    .map_err(|_| anyhow::anyhow!("file name is not UTF-8"))?;
-                let metadata = entry.path().symlink_metadata()?;
-                if metadata.file_type().is_symlink() {
-                    continue;
-                }
-                let entry = json!({"name":name,"path":if relative.is_empty(){name.clone()} else {format!("{relative}/{name}")},"directory":metadata.is_dir(),"size":metadata.len()});
-                encoded_size += serde_json::to_vec(&entry)?.len();
-                if encoded_size > 60 * 1024 {
-                    truncated = true;
-                    break;
-                }
-                entries.push(entry);
-            }
-            entries.sort_by(|a, b| {
-                b["directory"]
-                    .as_bool()
-                    .cmp(&a["directory"].as_bool())
-                    .then_with(|| a["name"].as_str().cmp(&b["name"].as_str()))
-            });
-            state.event("browse.opened", json!({"peer_id":peer.device_id}));
-            return Ok(json!({"ok":true,"path":relative,"entries":entries,"truncated":truncated}));
-        }
-        if op == "shared_read" {
-            use std::io::{Read, Seek, SeekFrom};
-            let path = shared_path(&state, handler::string(payload, "path")?)?;
-            ensure!(path.is_file(), "not a file");
-            let mut file = std::fs::File::open(path)?;
-            let size = file.metadata()?.len();
-            let offset = payload["offset"].as_u64().unwrap_or(0);
-            ensure!(offset <= size, "invalid file offset");
-            file.seek(SeekFrom::Start(offset))?;
-            let mut chunk = vec![0; 48 * 1024];
-            let n = file.read(&mut chunk)?;
-            return Ok(
-                json!({"ok":true,"data":STANDARD.encode(&chunk[..n]),"size":size,"offset":offset,"next":offset+n as u64}),
             );
         }
         if op == "device_action_status" {
@@ -270,7 +194,7 @@ async fn execute(
 ) -> Result<Value> {
     let directory = {
         let state = shared.lock().await;
-        shared_path(&state, "")?
+        crate::sharing::filesystem_path(&state, "")?
     };
     #[cfg(windows)]
     let mut builder = {

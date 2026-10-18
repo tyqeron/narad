@@ -210,6 +210,35 @@ class NaradIntegration(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,"permission denied"):
             self.a.call(op="browse_peer", peer_id=self.bid, path="")
 
+    def test_selected_folder_upload_download_and_revocation(self):
+        self.pair()
+        selected = self.root / "selected"
+        selected.mkdir()
+        source = self.root / "generated.bin"
+        source.write_bytes(bytes(range(256)) * 1025)
+        folder = self.b.call(op="share_add", path=str(selected), label="Exchange")["id"]
+        mount = "@" + folder
+        self.b.call(op="permission", peer_id=self.aid, capability="file.browse", allow=True)
+        listing = self.a.call(op="browse_peer", peer_id=self.bid, path="")
+        self.assertTrue(any(e["path"] == mount and e["name"] == "Exchange" for e in listing["entries"]))
+        with self.assertRaises(RuntimeError):
+            self.a.call(op="upload_shared", peer_id=self.bid, path=mount, source=str(source))
+        self.b.call(op="share_uploads", id=folder, enabled=True)
+        self.b.call(op="permission", peer_id=self.aid, capability="file.upload", allow=True)
+        self.a.call(op="upload_shared", peer_id=self.bid, path=mount, source=str(source))
+        self.assertEqual((selected / source.name).read_bytes(), source.read_bytes())
+        with self.assertRaises(RuntimeError):
+            self.a.call(op="upload_shared", peer_id=self.bid, path=mount, source=str(source))
+        downloaded = self.a.call(op="download_shared", peer_id=self.bid, path=mount + "/" + source.name)
+        self.assertEqual(Path(downloaded["path"]).read_bytes(), source.read_bytes())
+        self.b.stop()
+        self.b.start()
+        self.assertEqual(self.b.call(op="status")["shared_folders"][0]["id"], folder)
+        self.b.call(op="share_remove", id=folder)
+        with self.assertRaises(RuntimeError):
+            self.a.call(op="browse_peer", peer_id=self.bid, path=mount)
+        self.assertEqual((selected / source.name).read_bytes(), source.read_bytes())
+
     def test_only_configured_command_presets_execute_and_revocation_stops_them(self):
         self.pair()
         with self.assertRaisesRegex(RuntimeError,"permission denied"):

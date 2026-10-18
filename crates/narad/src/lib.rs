@@ -4,6 +4,7 @@ mod discovery;
 mod handler;
 mod phone;
 mod preferences;
+mod sharing;
 mod state;
 pub mod transport;
 

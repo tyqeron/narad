@@ -22,7 +22,7 @@ use tokio::sync::Mutex;
 pub fn string<'a>(v: &'a Value, key: &str) -> Result<&'a str> {
     v[key].as_str().with_context(|| format!("missing {key}"))
 }
-fn number(v: &Value, key: &str) -> Result<u64> {
+pub(crate) fn number(v: &Value, key: &str) -> Result<u64> {
     v[key].as_u64().with_context(|| format!("missing {key}"))
 }
 fn media_capability(payload: &Value) -> Result<&'static str> {
@@ -45,6 +45,7 @@ fn capability(v: &Value) -> Result<&str> {
             "audio.input",
             "camera.stream",
             "file.browse",
+            "file.upload",
             "command.run",
             "device.find",
             "device.lock",
@@ -364,6 +365,18 @@ pub fn remote(s: &mut State, peer: &Peer, p: &Value, file_plane: bool) -> Result
 
 pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
     let op = string(&p, "op")?.to_string();
+    if matches!(
+        op.as_str(),
+        "share_add"
+            | "share_remove"
+            | "share_uploads"
+            | "upload_shared"
+            | "storage_jobs"
+            | "storage_validate"
+            | "storage_result"
+    ) {
+        return crate::sharing::local(shared, &p).await;
+    }
     if op == "clipboard_publish" {
         return crate::clipboard::publish(shared, &p).await;
     }

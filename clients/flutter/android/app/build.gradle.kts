@@ -89,5 +89,6 @@ android.sourceSets.getByName("main").jniLibs.srcDir("build/generated/rustJniLibs
 tasks.named("preBuild").configure { dependsOn(buildRustAndroid) }
 
 dependencies {
+    implementation("androidx.documentfile:documentfile:1.0.0")
     testImplementation("junit:junit:4.13.2")
 }

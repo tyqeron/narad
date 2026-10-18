@@ -74,6 +74,9 @@ pub struct PlatformAction {
 pub struct State {
     pub preferences: crate::preferences::Preferences,
     pub clipboard_digest: Option<[u8; 32]>,
+    pub share_uploads: BTreeMap<String, crate::sharing::Upload>,
+    pub storage_jobs: BTreeMap<String, crate::sharing::Job>,
+    pub storage_notify: std::sync::Arc<tokio::sync::Notify>,
     pub dir: PathBuf,
     pub identity: Identity,
     pub own: Peer,
@@ -153,6 +156,9 @@ impl State {
         let mut state = Self {
             preferences,
             clipboard_digest: None,
+            share_uploads: BTreeMap::new(),
+            storage_jobs: BTreeMap::new(),
+            storage_notify: std::sync::Arc::new(tokio::sync::Notify::new()),
             dir,
             identity,
             own,
@@ -368,6 +374,21 @@ impl State {
                 .get(id)
                 .is_some_and(|s| s.state != SessionState::Closed)
         });
+        self.storage_jobs.retain(|_, j| j.expires > t);
+        let expired = self
+            .share_uploads
+            .iter()
+            .filter(|(_, u)| t.saturating_sub(u.transfer.updated_at) > 120)
+            .map(|(id, _)| id.clone())
+            .collect::<Vec<_>>();
+        for id in expired {
+            if let Some(mut u) = self.share_uploads.remove(&id) {
+                let _ = u.transfer.cancel(
+                    &self.dir.join("share-transfers"),
+                    &self.identity.storage_key(),
+                );
+            }
+        }
         self.platform_actions.retain(|_, a| a.expires_at > t);
         self.invitations.retain(|_, i| i.expires_at > t);
         self.pairings.retain(|_, p| p.expires_at > t);

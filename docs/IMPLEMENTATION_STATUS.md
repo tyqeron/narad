@@ -228,3 +228,29 @@ screen. Build 10's requester/source behavior is covered by the 37-test client su
   Inbox, Media and Activity navigation labels are verified. The in-place update
   preserves application data and existing pairings. No Windows/iOS native package
   was built here.
+
+
+## UX refactor and selected folders (October 2026)
+
+Devices, Media, Activity and Settings now have separate navigation destinations.
+Paired device cards open their action screen with permissions in the top-right
+settings button. Media separates cameras, speaker/microphone sessions and folders.
+
+Selected directories are encrypted preferences. Linux and Windows use the system
+folder picker; Android uses persisted Storage Access Framework tree grants and a
+background document-provider worker. No all-files permission is requested.
+Browsing/downloading requires `file.browse`; uploading additionally requires the
+new per-peer `file.upload` grant and the folder's **Allow uploads** switch.
+Uploads are checksummed, staged and never intentionally replace existing files.
+Stopping a share or revoking permission invalidates pending document jobs.
+iOS document-provider hosting still needs its native bridge implementation.
+
+Automatic clipboard publishing is opt-in in Settings and requires each receiving
+peer's automatic clipboard grant. Text is deduplicated in memory, bounded and not
+activity-logged. Android only publishes clipboard changes while Narad has focus,
+as required by Android's clipboard access rules. Receiving already-approved text
+continues through the existing service.
+
+Remote camera recording with synchronized audio is still pending; current camera
+recordings remain video-only. Do not describe the existing recording button as
+capturing a remote microphone.

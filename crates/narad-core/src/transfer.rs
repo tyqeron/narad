@@ -165,7 +165,7 @@ impl Transfer {
 
 /// Atomically publish a verified file without replacing another transfer's data.
 #[cfg(any(target_os = "android", target_os = "linux"))]
-fn publish_completed(source: &Path, destination: &Path) -> Result<()> {
+pub fn publish_completed(source: &Path, destination: &Path) -> Result<()> {
     use std::{ffi::CString, os::unix::ffi::OsStrExt};
     let source = CString::new(source.as_os_str().as_bytes())?;
     let destination = CString::new(destination.as_os_str().as_bytes())?;
@@ -188,7 +188,7 @@ fn publish_completed(source: &Path, destination: &Path) -> Result<()> {
     Ok(())
 }
 #[cfg(not(any(target_os = "android", target_os = "linux")))]
-fn publish_completed(source: &Path, destination: &Path) -> Result<()> {
+pub fn publish_completed(source: &Path, destination: &Path) -> Result<()> {
     fs::hard_link(source, destination).context("publish completed transfer")
 }
 

@@ -70,6 +70,44 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, null);
   });
+  testWidgets('media folders expose independent upload and removal controls', (
+    tester,
+  ) async {
+    final api = FakeApi();
+    api.status['shared_folders'] = [
+      {'id': 'selected-folder', 'label': 'Project exchange', 'upload': false},
+    ];
+    await tester.pumpWidget(NaradApp(api: api));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Media').last);
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Allow uploads'), 250);
+    await tester.ensureVisible(find.text('Allow uploads'));
+    await tester.pumpAndSettle();
+    expect(find.text('Project exchange'), findsOneWidget);
+    await tester.tap(find.text('Allow uploads'));
+    await tester.pumpAndSettle();
+    expect(
+      api.calls.any(
+        (c) =>
+            c['op'] == 'share_uploads' &&
+            c['id'] == 'selected-folder' &&
+            c['enabled'] == true,
+      ),
+      true,
+    );
+    await tester.ensureVisible(find.byTooltip('Stop sharing folder'));
+    await tester.tap(find.byTooltip('Stop sharing folder'));
+    await tester.pumpAndSettle();
+    expect(
+      api.calls.any(
+        (c) => c['op'] == 'share_remove' && c['id'] == 'selected-folder',
+      ),
+      true,
+    );
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
   testWidgets('paired device actions and empty discovery are visible', (
     tester,
   ) async {
@@ -405,7 +443,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Device settings and permissions'));
       await tester.pumpAndSettle();
-      expect(find.byType(SwitchListTile), findsNWidgets(10));
+      expect(find.byType(SwitchListTile), findsNWidgets(11));
       expect(find.text('Share this device’s camera'), findsOneWidget);
       expect(find.text('Share this device’s microphone'), findsOneWidget);
       expect(find.text('Ring this device (Find device)'), findsOneWidget);

@@ -61,6 +61,7 @@ class NaradService : Service() {
             if(FindDeviceAlarm.actionId!=null)FindDeviceAlarm.stop()
         }
     }}
+    private val storageWorker=Executors.newSingleThreadExecutor()
     private val phoneSyncWorker=Executors.newSingleThreadExecutor()
     private val phoneSync by lazy{PhoneNotificationSync(this)}
     @Volatile private var phoneSyncBusy=false
@@ -82,6 +83,12 @@ class NaradService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance=this
+        storageWorker.execute {
+            while(!destroyed) {
+                try { if(state=="running")SharedDocuments.poll(this) else Thread.sleep(500) }
+                catch(_:Exception){try{Thread.sleep(500)}catch(_:InterruptedException){return@execute}}
+            }
+        }
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL,"Nearby device connection",NotificationManager.IMPORTANCE_LOW))
         val notification=connectionNotification(null)
@@ -282,6 +289,7 @@ class NaradService : Service() {
         MediaRuntime.serviceStopped()
         mediaWake?.release();mediaWake=null
         cameraReady=false;audioReady=false;playbackReady=false
+        storageWorker.shutdownNow();
         phoneSyncWorker.shutdownNow();phoneSync.stop();
         destroyed=true
         main.removeCallbacks(platformPoll)

@@ -254,3 +254,26 @@ playback remains ready. Unknown media kinds are rejected.
 Invitation validation permits the same bounded 60-second future clock skew as
 signed frames. The issuer still expires its one-time nonce after 300 seconds;
 expired invitations and invalid certificate pins remain rejected.
+
+
+### Selected folder mounts
+
+Local `share_add {path,label,documents,upload}` registers an encrypted folder
+preference; uploads default off. `share_remove {id}` revokes it and
+`share_uploads {id,enabled}` changes write access. Status includes `shared_folders`.
+Remote browse paths use `@<folder-uuid>/relative/path`, never remote absolute
+filesystem paths. Legacy `shared` files remain at the browser root.
+`browse` and `shared_read` require `file.browse`; reads are at most 48 KiB.
+
+`upload_shared {peer_id,path,source}` sends a local file through
+`shared_upload_begin {id,path,name,size,checksum}` on the control plane,
+`shared_upload_chunk {id,offset,data,checksum}` on the file plane, and
+`shared_upload_finish {id}` on the control plane. Each operation rechecks pairing,
+`file.upload` and the folder's upload switch. Existing destinations fail.
+Uploads use BLAKE3 checksums and bounded temporary storage.
+
+Mobile document providers use authenticated local `storage_jobs`,
+`storage_validate {id}` and `storage_result {id,result}`. Native operations must
+validate before filesystem work and publication; results are revalidated by Rust.
+Jobs expire, have bounded queues and are discarded after share/permission removal.
+The document-provider URI stays local to the source device.

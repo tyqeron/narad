@@ -804,6 +804,40 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     _notice('Command preset saved. Grant access in Device settings.');
   }
 
+  Future<void> _shareDirectory() async {
+    String? path, label;
+    final native = Platform.isAndroid || Platform.isIOS;
+    if (native) {
+      final selected = await MethodChannel(
+        Platform.isIOS ? 'dev.narad/ios' : 'dev.narad/android',
+      ).invokeMapMethod<String, dynamic>('chooseSharedDirectory');
+      if (selected == null) return;
+      path = selected['path'] as String;
+      label = selected['label'] as String;
+    } else {
+      path = await FilePicker.getDirectoryPath(
+        dialogTitle: 'Choose a folder to share',
+      );
+      if (path == null) return;
+      label =
+          path
+              .split(Platform.pathSeparator)
+              .where((p) => p.isNotEmpty)
+              .lastOrNull ??
+          'Shared folder';
+    }
+    await _command({
+      'op': 'share_add',
+      'path': path,
+      'label': label,
+      'documents': native,
+      'upload': false,
+    });
+    _notice(
+      'Folder shared for browsing. Enable uploads below and grant access in Device settings.',
+    );
+  }
+
   Future<void> _addSharedFile() async {
     final entry = await FilePicker.pickFile();
     if (entry == null) return;
@@ -968,6 +1002,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
 
   Future<void> _browseFiles(Map<String, dynamic> peer) async {
     var path = '';
+    var labels = <String>[];
     var result = await _api!.call({
       'op': 'browse_peer',
       'peer_id': peer['device_id'],
@@ -993,15 +1028,21 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                           ? null
                           : () async {
                               final parts = path.split('/')..removeLast();
-                              path = parts.join('/');
+                              final parent = parts.join('/');
                               try {
                                 final next = await _api!.call({
                                   'op': 'browse_peer',
                                   'peer_id': peer['device_id'],
-                                  'path': path,
+                                  'path': parent,
                                 });
                                 if (context.mounted) {
-                                  update(() => result = next);
+                                  update(() {
+                                    path = parent;
+                                    labels = labels
+                                        .take(labels.length - 1)
+                                        .toList();
+                                    result = next;
+                                  });
                                 }
                               } catch (e) {
                                 _showError(e);
@@ -1010,7 +1051,47 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                       icon: const Icon(Icons.arrow_upward),
                     ),
                     Expanded(
-                      child: Text(path.isEmpty ? 'Shared folder' : path),
+                      child: Text(
+                        labels.isEmpty ? 'Shared folders' : labels.join(' / '),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: result['upload'] == true
+                          ? 'Upload here'
+                          : 'Upload permission required',
+                      icon: const Icon(Icons.upload_file_outlined),
+                      onPressed: downloading || result['upload'] != true
+                          ? null
+                          : () async {
+                              final file = await FilePicker.pickFile();
+                              if (file?.path == null || !context.mounted) {
+                                return;
+                              }
+                              update(() => downloading = true);
+                              try {
+                                await _api!.call({
+                                  'op': 'upload_shared',
+                                  'peer_id': peer['device_id'],
+                                  'path': path,
+                                  'source': file!.path,
+                                });
+                                final next = await _api!.call({
+                                  'op': 'browse_peer',
+                                  'peer_id': peer['device_id'],
+                                  'path': path,
+                                });
+                                if (context.mounted) {
+                                  update(() => result = next);
+                                }
+                                _notice('File uploaded');
+                              } catch (e) {
+                                _showError(e);
+                              } finally {
+                                if (context.mounted) {
+                                  update(() => downloading = false);
+                                }
+                              }
+                            },
                     ),
                   ],
                 ),
@@ -1053,6 +1134,10 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                                       if (context.mounted) {
                                         update(() {
                                           path = entry['path'] as String;
+                                          labels = [
+                                            ...labels,
+                                            entry['name'] as String,
+                                          ];
                                           result = next;
                                         });
                                       }
@@ -1762,7 +1847,8 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                   'audio.output': 'Play shared audio',
                   'audio.input': 'Share this device’s microphone',
                   'camera.stream': 'Share this device’s camera',
-                  'file.browse': 'Browse and download from Shared folder',
+                  'file.browse': 'Browse and download shared folders',
+                  'file.upload': 'Upload files into shared folders',
                   if (_data['device']['platform'] != 'ios')
                     'command.run': 'Run configured command presets',
                   if (_data['device']['platform'] != 'ios')
@@ -2299,6 +2385,42 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     const Text(
       'Choose folders that permitted devices can browse and exchange files with.',
     ),
+    _button('Share a directory', _shareDirectory, primary: true),
+    for (final folder in (_data['shared_folders'] as List? ?? []).cast<Map>())
+      Card(
+        child: Column(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.folder_shared_outlined),
+              title: Text(folder['label'] as String),
+              subtitle: const Text(
+                'Available to devices with shared-folder permission',
+              ),
+              trailing: IconButton(
+                tooltip: 'Stop sharing folder',
+                icon: const Icon(Icons.link_off),
+                onPressed: () => _run(
+                  () => _command({'op': 'share_remove', 'id': folder['id']}),
+                ),
+              ),
+            ),
+            SwitchListTile(
+              title: const Text('Allow uploads'),
+              subtitle: const Text(
+                'Devices also need upload permission. Existing files are kept.',
+              ),
+              value: folder['upload'] == true,
+              onChanged: (enabled) => _run(
+                () => _command({
+                  'op': 'share_uploads',
+                  'id': folder['id'],
+                  'enabled': enabled,
+                }),
+              ),
+            ),
+          ],
+        ),
+      ),
     _button('Add file to Shared folder', _addSharedFile),
     _button('View Shared folder', _localSharedFiles),
   ];
@@ -2344,6 +2466,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       'clipboard.failed' => 'System clipboard update was blocked',
       'media.requested' => 'Media connection requested',
       'browse.opened' => '$peer browsed the Shared folder',
+      'browse.uploaded' => 'File uploaded to a shared folder',
       'browse.downloaded' => 'Downloaded ${detail['name'] ?? 'shared file'}',
       'command.completed' => 'Command finished on this device',
       'device.requested' => '$peer requested ${detail['kind']}',
