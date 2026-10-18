@@ -50,3 +50,15 @@ target_sources(flutter_webrtc_plugin PRIVATE
   "${CMAKE_CURRENT_LIST_DIR}/camera_frame_capturer.cc"
   "${CMAKE_CURRENT_LIST_DIR}/audio_capture.cc"
   "${CMAKE_CURRENT_BINARY_DIR}/narad_webrtc_dispatch.cc")
+
+if(MSVC)
+    target_compile_options(flutter_webrtc_plugin PRIVATE
+        /wd4996
+        /wd4267
+        /wd4244
+    )
+
+    target_compile_definitions(flutter_webrtc_plugin PRIVATE
+        _CRT_SECURE_NO_WARNINGS
+    )
+endif()
