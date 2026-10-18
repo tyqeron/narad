@@ -88,7 +88,8 @@ Navigate between **Devices**, **Media**, **Activity** and **Settings**.
    With the grant, the first send transfers automatically. Completed files appear
    under `.narad/downloads/<transfer-id>/<file-name>`; Android has **Save to device**.
 4. Use **Media → Shared folders → Share a directory** to select folders that
-   permitted peers can browse and download. Uploads require both **Allow uploads**
+   selected peers can browse and download. Use **Choose devices** on each folder,
+   or select directories in a paired device’s top-right settings. Uploads require both **Allow uploads**
    on the folder and the peer’s upload permission. Existing files are preserved.
    Configure command presets in Settings on the target device; peers can execute
    those presets, with a ten-second limit, rather than submitting arbitrary commands.

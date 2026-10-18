@@ -49,6 +49,17 @@ class FakeApi implements NaradApi {
   Future<Map<String, dynamic>> call(Map<String, dynamic> command) async {
     calls.add(command);
     if (command['op'] == 'status') return status;
+    if (command['op'] == 'share_access') {
+      final folders = (status['shared_folders'] as List).cast<Map>();
+      final folder = folders.singleWhere((f) => f['id'] == command['id']);
+      final devices = (folder['devices'] as List? ?? [])
+          .cast<String>()
+          .toList();
+      devices.remove(command['peer_id']);
+      if (command['allow'] == true) devices.add(command['peer_id'] as String);
+      folder['devices'] = devices;
+      return {'ok': true};
+    }
     if (command['op'] == 'clipboard_accept') {
       status['clipboard'] = [];
       return {'ok': true, 'text': 'approved text'};
@@ -108,6 +119,50 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
   });
+  testWidgets(
+    'folder device choices persist independently and refresh immediately',
+    (tester) async {
+      final api = FakeApi();
+      api.status['shared_folders'] = [
+        {
+          'id': 'folder',
+          'label': 'Private work',
+          'upload': false,
+          'devices': <String>[],
+        },
+      ];
+      await tester.pumpWidget(NaradApp(api: api));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Media').last);
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('Choose devices'), 250);
+      await tester.ensureVisible(find.text('Choose devices'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Choose devices'));
+      await tester.pumpAndSettle();
+      expect(find.text('Share Private work with'), findsOneWidget);
+      final checkbox = find.byType(CheckboxListTile);
+      expect(tester.widget<CheckboxListTile>(checkbox).value, false);
+      await tester.tap(checkbox);
+      await tester.pumpAndSettle();
+      expect(tester.widget<CheckboxListTile>(checkbox).value, true);
+      expect(
+        api.calls.any(
+          (c) =>
+              c['op'] == 'share_access' &&
+              c['id'] == 'folder' &&
+              c['peer_id'] == 'peer' &&
+              c['allow'] == true,
+        ),
+        true,
+      );
+      await tester.tap(checkbox);
+      await tester.pumpAndSettle();
+      expect(tester.widget<CheckboxListTile>(checkbox).value, false);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    },
+  );
   testWidgets('paired device actions and empty discovery are visible', (
     tester,
   ) async {

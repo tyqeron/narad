@@ -283,3 +283,17 @@ continue to record video only.
 - Linux release bundle and self-extracting installer built; all seven disposable
   installer/startup/upgrade checks passed. Windows native GUI
   recording/runtime QA and iOS compilation/device/provider QA remain outstanding.
+
+
+## Build 15: per-device shared directories
+
+Directories are selected separately for each paired device from its permission
+screen, or through Media → Shared folders → Choose devices. A directory can be
+shared with several explicitly selected devices; choosing it from another device's
+settings reuses the registered directory. New and migrated directories are hidden
+until assigned. The app-managed Shared folder has the same selection rules.
+Browse/upload capability grants remain independent. Direct paths, uploads and
+pending native-provider jobs all enforce the selection; unpairing clears it.
+Backend two-peer isolation, preference migration, revocation, TLS upload/download
+and UI checkbox refresh tests cover the change. Windows/iOS native runtime QA
+remains subject to the platform limits recorded above.

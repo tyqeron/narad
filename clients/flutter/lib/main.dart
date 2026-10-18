@@ -804,7 +804,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     _notice('Command preset saved. Grant access in Device settings.');
   }
 
-  Future<void> _shareDirectory() async {
+  Future<void> _shareDirectory({String? peerId}) async {
     String? path, label;
     final native = Platform.isAndroid || Platform.isIOS;
     if (native) {
@@ -828,13 +828,16 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     }
     await _command({
       'op': 'share_add',
+      'peer_id': peerId,
       'path': path,
       'label': label,
       'documents': native,
       'upload': false,
     });
     _notice(
-      'Folder shared for browsing. Enable uploads below and grant access in Device settings.',
+      peerId == null
+          ? 'Folder added. Choose which devices can access it.'
+          : 'Folder shared with ${_peerName(peerId)}. Device browse permission is also required.',
     );
   }
 
@@ -1810,6 +1813,83 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       ) ??
       false;
 
+  List<String> _folderDeviceIds(String id) {
+    if (id == 'default') {
+      return (_data['default_share_devices'] as List? ?? []).cast<String>();
+    }
+    final folders = (_data['shared_folders'] as List? ?? []).cast<Map>();
+    final folder = folders.where((f) => f['id'] == id).firstOrNull;
+    return (folder?['devices'] as List? ?? []).cast<String>();
+  }
+
+  String _folderAudience(Map folder) {
+    final names = _folderDeviceIds(
+      folder['id'] as String,
+    ).where(_paired.containsKey).map(_peerName).toList();
+    return names.isEmpty
+        ? 'Not shared with any device'
+        : 'Shared with ${names.join(', ')}';
+  }
+
+  Widget _folderAccessTile(
+    String id,
+    String label,
+    Map peer,
+    BuildContext dialogContext,
+    StateSetter update,
+  ) => CheckboxListTile(
+    title: Text(label),
+    value: _folderDeviceIds(id).contains(peer['device_id']),
+    onChanged: (allow) => _run(() async {
+      await _command({
+        'op': 'share_access',
+        'id': id,
+        'peer_id': peer['device_id'],
+        'allow': allow == true,
+      });
+      await _refresh();
+      if (dialogContext.mounted) update(() {});
+    }),
+  );
+
+  Future<void> _folderDevices(String id, String label) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, update) => AlertDialog(
+          title: Text('Share $label with'),
+          scrollable: true,
+          content: SizedBox(
+            width: 440,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Only selected devices can browse this folder. Each device also needs shared-folder permission.',
+                ),
+                if (_pairedPeers.isEmpty) const Text('Pair a device first.'),
+                for (final peer in _pairedPeers)
+                  _folderAccessTile(
+                    id,
+                    peer['device_name'] as String,
+                    peer,
+                    dialogContext,
+                    update,
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _permissions(Map<String, dynamic> peer) async {
     if (!mounted) return;
     await showDialog<void>(
@@ -1909,6 +1989,36 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                       }
                     },
                   ),
+                const Divider(),
+                const Text('Directories shared with this device'),
+                const Text(
+                  'Only selected folders are visible. Browse and upload permissions above still apply.',
+                ),
+                _folderAccessTile(
+                  'default',
+                  'App Shared folder',
+                  peer,
+                  context,
+                  update,
+                ),
+                for (final folder
+                    in (_data['shared_folders'] as List? ?? []).cast<Map>())
+                  _folderAccessTile(
+                    folder['id'] as String,
+                    folder['label'] as String,
+                    peer,
+                    context,
+                    update,
+                  ),
+                TextButton.icon(
+                  onPressed: () => _run(() async {
+                    await _shareDirectory(peerId: peer['device_id'] as String);
+                    await _refresh();
+                    if (context.mounted) update(() {});
+                  }),
+                  icon: const Icon(Icons.create_new_folder_outlined),
+                  label: const Text('Share a directory with this device'),
+                ),
               ],
             ),
           ),
@@ -2428,7 +2538,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       ),
     _section('Shared folders'),
     const Text(
-      'Choose folders that permitted devices can browse and exchange files with.',
+      'Choose directories, then select which paired devices can access each one. Device permissions also apply.',
     ),
     _button('Share a directory', _shareDirectory, primary: true),
     for (final folder in (_data['shared_folders'] as List? ?? []).cast<Map>())
@@ -2438,8 +2548,10 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
             ListTile(
               leading: const Icon(Icons.folder_shared_outlined),
               title: Text(folder['label'] as String),
-              subtitle: const Text(
-                'Available to devices with shared-folder permission',
+              subtitle: Text(_folderAudience(folder)),
+              onTap: () => _folderDevices(
+                folder['id'] as String,
+                folder['label'] as String,
               ),
               trailing: IconButton(
                 tooltip: 'Stop sharing folder',
@@ -2448,6 +2560,14 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                   () => _command({'op': 'share_remove', 'id': folder['id']}),
                 ),
               ),
+            ),
+            TextButton.icon(
+              onPressed: () => _folderDevices(
+                folder['id'] as String,
+                folder['label'] as String,
+              ),
+              icon: const Icon(Icons.devices_outlined),
+              label: const Text('Choose devices'),
             ),
             SwitchListTile(
               title: const Text('Allow uploads'),
@@ -2466,6 +2586,11 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
           ],
         ),
       ),
+    TextButton.icon(
+      label: const Text('Choose devices for app Shared folder'),
+      icon: const Icon(Icons.devices_outlined),
+      onPressed: () => _folderDevices('default', 'App Shared folder'),
+    ),
     _button('Add file to Shared folder', _addSharedFile),
     _button('View Shared folder', _localSharedFiles),
   ];
