@@ -2,6 +2,7 @@ mod clipboard;
 mod controls;
 mod discovery;
 mod handler;
+mod input;
 mod phone;
 mod preferences;
 mod sharing;

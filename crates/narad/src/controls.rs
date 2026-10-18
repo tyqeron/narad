@@ -40,6 +40,7 @@ pub async fn remote(
             | "device_action"
             | "device_action_status"
             | "device_info"
+            | "input_event"
     ) {
         return handler::remote(&mut *shared.lock().await, peer, payload, file_plane);
     }
@@ -55,6 +56,7 @@ pub async fn remote(
             _ => anyhow::bail!("unsupported device action"),
         },
         "device_info" => "device.info",
+        "input_event" => "input.control",
         _ => "",
     };
     {
@@ -79,6 +81,9 @@ pub async fn remote(
             return Ok(
                 json!({"ok":true,"device":state.own,"battery":crate::telemetry::battery(phone.as_ref()),"network":crate::telemetry::network(&state.own.address, phone.as_ref())}),
             );
+        }
+        if op == "input_event" {
+            return crate::input::inject(&payload["event"]);
         }
         if op == "device_action_status" {
             let action = state

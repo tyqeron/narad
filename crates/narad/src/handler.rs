@@ -50,7 +50,8 @@ fn capability(v: &Value) -> Result<&str> {
             "device.find",
             "device.lock",
             "device.unlock",
-            "device.info"
+            "device.info",
+            "input.control"
         ]
         .contains(&c)
             || crate::phone::CAPABILITIES.contains(&c),
@@ -428,6 +429,7 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
             | "device_action"
             | "device_action_status"
             | "device_info"
+            | "input_event"
     ) {
         return outgoing(shared, &op, &p).await;
     }
@@ -1129,6 +1131,7 @@ async fn outgoing(shared: Arc<Mutex<State>>, op: &str, p: &Value) -> Result<Valu
         "device_action" => json!({"op":"device_action","kind":p["kind"]}),
         "device_action_status" => json!({"op":"device_action_status","id":p["id"]}),
         "device_info" => json!({"op":"device_info"}),
+        "input_event" => json!({"op":"input_event","event":p["event"]}),
         "media_start" => {
             media_capability(p)?;
             json!({"op":"media_offer","id":uuid::Uuid::new_v4().to_string(),"kind":p["kind"],"with_audio":p["with_audio"]})

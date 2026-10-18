@@ -23,6 +23,7 @@ import 'phone_sync.dart';
 import 'windows_backend.dart';
 import 'desktop_integration.dart';
 import 'pairing_scanner.dart';
+import 'remote_input_page.dart';
 
 void main() => runApp(const NaradApp());
 
@@ -1654,6 +1655,26 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         Icons.notifications_active_outlined,
         () => _deviceAction(id, 'find'),
       ),
+      if (peer['platform'] == 'linux' || peer['platform'] == 'windows')
+        'Control keyboard and mouse': (
+          Icons.mouse_outlined,
+          () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => RemoteInputPage(
+                  name: peer['device_name'] as String,
+                  send: (event) async {
+                    await _api!.call({
+                      'op': 'input_event',
+                      'peer_id': id,
+                      'event': event,
+                    });
+                  },
+                ),
+              ),
+            );
+          },
+        ),
       'Stop ringing': (
         Icons.notifications_off_outlined,
         () => _deviceAction(id, 'find_stop'),
@@ -1750,7 +1771,10 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
               status: _status,
               settings: () => _permissions(peer).catchError(_showError),
               loadInfo: () async {
-                final response = await _api!.call({'op': 'device_info', 'peer_id': id});
+                final response = await _api!.call({
+                  'op': 'device_info',
+                  'peer_id': id,
+                });
                 return Map<String, dynamic>.from(response as Map);
               },
               actions: [
@@ -2064,6 +2088,10 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                     },
                     'device.find': 'Ring this device (Find device)',
                     'device.info': 'Share battery, cellular and network status',
+                    if (peer['platform'] == 'linux' ||
+                        peer['platform'] == 'windows')
+                      'input.control':
+                          'Allow remote keyboard and mouse control',
                     'file.transfer': 'Receive files automatically',
                     'clipboard.sync': 'Apply shared clipboard automatically',
                     'audio.output': 'Play shared audio',
