@@ -49,6 +49,31 @@ class FakeApi implements NaradApi {
   Future<Map<String, dynamic>> call(Map<String, dynamic> command) async {
     calls.add(command);
     if (command['op'] == 'status') return status;
+    if (command['op'] == 'browse_peer') {
+      final path = command['path'] as String;
+      return {
+        'ok': true,
+        'path': path,
+        'upload': true,
+        'entries': path.isEmpty
+            ? [
+                {
+                  'name': 'Workspace',
+                  'path': '@folder',
+                  'directory': true,
+                  'size': 0,
+                },
+              ]
+            : [
+                {
+                  'name': 'report.txt',
+                  'path': '$path/report.txt',
+                  'directory': false,
+                  'size': 24,
+                },
+              ],
+      };
+    }
     if (command['op'] == 'share_access') {
       final folders = (status['shared_folders'] as List).cast<Map>();
       final folder = folders.singleWhere((f) => f['id'] == command['id']);
@@ -92,11 +117,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Media').last);
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('Allow uploads'), 250);
-    await tester.ensureVisible(find.text('Allow uploads'));
+    await tester.scrollUntilVisible(find.text('Allow file changes'), 250);
+    await tester.ensureVisible(find.text('Allow file changes'));
     await tester.pumpAndSettle();
     expect(find.text('Project exchange'), findsOneWidget);
-    await tester.tap(find.text('Allow uploads'));
+    await tester.tap(find.text('Allow file changes'));
     await tester.pumpAndSettle();
     expect(
       api.calls.any(
@@ -119,6 +144,52 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
   });
+  testWidgets(
+    'shared folders allow permitted peers to create and remove items',
+    (tester) async {
+      final api = FakeApi();
+      await tester.pumpWidget(NaradApp(api: api));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('My phone'), 160);
+      await tester.tap(find.byKey(const ValueKey('device-peer')));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('Browse files'), 160);
+      await tester.tap(find.text('Browse files'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Workspace'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Create folder'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last, 'New folder');
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      expect(
+        api.calls.any(
+          (call) =>
+              call['op'] == 'shared_mkdir' &&
+              call['path'] == '@folder' &&
+              call['name'] == 'New folder',
+        ),
+        isTrue,
+      );
+
+      await tester.tap(find.byTooltip('Remove report.txt'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirm'));
+      await tester.pumpAndSettle();
+      expect(
+        api.calls.any(
+          (call) =>
+              call['op'] == 'shared_delete' &&
+              call['path'] == '@folder/report.txt',
+        ),
+        isTrue,
+      );
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+    },
+  );
   testWidgets(
     'folder device choices persist independently and refresh immediately',
     (tester) async {

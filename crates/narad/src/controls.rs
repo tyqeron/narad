@@ -20,6 +20,9 @@ pub async fn remote(
     match op {
         "browse" => return crate::sharing::browse(shared, peer, payload, file_plane).await,
         "shared_read" => return crate::sharing::read(shared, peer, payload, file_plane).await,
+        "shared_mkdir" | "shared_delete" => {
+            return crate::sharing::mutate(shared, peer, payload, file_plane).await
+        }
         "shared_upload_begin" | "shared_upload_chunk" | "shared_upload_finish" => {
             return crate::sharing::upload(shared, peer, payload, file_plane).await
         }

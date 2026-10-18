@@ -359,6 +359,107 @@ pub async fn read(shared: Arc<Mutex<State>>, peer: &Peer, p: &Value, file: bool)
         json!({"ok":true,"data":STANDARD.encode(&data[..n]),"size":size,"offset":offset,"next":offset+n as u64}),
     )
 }
+
+/// Create a directory or remove one file/empty directory inside an authorized share.
+/// Mutations use the existing per-peer file.upload grant and per-share write switch.
+pub async fn mutate(
+    shared: Arc<Mutex<State>>,
+    peer: &Peer,
+    p: &Value,
+    file: bool,
+) -> Result<Value> {
+    ensure!(!file, "Wrong shared-folder transport plane");
+    let op = string(p, "op")?;
+    ensure!(
+        matches!(op, "shared_mkdir" | "shared_delete"),
+        "Unsupported shared-folder change"
+    );
+    let (folder, parent, name) = {
+        let s = shared.lock().await;
+        s.trust.authenticate(peer)?;
+        s.trust.authorize(peer, "file.upload", true)?;
+        let path = string(p, "path")?;
+        let (parent, name) = if op == "shared_delete" {
+            let (parent, name) = path.rsplit_once('/').unwrap_or(("", path));
+            (parent.to_string(), name.to_string())
+        } else {
+            (path.to_string(), string(p, "name")?.to_string())
+        };
+        ensure!(
+            !name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\', '\0']),
+            "Invalid directory entry name"
+        );
+        #[cfg(windows)]
+        narad_core::transfer::validate_windows_name(&name)?;
+        let (folder, child) = mount(&s, &parent)?;
+        allowed(&s, peer, &folder, "file.upload")?;
+        (folder, child, name)
+    };
+
+    if folder.documents {
+        return native(
+            shared,
+            peer,
+            &folder,
+            "file.upload",
+            if op == "shared_mkdir" {
+                "mkdir"
+            } else {
+                "delete"
+            },
+            json!({"path":parent,"name":name}),
+        )
+        .await;
+    }
+
+    let mut s = shared.lock().await;
+    allowed(&s, peer, &folder, "file.upload")?;
+    let root = PathBuf::from(&folder.path).canonicalize()?;
+    let parent_path = path_for(&s, &folder, &parent)?;
+    ensure!(parent_path.is_dir(), "Not a directory");
+    let target = parent_path.join(&name);
+    if op == "shared_mkdir" {
+        match std::fs::symlink_metadata(&target) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+            Ok(_) => anyhow::bail!("An item with this name already exists"),
+        }
+        std::fs::create_dir(target)?;
+    } else {
+        let metadata = target.symlink_metadata()?;
+        ensure!(
+            !metadata.file_type().is_symlink(),
+            "Cannot remove a symbolic link"
+        );
+        let resolved = target.canonicalize()?;
+        ensure!(
+            resolved.starts_with(&root),
+            "Path escapes the shared folder"
+        );
+        if folder.id != "default" {
+            ensure!(
+                !resolved.starts_with(s.dir.canonicalize()?),
+                "Narad private data cannot be changed"
+            );
+        }
+        if metadata.is_dir() {
+            std::fs::remove_dir(resolved)?;
+        } else {
+            ensure!(metadata.is_file(), "Unsupported shared item");
+            std::fs::remove_file(resolved)?;
+        }
+    }
+    s.event(
+        if op == "shared_mkdir" {
+            "browse.directory_created"
+        } else {
+            "browse.item_removed"
+        },
+        json!({"peer_id":peer.device_id,"name":name}),
+    );
+    Ok(json!({"ok":true}))
+}
+
 pub async fn local(shared: Arc<Mutex<State>>, p: &Value) -> Result<Value> {
     let op = string(p, "op")?;
     if op == "storage_jobs" {
@@ -949,6 +1050,55 @@ mod tests {
         .await
         .is_err());
         assert_eq!(std::fs::read(folder.join("fixture.txt")).unwrap(), body);
+    }
+
+    #[tokio::test]
+    async fn shared_write_grant_allows_directory_creation_and_file_removal_only_inside_share() {
+        let (_temp, s, peer, folder) = setup();
+        let id = share(s.clone(), &folder, true).await;
+        let root = format!("@{id}");
+        mutate(
+            s.clone(),
+            &peer,
+            &json!({"op":"shared_mkdir","path":root,"name":"created"}),
+            false,
+        )
+        .await
+        .unwrap();
+        assert!(folder.join("created").is_dir());
+        std::fs::write(folder.join("created/remove-me.txt"), b"data").unwrap();
+        mutate(
+            s.clone(),
+            &peer,
+            &json!({"op":"shared_delete","path":format!("{root}/created/remove-me.txt")}),
+            false,
+        )
+        .await
+        .unwrap();
+        assert!(!folder.join("created/remove-me.txt").exists());
+        assert!(mutate(
+            s.clone(),
+            &peer,
+            &json!({"op":"shared_mkdir","path":root,"name":"../escape"}),
+            false,
+        )
+        .await
+        .is_err());
+
+        local(
+            s.clone(),
+            &json!({"op":"share_uploads","id":id,"enabled":false}),
+        )
+        .await
+        .unwrap();
+        assert!(mutate(
+            s,
+            &peer,
+            &json!({"op":"shared_delete","path":format!("{root}/created")}),
+            false,
+        )
+        .await
+        .is_err());
     }
     #[tokio::test]
     async fn native_document_jobs_recheck_folder_and_peer_permission() {

@@ -1139,6 +1139,40 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                               }
                             },
                     ),
+                    IconButton(
+                      tooltip: result['upload'] == true
+                          ? 'Create folder'
+                          : 'Write permission required',
+                      icon: const Icon(Icons.create_new_folder_outlined),
+                      onPressed: downloading || result['upload'] != true
+                          ? null
+                          : () async {
+                              final name = await _input(
+                                'Create folder',
+                                'Folder name',
+                              );
+                              if (name == null || !context.mounted) return;
+                              try {
+                                await _api!.call({
+                                  'op': 'shared_mkdir',
+                                  'peer_id': peer['device_id'],
+                                  'path': path,
+                                  'name': name.trim(),
+                                });
+                                final next = await _api!.call({
+                                  'op': 'browse_peer',
+                                  'peer_id': peer['device_id'],
+                                  'path': path,
+                                });
+                                if (context.mounted) {
+                                  update(() => result = next);
+                                }
+                                _notice('Folder created');
+                              } catch (e) {
+                                _showError(e);
+                              }
+                            },
+                    ),
                   ],
                 ),
                 if (downloading) const LinearProgressIndicator(),
@@ -1164,9 +1198,49 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                           subtitle: entry['directory'] == true
                               ? null
                               : Text(_bytes(entry['size'] as int)),
-                          trailing: entry['directory'] == true
-                              ? const Icon(Icons.chevron_right)
-                              : const Icon(Icons.download),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (entry['directory'] == true)
+                                const Icon(Icons.chevron_right)
+                              else
+                                const Icon(Icons.download),
+                              if (entry['directory'] != true &&
+                                  result['upload'] == true)
+                                IconButton(
+                                  tooltip: 'Remove ${entry['name']}',
+                                  onPressed: downloading
+                                      ? null
+                                      : () async {
+                                          if (!await _confirm(
+                                            'Remove ${entry['name']}?',
+                                            'This deletes the file from ${peer['device_name']} shared storage.',
+                                          )) {
+                                            return;
+                                          }
+                                          try {
+                                            await _api!.call({
+                                              'op': 'shared_delete',
+                                              'peer_id': peer['device_id'],
+                                              'path': entry['path'],
+                                            });
+                                            final next = await _api!.call({
+                                              'op': 'browse_peer',
+                                              'peer_id': peer['device_id'],
+                                              'path': path,
+                                            });
+                                            if (context.mounted) {
+                                              update(() => result = next);
+                                            }
+                                            _notice('File removed');
+                                          } catch (e) {
+                                            _showError(e);
+                                          }
+                                        },
+                                  icon: const Icon(Icons.delete_outline),
+                                ),
+                            ],
+                          ),
                           onTap: downloading
                               ? null
                               : () async {
@@ -1991,7 +2065,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                     'audio.input': 'Share this device’s microphone',
                     'camera.stream': 'Share this device’s camera',
                     'file.browse': 'Browse and download shared folders',
-                    'file.upload': 'Upload files into shared folders',
+                    'file.upload': 'Create, upload and remove shared files',
                     if (_data['device']['platform'] != 'ios')
                       'command.run': 'Run configured command presets',
                     if (_data['device']['platform'] != 'ios')
@@ -2062,7 +2136,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                   const Padding(
                     padding: EdgeInsets.fromLTRB(4, 0, 4, 8),
                     child: Text(
-                      'Only directories selected below are visible to this device. File browsing and upload permissions must also be enabled above.',
+                      'Only directories selected below are visible to this device. File browsing and write permissions must also be enabled above.',
                     ),
                   ),
                   _folderAccessTile(
@@ -2636,9 +2710,9 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
               label: const Text('Choose devices'),
             ),
             SwitchListTile(
-              title: const Text('Allow uploads'),
+              title: const Text('Allow file changes'),
               subtitle: const Text(
-                'Devices also need upload permission. Existing files are kept.',
+                'Devices also need write permission to upload, create folders and remove files.',
               ),
               value: folder['upload'] == true,
               onChanged: (enabled) => _run(

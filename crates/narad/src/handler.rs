@@ -420,6 +420,8 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
             | "browse_peer"
             | "read_shared"
             | "download_shared"
+            | "shared_mkdir"
+            | "shared_delete"
             | "run_command"
             | "list_commands"
             | "device_action"
@@ -1118,6 +1120,8 @@ async fn outgoing(shared: Arc<Mutex<State>>, op: &str, p: &Value) -> Result<Valu
         "ping_peer" => json!({"op":"ping"}),
         "read_shared" => json!({"op":"shared_read","path":p["path"],"offset":p["offset"]}),
         "browse_peer" => json!({"op":"browse","path":p["path"]}),
+        "shared_mkdir" => json!({"op":"shared_mkdir","path":p["path"],"name":p["name"]}),
+        "shared_delete" => json!({"op":"shared_delete","path":p["path"]}),
         "list_commands" => json!({"op":"command_list"}),
         "run_command" => json!({"op":"command","id":p["id"]}),
         "device_action" => json!({"op":"device_action","kind":p["kind"]}),

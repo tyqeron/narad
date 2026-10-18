@@ -83,6 +83,21 @@ object SharedDocuments {
                         } catch(e:Exception){temporary.delete();throw e}
                         JSONObject().put("ok",true)
                     }
+                    "mkdir" -> {
+                        check(node.isDirectory && node.canWrite()){"Folder is read-only"}
+                        val name=args.getString("name");require(validName(name))
+                        check(node.listFiles().none{it.name==name}){"An item with this name already exists"}
+                        check(node.createDirectory(name)!=null){"Folder could not be created by this provider"}
+                        JSONObject().put("ok",true)
+                    }
+                    "delete" -> {
+                        check(node.isDirectory && node.canWrite()){"Folder is read-only"}
+                        val name=args.getString("name");require(validName(name))
+                        val matches=node.listFiles().filter{it.name==name}
+                        check(matches.size==1 && matches.single().isFile){"File is missing or cannot be removed"}
+                        check(matches.single().delete()){"File could not be removed by this provider"}
+                        JSONObject().put("ok",true)
+                    }
                     else -> error("Unknown shared folder operation")
                 }
             } catch(_:Exception){JSONObject().put("ok",false).put("error","Shared folder unavailable, read-only, or file already exists. Check folder access on the source device.")}
