@@ -30,4 +30,9 @@ class DeviceWidgetModelTest {
         assertEquals("Ready for your paired devices",DeviceWidgetModel.details(emptyList()))
     }
     @Test fun unknownActionsAreNeverExecuted(){assertFalse(DeviceWidgetModel.known("shell"))}
+    @Test fun quickActionsRunWithoutOpeningTheNaradActivity(){
+        for(action in listOf("clipboard","find","lock","unlock"))assertTrue(DeviceWidgetModel.runsInBackground(action))
+        for(action in listOf("phone","file","audio","microphone","camera","browse","command","settings","unpair"))
+            assertFalse(DeviceWidgetModel.runsInBackground(action))
+    }
 }

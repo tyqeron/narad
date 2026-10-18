@@ -37,6 +37,8 @@
         <activity android:name=".NaradCallActivity" android:exported="false" android:theme="@style/PhoneTheme" android:showWhenLocked="true" android:turnScreenOn="true" />
         <activity android:name=".NaradDialActivity" android:exported="true" android:theme="@style/PhoneTheme"><intent-filter><action android:name="android.intent.action.DIAL" /><category android:name="android.intent.category.DEFAULT" /></intent-filter><intent-filter><action android:name="android.intent.action.DIAL" /><category android:name="android.intent.category.DEFAULT" /><data android:scheme="tel" /></intent-filter></activity>
         <service android:name=".DeviceWidgetActionsService" android:exported="false" android:permission="android.permission.BIND_REMOTEVIEWS" />
+        <receiver android:name=".WidgetActionReceiver" android:exported="false" />
+        <activity android:name=".WidgetClipboardActivity" android:exported="false" android:theme="@style/WidgetClipboardTheme" android:excludeFromRecents="true" android:noHistory="true" android:taskAffinity="" />
         <receiver android:name=".CommandWidget" android:exported="false" android:label="@string/command_widget_name">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /><action android:name="android.intent.action.CONFIGURATION_CHANGED" /><action android:name="android.intent.action.MY_PACKAGE_REPLACED" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/command_widget" />

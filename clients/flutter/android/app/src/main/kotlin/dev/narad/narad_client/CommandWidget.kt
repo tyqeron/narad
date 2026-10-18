@@ -40,7 +40,8 @@ class CommandWidget : AppWidgetProvider() {
             val token=prefs.getString("$id.nonce",null) ?: return null
             if(!valid(context,id) || token!=intent.getStringExtra("widget_nonce"))return null
             val action=intent.getStringExtra("widget_action") ?: return null
-            if(!DeviceWidgetModel.known(action))return null
+            val platform=prefs.getString("$id.platform","") ?: ""
+            if(DeviceWidgetModel.actionsFor(platform).none{it.id==action})return null
             val peer=prefs.getString("$id.peer",null) ?: return null
             intent.action=null // consumed once; activity recreation cannot repeat a lock/transfer
             return mapOf("peer_id" to peer,"action" to action)
@@ -72,11 +73,11 @@ class CommandWidget : AppWidgetProvider() {
             views.setRemoteAdapter(R.id.widget_actions,adapter)
             views.setEmptyView(R.id.widget_actions,R.id.widget_empty)
             // Mutable is required only for the collection's action fill-in. Component,
-            // URI and private nonce are fixed; MainActivity validates before dispatch.
-            val template=Intent(context,MainActivity::class.java).setAction(ACTION).setData(Uri.parse("narad://widget/$id"))
-                .putExtra("widget_nonce",nonce(context,id)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            // URI and per-widget nonce stay fixed and the receiver revalidates each click.
+            val template=Intent(context,WidgetActionReceiver::class.java).setAction(ACTION).setData(Uri.parse("narad://widget/$id"))
+                .putExtra("widget_nonce",nonce(context,id))
             val mutable=if(android.os.Build.VERSION.SDK_INT>=31)PendingIntent.FLAG_MUTABLE else 0
-            views.setPendingIntentTemplate(R.id.widget_actions,PendingIntent.getActivity(context,id,template,mutable or PendingIntent.FLAG_UPDATE_CURRENT))
+            views.setPendingIntentTemplate(R.id.widget_actions,PendingIntent.getBroadcast(context,id,template,mutable or PendingIntent.FLAG_UPDATE_CURRENT))
             AppWidgetManager.getInstance(context).updateAppWidget(id,views)
             AppWidgetManager.getInstance(context).notifyAppWidgetViewDataChanged(id,R.id.widget_actions)
         }

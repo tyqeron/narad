@@ -148,19 +148,25 @@ for the system-enforced lock and authentication requirements.
 ## Home-screen device widget
 
 Long-press an empty area of your home screen, choose **Widgets → Narad Devices**,
-and place the widget. Select a paired device: its actions appear immediately as
-a scrollable list with icons. No command preset is required to configure it.
-Resize the widget to show more rows; the header shows the selected device and
-its authenticated online/offline status. The gear changes devices and Refresh
-checks connections.
+and place the widget. The device picker shows each paired device, its platform
+and online/offline status; the picker follows the app's selected theme. Choose
+one device per widget. Its actions appear as a scrollable list with icons. No
+command preset is required to configure it. Resize the widget to show more
+rows; its header shows the selected device and authenticated connection status.
+The gear changes devices and Refresh checks connections.
 
-The widget offers the same actions as the device menu: files, clipboard, audio,
-camera, browsing, commands, locking, supported unlock requests, device settings
-and unpairing. File pickers, clipboard input, command selection, media and
-confirmation dialogs open in Narad for that selected device. Receiver-side
-permissions still apply. Offline communication actions are disabled; settings
-and unpair remain available. Windows does not offer remote unlock. Existing
-command widgets migrate to the device-action layout using their selected peer.
+The widget offers files, clipboard, audio, camera, browsing, commands, locking,
+supported unlock requests, device settings and unpairing. Find, lock and unlock
+requests run in the background, so tapping them does not open Narad. Send
+clipboard reads the current text and offers it to the selected device without
+opening an editor. Android briefly brings a transparent handoff activity to the
+foreground because Android only allows clipboard reads while an app has focus;
+the clipboard text is not shown in that activity. File pickers, command
+selection, media controls, device settings and unpair confirmation open their
+relevant Narad screen. Receiver-side permissions still apply. Offline
+communication actions are disabled; settings and unpair remain available.
+Windows does not offer remote unlock. Existing command widgets migrate to the
+device-action layout using their selected peer.
 
 The foreground-service notification remains ongoing while Narad runs. It shows
 connected-device count and names, with the full list when expanded. Only paired

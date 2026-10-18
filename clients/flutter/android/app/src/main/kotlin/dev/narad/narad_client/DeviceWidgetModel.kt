@@ -19,6 +19,7 @@ object DeviceWidgetModel {
     }
     fun enabled(action:String,online:Boolean)=online || action=="settings" || action=="unpair"
     fun known(action:String)=actions.any{it.id==action}
+    fun runsInBackground(action:String)=action in setOf("clipboard","find","lock","unlock")
     fun title(names:List<String>)=when(names.size){0->"Narad · No devices connected";1->"Narad · 1 device connected";else->"Narad · ${names.size} devices connected"}
     fun details(names:List<String>)=if(names.isEmpty())"Ready for your paired devices" else "Connected to "+names.sortedWith(String.CASE_INSENSITIVE_ORDER).joinToString(", ")
 }

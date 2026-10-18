@@ -22,6 +22,7 @@ class DeviceWidgetActionsService:RemoteViewsService() {
                 val views=RemoteViews(packageName,R.layout.widget_action_row)
                 val foreground=android.graphics.Color.parseColor(if(CommandWidget.dark(this@DeviceWidgetActionsService))"#E0F5ED" else "#123B34")
                 views.setTextViewText(R.id.widget_action_label,action.label)
+                views.setContentDescription(R.id.widget_action_row,"Run " + action.label)
                 views.setTextColor(R.id.widget_action_label,foreground)
                 views.setImageViewResource(R.id.widget_action_icon,when(action.id){
                     "phone"->R.drawable.widget_phone;"file"->R.drawable.widget_file;"clipboard"->R.drawable.widget_clipboard;"audio","microphone"->R.drawable.widget_audio

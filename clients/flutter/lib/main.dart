@@ -2271,13 +2271,11 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   Future<void> _sendClipboard(String peer) async {
     final current = await Clipboard.getData(Clipboard.kTextPlain);
     if (!mounted) return;
-    final text = await _input(
-      'Send clipboard',
-      'Review text before sending',
-      multiline: true,
-      initial: current?.text ?? '',
-    );
-    if (text == null || text.isEmpty) return;
+    final text = current?.text;
+    if (text == null || text.isEmpty) {
+      _notice('No text is available in the current clipboard');
+      return;
+    }
     await _command({'op': 'send_clipboard', 'peer_id': peer, 'text': text});
     _notice('Clipboard offered for approval');
   }
