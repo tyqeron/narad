@@ -297,3 +297,13 @@ pending native-provider jobs all enforce the selection; unpairing clears it.
 Backend two-peer isolation, preference migration, revocation, TLS upload/download
 and UI checkbox refresh tests cover the change. Windows/iOS native runtime QA
 remains subject to the platform limits recorded above.
+
+
+Build 15 validation: analyzer clean; 58 Flutter tests and 34 Rust workspace tests
+passed, with strict Linux/Windows Rust lint checks. Both real TLS folder tests
+passed, including assignment revocation and registering an existing directory for
+a device. Universal APK verification passed and `0.1.0+15` installed on the Xiaomi
+tablet with both pairings retained. The device-specific directory heading, app
+Shared folder checkbox and directory-picker action were verified in the installed
+release without changing sharing permissions. The Linux installer passed all seven
+disposable install/upgrade/startup checks; APK, installer and archive checksums pass.
