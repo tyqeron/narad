@@ -55,7 +55,8 @@ copies the matching Rust backend through CMake. The Windows runner is x64.
 6. Open **Device settings** to allow the paired device's capabilities. File and
    clipboard grants persist, so subsequent deliveries do not ask again. The
    desktop app must remain running for automatic clipboard writes and media.
-7. Add files to Settings' **Shared folder** for permitted browsing/downloads.
+7. Use **Media → Shared folders** to select directories for permitted browsing/downloads.
+   Uploads also need the folder upload switch and the peer's separate upload grant.
    Configure command presets on the target Windows PC; peers can run only those
    presets, via `cmd.exe /D /S /C`, as the signed-in account. Unix shell commands
    need equivalent Windows commands (`echo`, `dir`, etc.). Commands have a ten-second

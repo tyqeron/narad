@@ -259,3 +259,26 @@ record selected remote PCM tracks and mux AAC with recorded video; Linux generat
 WebRTC/audio/video integration passed. Android generated-media mux QA passed on the Xiaomi tablet: H.264 video and AAC
 audio decoded and the generated tone was verified. Windows/iOS runtime QA remains unverified. Camera-only sessions
 continue to record video only.
+
+
+### Build 14 delivery and checks
+
+- Universal Android `0.1.0+14` built and installed successfully on the Xiaomi
+  tablet with existing data/pairings retained. The normal Devices screen and all
+  four navigation destinations were verified through release accessibility output.
+  APK verification passed for ARM64/ARMv7/x86_64 backends and 16 aligned 64-bit
+  native libraries.
+- 57 Flutter tests passed (one opt-in hardware case skipped), analyzer clean;
+  32 Rust workspace tests passed. Windows Rust cross-check and strict Clippy passed.
+- Selected-folder uploads/downloads, persistence, overwrite rejection and revocation
+  passed real two-daemon TLS integration. The full pre-AV integration run passed
+  17 enabled scenarios; final camera-only, media revocation and AV grant/signaling
+  tests also passed after the media changes.
+- Linux generated WebRTC tone → selected-track PCM → AAC/MP4 recording passed;
+  both tracks decoded and the tone was detected. Android generated-video/PCM →
+  AAC/MP4 muxing passed on the tablet with both tracks decoded and tone detected.
+  These component tests do not claim a new physical phone-to-tablet AV recording
+  test. Update both endpoints to use the new camera-with-audio session flag.
+- Linux release bundle and self-extracting installer built; all seven disposable
+  installer/startup/upgrade checks passed. Windows native GUI
+  recording/runtime QA and iOS compilation/device/provider QA remain outstanding.

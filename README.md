@@ -15,7 +15,7 @@ See [implementation status](docs/IMPLEMENTATION_STATUS.md).
 Build an installable APK with `./scripts/build-android.sh`, then install
 `dist/narad-android-release.apk` on each Android 8.0+ phone or tablet. The backend
 starts inside the app. On the same Wi-Fi, select **Send pairing request** under
-Nearby devices, then **Accept request** in the receiver’s Inbox.
+Nearby devices, then **Accept request** in the receiver’s Devices tab.
 
 See [Android setup and multi-device testing](docs/ANDROID.md) for build requirements,
 installation, device checks, and troubleshooting.
@@ -72,25 +72,34 @@ on TCP 45700 binds only to loopback and requires a private token.
 
 ## Use the app
 
+Navigate between **Devices**, **Media**, **Activity** and **Settings**.
+
 1. Under **Nearby devices**, select **Send pairing request**. On the receiver,
-   open **Inbox**, recognize the device and compare the displayed code, then
+   open **Devices**, recognize the device and compare the displayed code, then
    select **Accept request**. Both devices pair automatically. No code entry or
    QR scan is needed. Invitations and QR remain available as a fallback.
 2. Paired devices are grouped into **Online** and **Offline** using authenticated
-   connection checks. Open **Device settings** on a paired device to allow what
+   connection checks. Select a paired device to open its action screen; the
+   top-right settings button controls permissions. Allow what
    that device may do on this one: files, clipboard, audio, camera, browsing,
    command presets, locking and unlocking. Grants persist across restarts;
    enabled capabilities do not ask for another app approval on each request.
-3. Without a persistent file grant, accept a file in Inbox and retry **Send / resume**.
+3. Without a persistent file grant, accept a file in Devices and retry **Send / resume**.
    With the grant, the first send transfers automatically. Completed files appear
    under `.narad/downloads/<transfer-id>/<file-name>`; Android has **Save to device**.
-4. Use **Settings → Shared folder** to add files that permitted peers can browse
-   and download. This folder is separate from private identity and settings data.
+4. Use **Media → Shared folders → Share a directory** to select folders that
+   permitted peers can browse and download. Uploads require both **Allow uploads**
+   on the folder and the peer’s upload permission. Existing files are preserved.
    Configure command presets in Settings on the target device; peers can execute
    those presets, with a ten-second limit, rather than submitting arbitrary commands.
 5. Enable the required adapter in **Media** for audio or camera, grant the peer
-   access, and keep both clients foregrounded. Stop or revoke to end a stream.
-   Clipboard sending is manual; granted deliveries are applied automatically.
+   access, then select an online device in the camera or speaker/microphone section.
+   **Camera with audio** additionally requires the source microphone grant and
+   sharing switch; recordings include that session’s audio. Android media can
+   continue through its foreground service; iOS requires Narad to remain visible.
+   Enable **Settings → Automatic clipboard sync** on participating devices and
+   grant clipboard access per peer. Android publishes clipboard changes while
+   Narad has focus. Stop or revoke access to end communication.
 6. Android locking needs optional device-admin activation. Unlock requests open
    a notification leading to system authentication; a PIN/password is never bypassed.
    Linux session controls use `loginctl` and depend on the desktop session.

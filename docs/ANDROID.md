@@ -15,24 +15,25 @@ armeabi-v7a and x86_64. Each installation creates its own Keystore-wrapped ident
    a recognizable name using **Rename device**.
 3. Find device B under **Nearby devices** on A and select **Send pairing request**.
    A shows the pending request and verification code; it can cancel the request.
-4. On B, open **Inbox** (or **Review request** from its incoming notice). Recognize
+4. On B, open **Devices** and review the incoming request. Recognize
    the requesting device, compare the displayed verification code, and select
    **Accept request**. Both devices connect automatically; no invitation, code
    entry or camera is required. **Decline** leaves them unpaired. Requests expire
    in five minutes. Update Narad on both devices to use nearby requests.
 5. Devices lists **Nearby**, then paired **Online** and **Offline** groups. Open
-   **Device settings** on A's entry for B to allow what B may do on A. Permissions
+   B's action screen on A, then its top-right settings button, to allow what B may do on A. Permissions
    persist across restarts. Enable **File transfer**, then send a small file from B:
    it transfers without another acceptance prompt. Without that grant, accept in
-   A's Inbox and retry **Send / resume** on B. Use **Save to device** to export it.
+   A's Devices tab and retry **Send / resume** on B. Use **Save to device** to export it.
 6. Enable **Clipboard** for automatic delivery of manually sent text. Enable
    **Play shared audio**, **Share this device’s microphone** and/or **Camera**
    grants and the relevant adapter in **Media**; allow
    the Android microphone/camera prompt while Narad is visible. Sharing can then
    continue in the background with an ongoing notification. **View camera** requests
    the other device's camera without capturing your own microphone.
-7. In Settings, add files to **Shared folder** for permitted peers to browse and
-   download. Browsing is restricted to this app-managed folder. Configure command
+7. In **Media → Shared folders**, select a directory with the system picker.
+   Permitted peers can browse/download it. Uploads require the folder upload
+   switch and the peer’s separate upload grant. Configure command
    presets on the target; permitted peers can run only those presets, within the
    app's Android sandbox, with a ten-second deadline and bounded output.
 8. Granting **Lock device** offers Android's device-admin activation screen (only
@@ -221,3 +222,12 @@ no GPS tracking or offline wake-up. See [Find device](FIND_DEVICE.md) for platfo
 requirements, local Stop controls and volume/DND limitations.
 
 Phone speaker playback and meeting microphone/camera setup: [Meeting devices](MEETING.md).
+
+
+Build 14 moves pending pairing/file/clipboard approvals into Devices and transfer
+progress into Activity. Selecting a paired device opens its action screen; device
+permissions live in the top-right settings button. Media has separate camera,
+speaker/microphone and shared-directory sections. Enable Automatic clipboard sync
+in Settings on both participants; Android reads source clipboard changes only
+while Narad has focus. Camera with audio requires the camera source's microphone
+sharing switch and microphone grant, separately from camera access.
