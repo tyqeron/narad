@@ -1933,144 +1933,169 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
 
   Future<void> _permissions(Map<String, dynamic> peer) async {
     if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, update) => AlertDialog(
-          scrollable: true,
-          title: Text('Permissions · ${peer['device_name']}'),
-          content: SizedBox(
-            width: 440,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Allow what this paired device can do on this device. Enabled permissions are saved and communication proceeds without repeated approval prompts.',
-                ),
-                for (final entry in {
-                  if (_data['device']['platform'] == 'android') ...{
-                    'contacts.read': 'Share contacts',
-                    'notification.read': 'Share phone notifications',
-                    'notification.manage': 'Dismiss phone notifications',
-                    'notification.reply': 'Reply to phone notifications',
-                    'notification.action':
-                        'Use phone notification action buttons',
-                    'sms.read': 'Read SMS messages',
-                    'sms.send': 'Send SMS through this phone',
-                    'calls.read': 'Read call history and live call state',
-                    'calls.control': 'Place, answer and end calls',
-                  },
-                  if (_data['device']['platform'] == 'ios') ...{
-                    'contacts.read': 'Share permitted iPhone contacts',
-                    'sms.send': 'Open SMS composer here (confirm on iPhone)',
-                    'calls.control':
-                        'Open call requests here (confirm on iPhone)',
-                  },
-                  'device.find': 'Ring this device (Find device)',
-                  'file.transfer': 'Receive files automatically',
-                  'clipboard.sync': 'Apply shared clipboard automatically',
-                  'audio.output': 'Play shared audio',
-                  'audio.input': 'Share this device’s microphone',
-                  'camera.stream': 'Share this device’s camera',
-                  'file.browse': 'Browse and download shared folders',
-                  'file.upload': 'Upload files into shared folders',
-                  if (_data['device']['platform'] != 'ios')
-                    'command.run': 'Run configured command presets',
-                  if (_data['device']['platform'] != 'ios')
-                    'device.lock': 'Lock this device',
-                  if (_data['device']['platform'] != 'windows' &&
-                      _data['device']['platform'] != 'ios')
-                    'device.unlock':
-                        'Request unlock (device authentication required)',
-                }.entries)
-                  SwitchListTile(
-                    title: Text(entry.value),
-                    value:
-                        ((_data['automatic_permissions']
-                                    as Map?)?['${peer['device_id']}/${entry.key}'] ??
-                                false)
-                            as bool,
-                    onChanged: (allow) async {
-                      try {
-                        if (allow &&
-                            entry.key == 'camera.stream' &&
-                            _android != null &&
-                            !await _android!.ensureCameraPermission()) {
-                          _notice(
-                            'Camera permission is required to share this camera.',
-                          );
-                          return;
-                        }
-                        if (allow &&
-                            entry.key == 'device.lock' &&
-                            _android != null &&
-                            !await _android!.ensureDeviceAdmin()) {
-                          _notice(
-                            'Device administrator access is required to lock Android.',
-                          );
-                          return;
-                        }
-                        await _command({
-                          'op': 'permission',
-                          'peer_id': peer['device_id'],
-                          'capability': entry.key,
-                          'allow': allow,
-                        });
-                        if (allow && entry.key == 'audio.output') {
-                          await _audio?.setEnabled(true);
-                        }
-                        if (allow && entry.key == 'audio.input') {
-                          await _audio?.setMicrophoneEnabled(true);
-                        }
-                        if (allow && entry.key == 'camera.stream') {
-                          await _audio?.setCameraEnabled(true);
-                        }
-                        await _refresh();
-                        if (context.mounted) update(() {});
-                      } catch (error) {
-                        _showError(error);
-                      }
-                    },
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => Scaffold(
+          appBar: AppBar(title: const Text('Device settings')),
+          body: StatefulBuilder(
+            builder: (context, update) => SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Card(
+                    child: ListTile(
+                      leading: const CircleAvatar(
+                        child: Icon(Icons.devices_outlined),
+                      ),
+                      title: Text(peer['device_name'] as String),
+                      subtitle: Text('${peer['platform']} · Paired device'),
+                    ),
                   ),
-                const Divider(),
-                const Text('Directories shared with this device'),
-                const Text(
-                  'Only selected folders are visible. Browse and upload permissions above still apply.',
-                ),
-                _folderAccessTile(
-                  'default',
-                  'App Shared folder',
-                  peer,
-                  context,
-                  update,
-                ),
-                for (final folder
-                    in (_data['shared_folders'] as List? ?? []).cast<Map>())
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 20, 4, 8),
+                    child: Text(
+                      'Permissions',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(4, 0, 4, 8),
+                    child: Text(
+                      'Choose what this device can do. These grants are remembered, so approved actions do not need another prompt.',
+                    ),
+                  ),
+                  for (final entry in {
+                    if (_data['device']['platform'] == 'android') ...{
+                      'contacts.read': 'Share contacts',
+                      'notification.read': 'Share phone notifications',
+                      'notification.manage': 'Dismiss phone notifications',
+                      'notification.reply': 'Reply to phone notifications',
+                      'notification.action':
+                          'Use phone notification action buttons',
+                      'sms.read': 'Read SMS messages',
+                      'sms.send': 'Send SMS through this phone',
+                      'calls.read': 'Read call history and live call state',
+                      'calls.control': 'Place, answer and end calls',
+                    },
+                    if (_data['device']['platform'] == 'ios') ...{
+                      'contacts.read': 'Share permitted iPhone contacts',
+                      'sms.send': 'Open SMS composer here (confirm on iPhone)',
+                      'calls.control':
+                          'Open call requests here (confirm on iPhone)',
+                    },
+                    'device.find': 'Ring this device (Find device)',
+                    'file.transfer': 'Receive files automatically',
+                    'clipboard.sync': 'Apply shared clipboard automatically',
+                    'audio.output': 'Play shared audio',
+                    'audio.input': 'Share this device’s microphone',
+                    'camera.stream': 'Share this device’s camera',
+                    'file.browse': 'Browse and download shared folders',
+                    'file.upload': 'Upload files into shared folders',
+                    if (_data['device']['platform'] != 'ios')
+                      'command.run': 'Run configured command presets',
+                    if (_data['device']['platform'] != 'ios')
+                      'device.lock': 'Lock this device',
+                    if (_data['device']['platform'] != 'windows' &&
+                        _data['device']['platform'] != 'ios')
+                      'device.unlock':
+                          'Request unlock (device authentication required)',
+                  }.entries)
+                    Card(
+                      child: SwitchListTile(
+                        title: Text(entry.value),
+                        value:
+                            ((_data['automatic_permissions']
+                                        as Map?)?['${peer['device_id']}/${entry.key}'] ??
+                                    false)
+                                as bool,
+                        onChanged: (allow) async {
+                          try {
+                            if (allow &&
+                                entry.key == 'camera.stream' &&
+                                _android != null &&
+                                !await _android!.ensureCameraPermission()) {
+                              _notice(
+                                'Camera permission is required to share this camera.',
+                              );
+                              return;
+                            }
+                            if (allow &&
+                                entry.key == 'device.lock' &&
+                                _android != null &&
+                                !await _android!.ensureDeviceAdmin()) {
+                              _notice(
+                                'Device administrator access is required to lock Android.',
+                              );
+                              return;
+                            }
+                            await _command({
+                              'op': 'permission',
+                              'peer_id': peer['device_id'],
+                              'capability': entry.key,
+                              'allow': allow,
+                            });
+                            if (allow && entry.key == 'audio.output') {
+                              await _audio?.setEnabled(true);
+                            }
+                            if (allow && entry.key == 'audio.input') {
+                              await _audio?.setMicrophoneEnabled(true);
+                            }
+                            if (allow && entry.key == 'camera.stream') {
+                              await _audio?.setCameraEnabled(true);
+                            }
+                            await _refresh();
+                            if (context.mounted) update(() {});
+                          } catch (error) {
+                            _showError(error);
+                          }
+                        },
+                      ),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 24, 4, 8),
+                    child: Text(
+                      'Shared directories',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(4, 0, 4, 8),
+                    child: Text(
+                      'Only directories selected below are visible to this device. File browsing and upload permissions must also be enabled above.',
+                    ),
+                  ),
                   _folderAccessTile(
-                    folder['id'] as String,
-                    folder['label'] as String,
+                    'default',
+                    'App Shared folder',
                     peer,
                     context,
                     update,
                   ),
-                TextButton.icon(
-                  onPressed: () => _run(() async {
-                    await _shareDirectory(peerId: peer['device_id'] as String);
-                    await _refresh();
-                    if (context.mounted) update(() {});
-                  }),
-                  icon: const Icon(Icons.create_new_folder_outlined),
-                  label: const Text('Share a directory with this device'),
-                ),
-              ],
+                  for (final folder
+                      in (_data['shared_folders'] as List? ?? []).cast<Map>())
+                    _folderAccessTile(
+                      folder['id'] as String,
+                      folder['label'] as String,
+                      peer,
+                      context,
+                      update,
+                    ),
+                  OutlinedButton.icon(
+                    onPressed: () => _run(() async {
+                      await _shareDirectory(
+                        peerId: peer['device_id'] as String,
+                      );
+                      await _refresh();
+                      if (context.mounted) update(() {});
+                    }),
+                    icon: const Icon(Icons.create_new_folder_outlined),
+                    label: const Text('Share a directory with this device'),
+                  ),
+                ],
+              ),
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Done'),
-            ),
-          ],
         ),
       ),
     );

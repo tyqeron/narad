@@ -24,7 +24,7 @@ object PhoneBridge {
         .put("contacts",granted(c,Manifest.permission.READ_CONTACTS))
         .put("notifications",NaradNotificationListener.connected())
         .put("sms_read",granted(c,Manifest.permission.READ_SMS)).put("sms_send",granted(c,Manifest.permission.SEND_SMS))
-        .put("call_logs",granted(c,Manifest.permission.READ_CALL_LOG)).put("call_control",NaradInCallService.isDefault(c))
+        .put("call_logs",granted(c,Manifest.permission.READ_CALL_LOG)).put("call_permission",granted(c,Manifest.permission.CALL_PHONE)).put("call_control",NaradInCallService.isDefault(c))
         .put("cellular_audio","Bluetooth hands-free required; cellular audio is not carried over Narad Wi-Fi")
     fun poll(c:Context) {
         LocalBackendClient.call(c,JSONObject().put("op","phone_bridge_ready").put("support",support(c)))

@@ -523,10 +523,12 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Device settings and permissions'));
       await tester.pumpAndSettle();
+      expect(find.text('Device settings'), findsOneWidget);
       expect(find.byType(SwitchListTile), findsNWidgets(11));
       expect(find.text('Share this device’s camera'), findsOneWidget);
       expect(find.text('Share this device’s microphone'), findsOneWidget);
       expect(find.text('Ring this device (Find device)'), findsOneWidget);
+      await tester.ensureVisible(find.text('Receive files automatically'));
       await tester.tap(find.text('Receive files automatically'));
       await tester.pumpAndSettle();
       expect(
