@@ -266,7 +266,48 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     _phoneSync?.dispose();
     _clipboardSync?.dispose();
     if (_desktop != null) {
-      _phoneSync = PhoneSync(api, _desktop!.phoneNotification);
+      _phoneSync = PhoneSync(
+        api,
+        _desktop!.phoneNotification,
+        cancel: _desktop!.cancelPhoneNotification,
+      );
+      _desktop!.onNotificationAction = (id, action, reply) async {
+        try {
+          if (action == 'reply' && reply == null) {
+            await _desktop!.show();
+            if (!mounted) return;
+            final text = TextEditingController();
+            try {
+              reply = await showDialog<String>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Reply to notification'),
+                  content: TextField(
+                    controller: text,
+                    maxLength: 2000,
+                    autofocus: true,
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancel'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(context, text.text),
+                      child: const Text('Send'),
+                    ),
+                  ],
+                ),
+              );
+            } finally {
+              text.dispose();
+            }
+          }
+          await _phoneSync?.act(id, action, reply: reply);
+        } catch (error) {
+          if (mounted) _showError(error);
+        }
+      };
     }
     _connectionGeneration++;
     _restoredMedia = false;
@@ -1912,6 +1953,8 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                     'notification.read': 'Share phone notifications',
                     'notification.manage': 'Dismiss phone notifications',
                     'notification.reply': 'Reply to phone notifications',
+                    'notification.action':
+                        'Use phone notification action buttons',
                     'sms.read': 'Read SMS messages',
                     'sms.send': 'Send SMS through this phone',
                     'calls.read': 'Read call history and live call state',

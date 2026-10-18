@@ -1,6 +1,7 @@
 #include "desktop_integration.h"
 #include <glib/gstdio.h>
 #include <string>
+#include <cstring>
 
 namespace {
 gchar *autostart_path() {
@@ -72,6 +73,17 @@ bool set_autostart(bool enabled, GError **error) {
   return true;
 }
 void show_phone(GSimpleAction*,GVariant*,gpointer app){g_application_activate(G_APPLICATION(app));}
+void notification_action(GSimpleAction*, GVariant* parameter, gpointer app) {
+  const gchar* target=g_variant_get_string(parameter,nullptr);
+  const gchar* separator=strchr(target, ':');
+  if(!separator)return;
+  auto* channel=static_cast<FlMethodChannel*>(g_object_get_data(G_OBJECT(app),"narad-desktop-channel"));
+  if(!channel)return;
+  g_autoptr(FlValue) args=fl_value_new_map();
+  fl_value_set_string_take(args,"id",fl_value_new_int(g_ascii_strtoll(target,nullptr,10)));
+  fl_value_set_string_take(args,"action",fl_value_new_string(separator+1));
+  fl_method_channel_invoke_method(channel,"notificationAction",args,nullptr,nullptr,nullptr);
+}
 void handle(FlMethodChannel *, FlMethodCall *call, gpointer user_data) {
   const gchar *method = fl_method_call_get_name(call);
   g_autoptr(FlMethodResponse) response = nullptr;
@@ -96,17 +108,39 @@ void handle(FlMethodChannel *, FlMethodCall *call, gpointer user_data) {
           fl_method_error_response_new("autostart", error->message, nullptr));
     else
       response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else if (g_strcmp0(method, "show") == 0) {
+    g_application_activate(G_APPLICATION(user_data));
+    response=FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+  } else if (g_strcmp0(method, "cancelPhoneNotification") == 0) {
+    FlValue* args=fl_method_call_get_args(call);
+    FlValue* id=args && fl_value_get_type(args)==FL_VALUE_TYPE_MAP?fl_value_lookup_string(args,"id"):nullptr;
+    if(id && fl_value_get_type(id)==FL_VALUE_TYPE_INT) {
+      auto key=std::string("narad-phone-")+std::to_string(fl_value_get_int(id));
+      g_application_withdraw_notification(G_APPLICATION(user_data),key.c_str());
+    }
+    response=FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
   } else if (g_strcmp0(method, "phoneNotification") == 0) {
     FlValue* args=fl_method_call_get_args(call);
     FlValue* title=args && fl_value_get_type(args)==FL_VALUE_TYPE_MAP?fl_value_lookup_string(args,"title"):nullptr;
     FlValue* text=args && fl_value_get_type(args)==FL_VALUE_TYPE_MAP?fl_value_lookup_string(args,"text"):nullptr;
-    if(!title || !text || fl_value_get_type(title)!=FL_VALUE_TYPE_STRING || fl_value_get_type(text)!=FL_VALUE_TYPE_STRING) {
+    FlValue* id=args?fl_value_lookup_string(args,"id"):nullptr;
+    if(!id || fl_value_get_type(id)!=FL_VALUE_TYPE_INT || !title || !text || fl_value_get_type(title)!=FL_VALUE_TYPE_STRING || fl_value_get_type(text)!=FL_VALUE_TYPE_STRING) {
       response=FL_METHOD_RESPONSE(fl_method_error_response_new("arguments","Expected notification text",nullptr));
     } else {
       g_autoptr(GNotification) notification=g_notification_new(fl_value_get_string(title));
       g_notification_set_body(notification,fl_value_get_string(text));
       g_notification_set_default_action(notification,"app.show");
-      g_application_send_notification(G_APPLICATION(user_data),"narad-phone",notification);
+      FlValue* actions=fl_value_lookup_string(args,"actions");
+      if(actions && fl_value_get_type(actions)==FL_VALUE_TYPE_MAP) {
+        for(size_t i=0;i<fl_value_get_length(actions);i++) {
+          FlValue* key=fl_value_get_map_key(actions,i);FlValue* label=fl_value_get_map_value(actions,i);
+          if(fl_value_get_type(key)!=FL_VALUE_TYPE_STRING || fl_value_get_type(label)!=FL_VALUE_TYPE_STRING)continue;
+          auto target=std::to_string(fl_value_get_int(id))+":"+fl_value_get_string(key);
+          g_notification_add_button_with_target(notification,fl_value_get_string(label),"app.notification-action","s",target.c_str());
+        }
+      }
+      auto key=std::string("narad-phone-")+std::to_string(fl_value_get_int(id));
+      g_application_send_notification(G_APPLICATION(user_data),key.c_str(),notification);
       response=FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
     }
   } else if (g_strcmp0(method, "quit") == 0) {
@@ -124,6 +158,11 @@ void narad_register_desktop(FlView *view, GtkApplication *application) {
     g_signal_connect(action,"activate",G_CALLBACK(show_phone),application);
     g_action_map_add_action(G_ACTION_MAP(application),G_ACTION(action));
     g_object_unref(action);
+  }
+  if(!g_action_map_lookup_action(G_ACTION_MAP(application),"notification-action")) {
+    GSimpleAction* action=g_simple_action_new("notification-action",G_VARIANT_TYPE_STRING);
+    g_signal_connect(action,"activate",G_CALLBACK(notification_action),application);
+    g_action_map_add_action(G_ACTION_MAP(application),G_ACTION(action));g_object_unref(action);
   }
   g_autoptr(FlStandardMethodCodec) codec = fl_standard_method_codec_new();
   g_autoptr(FlMethodChannel) channel = fl_method_channel_new(

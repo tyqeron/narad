@@ -120,14 +120,22 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
   test(
-    'desktop sync deduplicates alerts and keeps bodies out of banners',
+    'desktop mirrors full content, updates, actions and withdrawal',
     () async {
       final api = PhoneApi();
       var now = DateTime(2026);
-      final banners = <String>[];
-      final sync = PhoneSync(api, (title, text) async {
-        banners.add('$title $text');
-      }, clock: () => now);
+      final banners = <PhoneNotice>[];
+      final removed = <int>[];
+      final sync = PhoneSync(
+        api,
+        (n) async {
+          banners.add(n);
+        },
+        cancel: (id) async {
+          removed.add(id);
+        },
+        clock: () => now,
+      );
       final status = {
         'paired': {
           'phone': {'peer': peer},
@@ -136,21 +144,98 @@ void main() {
           'phone': {'online': true},
         },
       };
-      await sync.tick(status);
+      Future<void> tick() async {
+        now = now.add(const Duration(seconds: 11));
+        await sync.tick(status);
+      }
+
+      await tick();
+      expect(banners.first.title, 'Generated app : Test phone');
+      expect(banners.first.body, 'Private fixture\nfixture body');
+      final id = banners.first.id;
       banners.clear();
-      api.notifications.add({
-        'key': 'new',
-        'app': 'Generated app',
-        'text': 'SECRET',
+      api.notifications.first['text'] = 'Updated full content';
+      api.notifications.first['dismissible'] = true;
+      api.notifications.first['reply'] = true;
+      api.notifications.first['actions'] = [
+        {'id': 'opaque', 'title': 'Archive'},
+      ];
+      await tick();
+      expect(banners.single.id, id);
+      expect(banners.single.body, contains('Updated full content'));
+      expect(banners.single.actions, {
+        'reply': 'Reply',
+        'opaque': 'Archive',
+        'dismiss': 'Dismiss',
+      });
+      await tick();
+      expect(banners, hasLength(1));
+      expect(
+        api.commands.where((c) => c['kind'] == 'notification_action'),
+        isEmpty,
+      );
+      await sync.act(id, 'unknown');
+      expect(
+        api.commands.where((c) => c['kind'] == 'notification_action'),
+        isEmpty,
+      );
+      await sync.act(id, 'opaque');
+      expect(api.commands.last['kind'], 'notification_action');
+      expect(api.commands.last['args'], {'key': 'old', 'action': 'opaque'});
+      await sync.act(id, 'opaque');
+      expect(
+        api.commands.where((c) => c['kind'] == 'notification_action'),
+        hasLength(1),
+      );
+      expect(removed, contains(id));
+      api.notifications.first['text'] = 'Another update';
+      await tick();
+      final updated = banners.last;
+      await sync.act(updated.id, 'reply', reply: 'Generated reply');
+      expect(api.commands.last['args'], {
+        'key': 'old',
+        'text': 'Generated reply',
+      });
+      api.notifications.first['text'] = 'Before revocation';
+      await tick();
+      final stale = banners.last.id;
+      api.denied = true;
+      await tick();
+      expect(removed, contains(stale));
+      final calls = api.commands.length;
+      await sync.act(stale, 'dismiss');
+      expect(api.commands, hasLength(calls));
+      sync.dispose();
+    },
+  );
+  test(
+    'offline devices withdraw their notifications and disable buttons',
+    () async {
+      final api = PhoneApi();
+      var now = DateTime(2026);
+      final notices = <PhoneNotice>[];
+      final removed = <int>[];
+      final sync = PhoneSync(
+        api,
+        (n) async {
+          notices.add(n);
+        },
+        cancel: (id) async {
+          removed.add(id);
+        },
+        clock: () => now,
+      );
+      await sync.tick({
+        'paired': {
+          'phone': {'peer': peer},
+        },
+        'presence': {
+          'phone': {'online': true},
+        },
       });
       now = now.add(const Duration(seconds: 11));
-      await sync.tick(status);
-      expect(banners, hasLength(1));
-      expect(banners.single, contains('Generated app'));
-      expect(banners.single, isNot(contains('SECRET')));
-      now = now.add(const Duration(seconds: 11));
-      await sync.tick(status);
-      expect(banners, hasLength(1));
+      await sync.tick({'paired': {}, 'presence': {}});
+      expect(removed, containsAll(notices.map((n) => n.id)));
       sync.dispose();
     },
   );

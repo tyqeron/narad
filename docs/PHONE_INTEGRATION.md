@@ -39,8 +39,11 @@ delivery receipts and SIM selection within Narad are not implemented.
 
 Linux and Windows use the same phone panel. Android can also view another paired
 Android phone. Background desktop and Android polling reports new notifications
-and ringing calls with generic banners that omit message bodies. Existing alerts
-are visible in the phone panel; startup does not replay every old notification.
+and ringing calls with full notification titles and bodies in OS banners. Notification
+actions and **Dismiss** buttons use separate per-device grants, and changed alerts
+update in place. Startup quietly mirrors current alerts; withdrawals, offline devices
+and revoked read access clear their OS entries. Replies use native Android RemoteInput
+and Windows inline input; Linux opens a short reply composer in Narad.
 Mirrored Narad notifications are excluded to prevent forwarding loops. OS banner
 appearance and sound remain controlled by system notification settings.
 

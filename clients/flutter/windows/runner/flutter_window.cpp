@@ -9,14 +9,6 @@
 
 #include "flutter/generated_plugin_registrant.h"
 
-static std::wstring PhoneWide(const std::string& text) {
-  const int count=MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,text.data(),static_cast<int>(text.size()),nullptr,0);
-  if(count<=0)return L"";
-  std::wstring wide(count,L'\0');
-  MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,text.data(),static_cast<int>(text.size()),wide.data(),count);
-  return wide;
-}
-
 FlutterWindow::FlutterWindow(const flutter::DartProject &project)
     : project_(project) {}
 
@@ -108,18 +100,10 @@ bool FlutterWindow::OnCreate() {
         result->Success();
       else
         result->Error("autostart", error);
-    } else if (call.method_name() == "phoneNotification") {
-      const auto* args=call.arguments()?std::get_if<flutter::EncodableMap>(call.arguments()):nullptr;
-      if(!args){result->Error("arguments","Expected notification text");return;}
-      const auto title=args->find(flutter::EncodableValue("title"));
-      const auto text=args->find(flutter::EncodableValue("text"));
-      const auto* title_text=title==args->end()?nullptr:std::get_if<std::string>(&title->second);
-      const auto* body_text=text==args->end()?nullptr:std::get_if<std::string>(&text->second);
-      if(!title_text || !body_text){result->Error("arguments","Expected notification text");return;}
-      NOTIFYICONDATAW icon{};icon.cbSize=sizeof(icon);icon.hWnd=GetHandle();icon.uID=1;icon.uFlags=NIF_INFO;icon.dwInfoFlags=NIIF_INFO;
-      const auto wide_title=PhoneWide(*title_text);const auto wide_text=PhoneWide(*body_text);
-      wcsncpy_s(icon.szInfoTitle,wide_title.c_str(),_TRUNCATE);wcsncpy_s(icon.szInfo,wide_text.c_str(),_TRUNCATE);
-      Shell_NotifyIconW(NIM_MODIFY,&icon);result->Success();
+    } else if (call.method_name() == "show") {
+      ShowWindow(GetHandle(), SW_SHOW);
+      SetForegroundWindow(GetHandle());
+      result->Success();
     } else if (call.method_name() == "quit") {
       quitting_ = true;
       result->Success();

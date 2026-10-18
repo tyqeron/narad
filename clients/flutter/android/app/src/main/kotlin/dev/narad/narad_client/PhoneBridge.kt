@@ -59,6 +59,7 @@ object PhoneBridge {
         when(kind) {
             "contacts_list" -> {requirePermission(c,Manifest.permission.READ_CONTACTS);return PhoneContacts.list(c,args)}
             "notifications" -> return JSONObject().put("items",NaradNotificationListener.list())
+            "notification_action" -> {claim(c,id);NaradNotificationListener.perform(c,args.getString("key"),args.getString("action"));return JSONObject()}
             "notification_dismiss" -> {NaradNotificationListener.dismiss(args.getString("key"));return JSONObject()}
             "notification_reply" -> {val text=args.getString("text");require(text.isNotBlank() && text.length<=2000);claim(c,id);NaradNotificationListener.reply(c,args.getString("key"),text);return JSONObject()}
             "sms_list" -> {

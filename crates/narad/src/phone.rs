@@ -5,11 +5,12 @@ use narad_core::model::{now, Peer};
 use serde_json::{json, Value};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::Mutex;
-pub const CAPABILITIES: [&str; 8] = [
+pub const CAPABILITIES: [&str; 9] = [
     "contacts.read",
     "notification.read",
     "notification.manage",
     "notification.reply",
+    "notification.action",
     "sms.read",
     "sms.send",
     "calls.read",
@@ -30,6 +31,7 @@ pub fn capability(kind: &str) -> Result<&'static str> {
         "notifications" => "notification.read",
         "notification_dismiss" => "notification.manage",
         "notification_reply" => "notification.reply",
+        "notification_action" => "notification.action",
         "sms_list" => "sms.read",
         "sms_send" => "sms.send",
         "calls_list" | "call_state" => "calls.read",
@@ -141,6 +143,7 @@ pub async fn local(shared: Arc<Mutex<State>>, p: &Value) -> Result<Value> {
                 ("notification.read", "notifications"),
                 ("notification.manage", "notifications"),
                 ("notification.reply", "notifications"),
+                ("notification.action", "notifications"),
                 ("sms.read", "sms_read"),
                 ("sms.send", "sms_send"),
                 ("calls.read", "call_logs"),

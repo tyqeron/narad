@@ -57,6 +57,7 @@ add_subdirectory("runner")
 # them to the application.
 include(flutter/generated_plugins.cmake)
 include("${CMAKE_CURRENT_SOURCE_DIR}/../native/camera_capture.cmake")
+include("${CMAKE_CURRENT_SOURCE_DIR}/../native/phone_notifications.cmake")
 
 
 # === Installation ===
