@@ -320,6 +320,7 @@ def main():
                     subprocess.run(adb + ['shell', '-T', 'run-as', PACKAGE, 'tee', shared_path], input=data, stdout=subprocess.DEVNULL, check=True)
                     cleanup.append(lambda: run('shell', 'run-as', PACKAGE, 'rm', '-f', shared_path))
                     phone(op='permission', peer_id=host_id, capability='file.browse', allow=True)
+                    phone(op='share_access', id='default', peer_id=host_id, allow=True)
                     entries = desktop(op='browse_peer', peer_id=phone_id, path='')['entries']
                     assert any(e['name'] == shared_name for e in entries)
                     download = desktop(op='download_shared', peer_id=phone_id, path=shared_name)

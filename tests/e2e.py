@@ -199,6 +199,7 @@ class NaradIntegration(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,"permission denied"):
             self.a.call(op="browse_peer", peer_id=self.bid, path="")
         self.b.call(op="permission", peer_id=self.aid, capability="file.browse", allow=True)
+        self.b.call(op="share_access", id="default", peer_id=self.aid, allow=True)
         files = self.a.call(op="browse_peer", peer_id=self.bid, path="")["entries"]
         self.assertEqual([f["name"] for f in files], ["hello.txt"])
         for path in ["../api-token", "escape", "/etc/passwd"]:
@@ -216,7 +217,7 @@ class NaradIntegration(unittest.TestCase):
         selected.mkdir()
         source = self.root / "generated.bin"
         source.write_bytes(bytes(range(256)) * 1025)
-        folder = self.b.call(op="share_add", path=str(selected), label="Exchange")["id"]
+        folder = self.b.call(op="share_add", path=str(selected), label="Exchange", peer_id=self.aid)["id"]
         mount = "@" + folder
         self.b.call(op="permission", peer_id=self.aid, capability="file.browse", allow=True)
         listing = self.a.call(op="browse_peer", peer_id=self.bid, path="")
@@ -231,6 +232,14 @@ class NaradIntegration(unittest.TestCase):
             self.a.call(op="upload_shared", peer_id=self.bid, path=mount, source=str(source))
         downloaded = self.a.call(op="download_shared", peer_id=self.bid, path=mount + "/" + source.name)
         self.assertEqual(Path(downloaded["path"]).read_bytes(), source.read_bytes())
+        self.b.call(op="share_access", id=folder, peer_id=self.aid, allow=False)
+        self.assertFalse(self.a.call(op="browse_peer", peer_id=self.bid, path="")["entries"])
+        with self.assertRaises(RuntimeError):
+            self.a.call(op="read_shared", peer_id=self.bid, path=mount + "/" + source.name, offset=0)
+        with self.assertRaises(RuntimeError):
+            self.a.call(op="upload_shared", peer_id=self.bid, path=mount, source=str(source))
+        existing=self.b.call(op="share_add", path=str(selected), label="Exchange", peer_id=self.aid)["id"]
+        self.assertEqual(existing,folder)
         self.b.stop()
         self.b.start()
         self.assertEqual(self.b.call(op="status")["shared_folders"][0]["id"], folder)

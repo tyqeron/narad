@@ -74,12 +74,26 @@ fn mount(s: &State, path: &str) -> Result<(SharedFolder, String)> {
             path: s.dir.join("shared").to_string_lossy().into(),
             documents: false,
             upload: true,
+            devices: s.preferences.default_share_devices.clone(),
         },
         path.into(),
     ))
 }
 fn allowed(s: &State, peer: &Peer, folder: &SharedFolder, cap: &str) -> Result<()> {
     s.trust.authorize(peer, cap, true)?;
+    ensure!(
+        if folder.id == "default" {
+            s.preferences
+                .default_share_devices
+                .contains(&peer.device_id)
+        } else {
+            s.preferences
+                .shares
+                .iter()
+                .any(|f| f.id == folder.id && f.devices.contains(&peer.device_id))
+        },
+        "This folder is not shared with this device"
+    );
     if folder.id != "default" {
         ensure!(
             s.preferences.shares.iter().any(|f| f.id == folder.id
@@ -216,7 +230,9 @@ pub async fn browse(
         s.trust.authorize(peer, "file.browse", true)?;
         mount(&s, path)?
     };
-    let mut entries = if folder.documents {
+    let mut entries = if path.is_empty() && !folder.devices.contains(&peer.device_id) {
+        vec![]
+    } else if folder.documents {
         let r = native(
             shared.clone(),
             peer,
@@ -267,7 +283,12 @@ pub async fn browse(
     }
     if path.is_empty() {
         let s = shared.lock().await;
-        for f in &s.preferences.shares {
+        for f in s
+            .preferences
+            .shares
+            .iter()
+            .filter(|f| f.devices.contains(&peer.device_id))
+        {
             entries.push(json!({"name":f.label,"path":format!("@{}",f.id),"directory":true,"mount":true,"upload":f.upload,"size":0}));
         }
     }
@@ -282,10 +303,26 @@ pub async fn browse(
         truncated = true;
     }
     let mut s = shared.lock().await;
-    allowed(&s, peer, &folder, "file.browse")?;
+    s.trust.authorize(peer, "file.browse", true)?;
+    if path.is_empty() {
+        entries.retain(|entry| {
+            if entry["mount"] == true {
+                s.preferences.shares.iter().any(|f| {
+                    entry["path"] == format!("@{}", f.id) && f.devices.contains(&peer.device_id)
+                })
+            } else {
+                s.preferences
+                    .default_share_devices
+                    .contains(&peer.device_id)
+            }
+        });
+    }
+    if !path.is_empty() {
+        allowed(&s, peer, &folder, "file.browse")?;
+    }
     s.note_presence(&peer.device_id, true);
     Ok(
-        json!({"ok":true,"path":path,"entries":entries,"truncated":truncated,"upload":folder.upload && s.trust.authorize(peer,"file.upload",true).is_ok()}),
+        json!({"ok":true,"path":path,"entries":entries,"truncated":truncated,"upload":allowed(&s,peer,&folder,"file.upload").is_ok()}),
     )
 }
 pub async fn read(shared: Arc<Mutex<State>>, peer: &Peer, p: &Value, file: bool) -> Result<Value> {
@@ -380,10 +417,11 @@ pub async fn local(shared: Arc<Mutex<State>>, p: &Value) -> Result<Value> {
     let mut s = shared.lock().await;
     match op {
         "share_add" => {
-            ensure!(
-                s.preferences.shares.len() < 16,
-                "At most 16 folders can be shared"
-            );
+            let mut devices = std::collections::BTreeSet::new();
+            if let Some(peer) = p["peer_id"].as_str() {
+                s.peer(peer)?;
+                devices.insert(peer.to_string());
+            }
             let label = string(p, "label")?;
             ensure!(
                 !label.trim().is_empty()
@@ -409,9 +447,24 @@ pub async fn local(shared: Arc<Mutex<State>>, p: &Value) -> Result<Value> {
                 );
                 path.to_string_lossy().into()
             };
+            if let Some(existing) = s
+                .preferences
+                .shares
+                .iter_mut()
+                .find(|f| f.path == path && f.documents == documents)
+            {
+                ensure!(
+                    !devices.is_empty(),
+                    "Folder is already shared. Choose devices for it."
+                );
+                existing.devices.extend(devices);
+                let id = existing.id.clone();
+                s.save_preferences()?;
+                return Ok(json!({"ok":true,"id":id}));
+            }
             ensure!(
-                !s.preferences.shares.iter().any(|f| f.path == path),
-                "Folder is already shared"
+                s.preferences.shares.len() < 16,
+                "At most 16 folders can be shared"
             );
             let folder = SharedFolder {
                 id: uuid::Uuid::new_v4().to_string(),
@@ -419,6 +472,7 @@ pub async fn local(shared: Arc<Mutex<State>>, p: &Value) -> Result<Value> {
                 path,
                 documents,
                 upload: p["upload"].as_bool().unwrap_or(false),
+                devices,
             };
             let id = folder.id.clone();
             s.preferences.shares.push(folder);
@@ -428,6 +482,32 @@ pub async fn local(shared: Arc<Mutex<State>>, p: &Value) -> Result<Value> {
         "share_remove" => {
             let id = string(p, "id")?;
             s.preferences.shares.retain(|f| f.id != id);
+            s.save_preferences()?;
+            Ok(json!({"ok":true}))
+        }
+        "share_access" => {
+            let id = string(p, "id")?;
+            let peer = string(p, "peer_id")?;
+            s.peer(peer)?;
+            let allow = p["allow"]
+                .as_bool()
+                .context("Expected folder access decision")?;
+            let devices = if id == "default" {
+                &mut s.preferences.default_share_devices
+            } else {
+                &mut s
+                    .preferences
+                    .shares
+                    .iter_mut()
+                    .find(|f| f.id == id)
+                    .context("Shared folder removed")?
+                    .devices
+            };
+            if allow {
+                devices.insert(peer.into());
+            } else {
+                devices.remove(peer);
+            }
             s.save_preferences()?;
             Ok(json!({"ok":true}))
         }
@@ -646,6 +726,12 @@ async fn send_upload(shared: Arc<Mutex<State>>, p: &Value) -> Result<Value> {
 mod tests {
     use super::*;
     use narad_core::{identity::Identity, model::TrustRecord};
+    #[test]
+    fn older_folder_preferences_require_explicit_device_selection() {
+        let preferences:crate::preferences::Preferences=serde_json::from_value(json!({"shares":[{"id":"old","label":"Old folder","path":"/fixture","documents":false,"upload":true}]})).unwrap();
+        assert!(preferences.shares[0].devices.is_empty());
+        assert!(preferences.default_share_devices.is_empty());
+    }
     fn setup() -> (tempfile::TempDir, Arc<Mutex<State>>, Peer, PathBuf) {
         let temp = tempfile::tempdir().unwrap();
         let folder = temp.path().join("selected");
@@ -676,15 +762,84 @@ mod tests {
         (temp, Arc::new(Mutex::new(s)), peer, folder)
     }
     async fn share(s: Arc<Mutex<State>>, folder: &Path, upload: bool) -> String {
+        let peer = s.lock().await.trust.peers.keys().next().unwrap().clone();
         local(
             s,
-            &json!({"op":"share_add","path":folder,"label":"Selected","upload":upload}),
+            &json!({"op":"share_add","path":folder,"label":"Selected","upload":upload,"peer_id":peer}),
         )
         .await
         .unwrap()["id"]
             .as_str()
             .unwrap()
             .into()
+    }
+    #[tokio::test]
+    async fn folder_selection_is_device_scoped_and_revokes_direct_reads() {
+        let (_temp, s, peer, folder) = setup();
+        std::fs::write(folder.join("private.txt"), b"selected peer only").unwrap();
+        let other = Identity::generate()
+            .unwrap()
+            .peer("Other".into(), "127.0.0.1".into(), 46004);
+        {
+            let mut state = s.lock().await;
+            state.trust.peers.insert(
+                other.device_id.clone(),
+                TrustRecord {
+                    peer: other.clone(),
+                    paired_at: now(),
+                },
+            );
+            for cap in ["file.browse", "file.upload"] {
+                state.trust.permissions.insert(
+                    narad_core::policy::permission_key(&other.device_id, cap),
+                    true,
+                );
+            }
+        }
+        let id = share(s.clone(), &folder, true).await;
+        // Select a deterministic peer rather than relying on map ordering in the helper.
+        local(
+            s.clone(),
+            &json!({"op":"share_access","id":id,"peer_id":other.device_id,"allow":false}),
+        )
+        .await
+        .unwrap();
+        local(
+            s.clone(),
+            &json!({"op":"share_access","id":id,"peer_id":peer.device_id,"allow":true}),
+        )
+        .await
+        .unwrap();
+        let path = format!("@{id}/private.txt");
+        assert!(read(s.clone(), &peer, &json!({"path":path}), false)
+            .await
+            .is_ok());
+        assert!(read(s.clone(), &other, &json!({"path":path}), false)
+            .await
+            .is_err());
+        assert!(browse(s.clone(), &other, &json!({"path":""}), false)
+            .await
+            .unwrap()["entries"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert!(upload(s.clone(),&other,&json!({"op":"shared_upload_begin","id":uuid::Uuid::new_v4(),"path":format!("@{id}"),"name":"test.txt","size":0,"checksum":blake3::hash(b"").to_hex().to_string()}),false).await.is_err());
+        local(
+            s.clone(),
+            &json!({"op":"share_access","id":id,"peer_id":peer.device_id,"allow":false}),
+        )
+        .await
+        .unwrap();
+        assert!(read(s.clone(), &peer, &json!({"path":path}), false)
+            .await
+            .is_err());
+        let state = s.lock().await;
+        let saved: crate::preferences::Preferences = narad_core::storage::load_encrypted(
+            &state.dir.join("preferences.enc"),
+            &state.identity.storage_key(),
+        )
+        .unwrap();
+        assert!(saved.shares[0].devices.is_empty());
     }
     #[tokio::test]
     async fn mounts_are_persistent_scoped_and_exclude_private_state() {
@@ -799,7 +954,7 @@ mod tests {
     async fn native_document_jobs_recheck_folder_and_peer_permission() {
         let (_temp, s, peer, _folder) = setup();
         s.lock().await.own.platform = "android".into();
-        let id=local(s.clone(),&json!({"op":"share_add","path":"content://fixture/tree/selected","label":"Documents","documents":true})).await.unwrap()["id"].as_str().unwrap().to_string();
+        let id=local(s.clone(),&json!({"op":"share_add","path":"content://fixture/tree/selected","label":"Documents","documents":true,"peer_id":peer.device_id})).await.unwrap()["id"].as_str().unwrap().to_string();
         let target = format!("@{id}");
         let cloned = s.clone();
         let p = peer.clone();
@@ -810,9 +965,12 @@ mod tests {
             .unwrap();
         let job = &jobs["jobs"][0];
         assert_eq!(job["root"], "content://fixture/tree/selected");
-        local(s.clone(), &json!({"op":"share_remove","id":id}))
-            .await
-            .unwrap();
+        local(
+            s.clone(),
+            &json!({"op":"share_access","id":id,"peer_id":peer.device_id,"allow":false}),
+        )
+        .await
+        .unwrap();
         assert!(local(
             s.clone(),
             &json!({"op":"storage_result","id":job["id"],"result":{"ok":true,"entries":[]}})

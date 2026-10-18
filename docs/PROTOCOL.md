@@ -285,3 +285,17 @@ camera readiness and permission plus microphone readiness and an existing automa
 the requester rejects mismatched responses. Microphone disable/revocation closes
 source AV sessions and each subsequent source session operation rechecks microphone
 permission. Camera-only offers do not negotiate or record an audio track.
+
+
+### Device-scoped directory selection (build 15)
+
+Each selected folder persists a `devices` set of paired peer IDs.
+`share_add` accepts optional `peer_id` to select that device immediately; choosing
+an existing directory for another device extends its device set. Without a peer,
+a new folder starts unassigned. `share_access {id,peer_id,allow}` changes one
+folder/device assignment. `id:default` controls the legacy app Shared folder;
+status includes its `default_share_devices`. Capability grants still apply.
+Unselected mounts are hidden, and direct-path reads, uploads, in-flight native jobs
+and upload publication all recheck the device selection. Unpairing clears those
+assignments. Older preferences migrate to no selected devices; users must explicitly
+choose devices after upgrading. This preserves the directories and their contents.
