@@ -1749,6 +1749,10 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
               name: peer['device_name'] as String,
               status: _status,
               settings: () => _permissions(peer).catchError(_showError),
+              loadInfo: () async {
+                final response = await _api!.call({'op': 'device_info', 'peer_id': id});
+                return Map<String, dynamic>.from(response as Map);
+              },
               actions: [
                 for (final entry in _deviceActions(peer).entries)
                   DeviceAction(
@@ -2059,6 +2063,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                           'Open call requests here (confirm on iPhone)',
                     },
                     'device.find': 'Ring this device (Find device)',
+                    'device.info': 'Share battery, cellular and network status',
                     'file.transfer': 'Receive files automatically',
                     'clipboard.sync': 'Apply shared clipboard automatically',
                     'audio.output': 'Play shared audio',

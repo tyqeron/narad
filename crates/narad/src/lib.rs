@@ -6,6 +6,7 @@ mod phone;
 mod preferences;
 mod sharing;
 mod state;
+mod telemetry;
 pub mod transport;
 
 use anyhow::{ensure, Context, Result};

@@ -7,7 +7,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
+import android.os.BatteryManager
+import android.content.IntentFilter
 import android.provider.ContactsContract
 import android.provider.CallLog
 import android.provider.Telephony
@@ -26,6 +30,24 @@ object PhoneBridge {
         .put("sms_read",granted(c,Manifest.permission.READ_SMS)).put("sms_send",granted(c,Manifest.permission.SEND_SMS))
         .put("call_logs",granted(c,Manifest.permission.READ_CALL_LOG)).put("call_permission",granted(c,Manifest.permission.CALL_PHONE)).put("call_control",NaradInCallService.isDefault(c))
         .put("cellular_audio","Bluetooth hands-free required; cellular audio is not carried over Narad Wi-Fi")
+        .put("battery",battery(c)).put("network",network(c))
+    private fun battery(c:Context):JSONObject {
+        val intent=c.registerReceiver(null,IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        if(intent==null)return JSONObject().put("available",false)
+        val level=intent.getIntExtra(BatteryManager.EXTRA_LEVEL,-1);val scale=intent.getIntExtra(BatteryManager.EXTRA_SCALE,-1)
+        val percent=if(level>=0 && scale>0)level*100/scale else -1
+        val status=intent.getIntExtra(BatteryManager.EXTRA_STATUS,-1)
+        return JSONObject().put("available",percent>=0).put("percent",if(percent>=0)percent else JSONObject.NULL).put("charging",status==BatteryManager.BATTERY_STATUS_CHARGING || status==BatteryManager.BATTERY_STATUS_FULL)
+    }
+    private fun network(c:Context):JSONObject {
+        val manager=c.getSystemService(ConnectivityManager::class.java);val active=manager.activeNetwork;val caps=active?.let{manager.getNetworkCapabilities(it)}
+        val wifi=caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)==true;val cellular=caps?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)==true;val ethernet=caps?.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)==true
+        val interfaces=JSONArray()
+        if(wifi)interfaces.put(JSONObject().put("type","wifi").put("state","connected"))
+        if(cellular)interfaces.put(JSONObject().put("type","cellular").put("state","connected"))
+        if(ethernet)interfaces.put(JSONObject().put("type","ethernet").put("state","connected"))
+        return JSONObject().put("interfaces",interfaces).put("cellular",JSONObject().put("available",cellular).put("connected",cellular)).put("validated",caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)==true)
+    }
     fun poll(c:Context) {
         LocalBackendClient.call(c,JSONObject().put("op","phone_bridge_ready").put("support",support(c)))
         if(!enabled(c))return

@@ -39,6 +39,7 @@ pub async fn remote(
             | "command"
             | "device_action"
             | "device_action_status"
+            | "device_info"
     ) {
         return handler::remote(&mut *shared.lock().await, peer, payload, file_plane);
     }
@@ -53,6 +54,7 @@ pub async fn remote(
             "unlock" => "device.unlock",
             _ => anyhow::bail!("unsupported device action"),
         },
+        "device_info" => "device.info",
         _ => "",
     };
     {
@@ -66,6 +68,16 @@ pub async fn remote(
         if op == "command_list" {
             return Ok(
                 json!({"ok":true,"commands":state.commands.values().map(|c|json!({"id":c.id,"label":c.label})).collect::<Vec<_>>()}),
+            );
+        }
+        if op == "device_info" {
+            let phone = if state.phone_seen > 0 && now().saturating_sub(state.phone_seen) < 15 {
+                Some(state.phone_support.clone())
+            } else {
+                None
+            };
+            return Ok(
+                json!({"ok":true,"device":state.own,"battery":crate::telemetry::battery(phone.as_ref()),"network":crate::telemetry::network(&state.own.address, phone.as_ref())}),
             );
         }
         if op == "device_action_status" {
@@ -413,6 +425,41 @@ pub async fn download(shared: Arc<Mutex<State>>, payload: &Value) -> Result<Valu
 mod tests {
     use super::*;
     use narad_core::{identity::Identity, model::TrustRecord, policy::permission_key};
+    #[tokio::test]
+    async fn device_information_requires_a_per_device_grant() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut state = State::load(
+            directory.path().join("state"),
+            "Info test".into(),
+            "127.0.0.1".into(),
+            46000,
+        )
+        .unwrap();
+        let peer = Identity::generate()
+            .unwrap()
+            .peer("Peer".into(), "127.0.0.1".into(), 46002);
+        state.trust.peers.insert(
+            peer.device_id.clone(),
+            TrustRecord {
+                peer: peer.clone(),
+                paired_at: now(),
+            },
+        );
+        let shared = Arc::new(Mutex::new(state));
+        let request = json!({"op":"device_info"});
+        assert!(remote(shared.clone(), &peer, &request, false)
+            .await
+            .is_err());
+        handler::local(shared.clone(), json!({"op":"permission","peer_id":peer.device_id,"capability":"device.info","allow":true,"automatic":true})).await.unwrap();
+        let response = remote(shared.clone(), &peer, &request, false)
+            .await
+            .unwrap();
+        assert!(response["battery"].is_object());
+        assert!(response["network"].is_object());
+        handler::local(shared.clone(), json!({"op":"permission","peer_id":peer.device_id,"capability":"device.info","allow":false})).await.unwrap();
+        assert!(remote(shared, &peer, &request, false).await.is_err());
+    }
+
     #[tokio::test]
     async fn native_actions_recheck_permissions_after_dispatch() {
         let directory = tempfile::tempdir().unwrap();
