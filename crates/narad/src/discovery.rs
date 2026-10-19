@@ -71,6 +71,7 @@ pub fn start(peer: &Peer, peers: Discovered) -> Result<ServiceDaemon> {
                                     "audio.output",
                                     "audio.input",
                                     "camera.stream",
+                                    "screen.view",
                                     "file.browse",
                                     "command.run",
                                     "device.find",

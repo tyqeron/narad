@@ -97,6 +97,8 @@ pub struct State {
     pub phone_seen: u64,
     pub media_ready: bool,
     pub camera_ready: bool,
+    pub screen_ready: bool,
+    pub screen_seen: u64,
     pub microphone_ready: bool,
     pub outgoing_media: HashSet<String>,
     pub presence: BTreeMap<String, Presence>,
@@ -220,6 +222,8 @@ impl State {
             phone_seen: 0,
             media_ready: false,
             camera_ready: false,
+            screen_ready: false,
+            screen_seen: 0,
             microphone_ready: false,
             outgoing_media: HashSet::new(),
             presence: BTreeMap::new(),
@@ -403,6 +407,17 @@ impl State {
     }
     pub fn expire(&mut self) {
         let t = now();
+        if self.screen_ready && t.saturating_sub(self.screen_seen) > 15 {
+            self.screen_ready = false;
+            self.own.capabilities.retain(|c| c != "screen.view");
+            for session in self
+                .sessions
+                .values_mut()
+                .filter(|s| s.capability == "screen.view")
+            {
+                session.close();
+            }
+        }
         if (self.media_ready || self.camera_ready || self.microphone_ready)
             && t.saturating_sub(self.media_seen) > 15
         {
@@ -418,7 +433,11 @@ impl State {
                     s.close();
                 }
             }
-            self.signals.clear();
+            self.signals.retain(|signal| {
+                self.sessions
+                    .get(&signal.session_id)
+                    .is_some_and(|s| s.capability == "screen.view")
+            });
         }
         self.outgoing_media.retain(|id| {
             self.sessions

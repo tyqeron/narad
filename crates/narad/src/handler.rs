@@ -28,6 +28,7 @@ pub(crate) fn number(v: &Value, key: &str) -> Result<u64> {
 fn media_capability(payload: &Value) -> Result<&'static str> {
     match payload["kind"].as_str() {
         Some("camera") => Ok("camera.stream"),
+        Some("screen") => Ok("screen.view"),
         Some("microphone") => Ok("audio.input"),
         Some("audio") => Ok("audio.output"),
         None if payload["kind"].is_null() => Ok("audio.output"),
@@ -44,6 +45,7 @@ fn capability(v: &Value) -> Result<&str> {
             "audio.output",
             "audio.input",
             "camera.stream",
+            "screen.view",
             "file.browse",
             "file.upload",
             "command.run",
@@ -308,6 +310,7 @@ pub fn remote(s: &mut State, peer: &Peer, p: &Value, file_plane: bool) -> Result
             ensure!(
                 match cap {
                     "camera.stream" => s.camera_ready,
+                    "screen.view" => s.screen_ready,
                     "audio.input" => s.microphone_ready,
                     _ => s.media_ready,
                 },
@@ -348,6 +351,7 @@ pub fn remote(s: &mut State, peer: &Peer, p: &Value, file_plane: bool) -> Result
                 .clone();
             ensure!(
                 match cap.as_str() {
+                    "screen.view" => s.screen_ready,
                     "camera.stream" =>
                         s.camera_ready || (s.outgoing_media.contains(id) && s.media_ready),
                     "audio.input" if !s.outgoing_media.contains(id) => s.microphone_ready,
@@ -449,7 +453,7 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
             let offset = p["offset"].as_u64().unwrap_or(0) as usize;
             let clipboard=s.clipboard.values().skip(offset).take(32).map(|c|json!({"id":c.id,"peer_id":c.peer_id,"status":c.status,"preview":c.text.chars().take(160).collect::<String>(),"expires_at":c.expires_at})).collect::<Vec<_>>();
             Ok(
-                json!({"ok":true,"device":s.own,"paired":s.trust.peers.iter().skip(offset).take(32).collect::<std::collections::BTreeMap<_,_>>(),"automatic_permissions":s.trust.automatic.iter().skip(offset).take(256).collect::<std::collections::BTreeMap<_,_>>(),"presence":s.presence,"shared_transfers":s.shared_transfer_activity.values().collect::<Vec<_>>(),"downloads_directory":State::downloads_directory(&s.dir),"shared_directory":s.dir.join("shared"),"clipboard_sync":s.preferences.clipboard_sync,"shared_folders":s.preferences.shares,"default_share_devices":s.preferences.default_share_devices,"commands":s.commands.values().collect::<Vec<_>>(),"permissions":s.trust.permissions.iter().skip(offset).take(96).collect::<std::collections::BTreeMap<_,_>>(),"pairings":s.pairings.values().skip(offset).take(32).collect::<Vec<_>>(),"transfers":s.transfers.values().skip(offset).take(32).collect::<Vec<_>>(),"sessions":s.sessions.values().skip(offset).take(32).collect::<Vec<_>>(),"clipboard":clipboard,"events":s.events.iter().rev().take(100).collect::<Vec<_>>(),"outbound":s.outbound.values().skip(offset).take(32).collect::<Vec<_>>(),"media_ready":s.media_ready,"camera_ready":s.camera_ready,"microphone_ready":s.microphone_ready,"offset":offset,"has_more":([s.trust.peers.len(),s.pairings.len(),s.transfers.len(),s.sessions.len(),s.clipboard.len(),s.outbound.len()].into_iter().max().unwrap_or(0)>offset+32)}),
+                json!({"ok":true,"device":s.own,"paired":s.trust.peers.iter().skip(offset).take(32).collect::<std::collections::BTreeMap<_,_>>(),"automatic_permissions":s.trust.automatic.iter().skip(offset).take(256).collect::<std::collections::BTreeMap<_,_>>(),"presence":s.presence,"shared_transfers":s.shared_transfer_activity.values().collect::<Vec<_>>(),"downloads_directory":State::downloads_directory(&s.dir),"shared_directory":s.dir.join("shared"),"clipboard_sync":s.preferences.clipboard_sync,"shared_folders":s.preferences.shares,"default_share_devices":s.preferences.default_share_devices,"commands":s.commands.values().collect::<Vec<_>>(),"permissions":s.trust.permissions.iter().skip(offset).take(96).collect::<std::collections::BTreeMap<_,_>>(),"pairings":s.pairings.values().skip(offset).take(32).collect::<Vec<_>>(),"transfers":s.transfers.values().skip(offset).take(32).collect::<Vec<_>>(),"sessions":s.sessions.values().skip(offset).take(32).collect::<Vec<_>>(),"clipboard":clipboard,"events":s.events.iter().rev().take(100).collect::<Vec<_>>(),"outbound":s.outbound.values().skip(offset).take(32).collect::<Vec<_>>(),"media_ready":s.media_ready,"screen_ready":s.screen_ready,"camera_ready":s.camera_ready,"microphone_ready":s.microphone_ready,"offset":offset,"has_more":([s.trust.peers.len(),s.pairings.len(),s.transfers.len(),s.sessions.len(),s.clipboard.len(),s.outbound.len()].into_iter().max().unwrap_or(0)>offset+32)}),
             )
         }
         "command_set" => {
@@ -641,7 +645,15 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
                     s.approve_file(&transfer)?;
                 }
             }
-            if automatic && ["audio.output", "audio.input", "camera.stream"].contains(&cap) {
+            if automatic
+                && [
+                    "audio.output",
+                    "audio.input",
+                    "camera.stream",
+                    "screen.view",
+                ]
+                .contains(&cap)
+            {
                 for session in s.sessions.values_mut().filter(|t| {
                     t.peer_id == id && t.capability == cap && t.state == SessionState::Requested
                 }) {
@@ -802,6 +814,25 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
             }
             Ok(ok())
         }
+        "screen_ready" => {
+            s.screen_ready = p["ready"].as_bool().unwrap_or(false);
+            s.screen_seen = now();
+            if s.screen_ready {
+                if !s.own.capabilities.iter().any(|c| c == "screen.view") {
+                    s.own.capabilities.push("screen.view".into());
+                }
+            } else {
+                s.own.capabilities.retain(|c| c != "screen.view");
+                for session in s
+                    .sessions
+                    .values_mut()
+                    .filter(|s| s.capability == "screen.view")
+                {
+                    session.close();
+                }
+            }
+            Ok(ok())
+        }
         "media_ready" => {
             s.media_ready = p["audio_ready"]
                 .as_bool()
@@ -862,8 +893,13 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
                 s.trust.authorize(&peer, "audio.input", true)?;
             }
             ensure!(
-                ["audio.output", "audio.input", "camera.stream"]
-                    .contains(&session.capability.as_str())
+                [
+                    "audio.output",
+                    "audio.input",
+                    "camera.stream",
+                    "screen.view"
+                ]
+                .contains(&session.capability.as_str())
                     && session.state == SessionState::Requested,
                 "media is not awaiting approval"
             );
@@ -885,7 +921,14 @@ pub async fn local(shared: Arc<Mutex<State>>, p: Value) -> Result<Value> {
             Ok(ok())
         }
         "media_events" => {
-            let signals = std::mem::take(&mut s.signals);
+            let screen = p["kind"] == "screen";
+            let pending = std::mem::take(&mut s.signals);
+            let (signals, remaining): (Vec<_>, Vec<_>) = pending.into_iter().partition(|signal| {
+                s.sessions
+                    .get(&signal.session_id)
+                    .is_some_and(|session| (session.capability == "screen.view") == screen)
+            });
+            s.signals = remaining;
             Ok(json!({"ok":true,"signals":signals}))
         }
         "media_state" => {
@@ -1153,7 +1196,13 @@ async fn outgoing(shared: Arc<Mutex<State>>, op: &str, p: &Value) -> Result<Valu
         let id = string(p, "id")?;
         let capability = &s.sessions.get(id).context("unknown session")?.capability;
         ensure!(
-            ["audio.output", "audio.input", "camera.stream"].contains(&capability.as_str()),
+            [
+                "audio.output",
+                "audio.input",
+                "camera.stream",
+                "screen.view"
+            ]
+            .contains(&capability.as_str()),
             "session is not a media session"
         );
         s.session(id, &peer, capability)?;
@@ -1186,7 +1235,13 @@ async fn outgoing(shared: Arc<Mutex<State>>, op: &str, p: &Value) -> Result<Valu
             .capability
             .clone();
         ensure!(
-            ["audio.output", "audio.input", "camera.stream"].contains(&expected_cap.as_str())
+            [
+                "audio.output",
+                "audio.input",
+                "camera.stream",
+                "screen.view"
+            ]
+            .contains(&expected_cap.as_str())
                 && result["session"]["capability"] == expected_cap
                 && result["session"]["id"] == id
                 && result["session"]["with_audio"].as_bool().unwrap_or(false)
@@ -1322,6 +1377,89 @@ async fn send_file(shared: Arc<Mutex<State>>, p: &Value) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn screen_permissions_and_readiness_are_independent_of_audio() {
+        let (_dir, mut state, peer) = setup();
+        let id = uuid::Uuid::new_v4().to_string();
+        let offer = json!({"op":"media_offer","kind":"screen","id":id});
+        assert!(remote(&mut state, &peer, &offer, false).is_err());
+        state.screen_ready = true;
+        state.screen_seen = now();
+        remote(&mut state, &peer, &offer, false).unwrap();
+        assert_eq!(state.sessions[&id].capability, "screen.view");
+        assert_eq!(state.sessions[&id].state, SessionState::Requested);
+        let shared = Arc::new(Mutex::new(state));
+        local(shared.clone(), json!({"op":"media_accept","id":id}))
+            .await
+            .unwrap();
+        assert_eq!(
+            shared.lock().await.sessions[&id].state,
+            SessionState::Authorized
+        );
+        local(shared.clone(),json!({"op":"permission","peer_id":peer.device_id,"capability":"screen.view","allow":false})).await.unwrap();
+        assert_eq!(
+            shared.lock().await.sessions[&id].state,
+            SessionState::Closed
+        );
+    }
+
+    #[tokio::test]
+    async fn screen_and_camera_signal_consumers_cannot_drain_each_other() {
+        let (_dir, mut state, peer) = setup();
+        let screen = uuid::Uuid::new_v4().to_string();
+        let camera = uuid::Uuid::new_v4().to_string();
+        state
+            .new_session(&screen, &peer.device_id, "screen.view", false)
+            .unwrap();
+        state
+            .new_session(&camera, &peer.device_id, "camera.stream", false)
+            .unwrap();
+        for id in [&screen, &camera] {
+            state.signals.push(Signal {
+                session_id: id.clone(),
+                peer_id: peer.device_id.clone(),
+                data: json!({"type":"candidate"}),
+            });
+        }
+        let shared = Arc::new(Mutex::new(state));
+        let audio = local(shared.clone(), json!({"op":"media_events"}))
+            .await
+            .unwrap();
+        assert_eq!(audio["signals"].as_array().unwrap().len(), 1);
+        assert_eq!(audio["signals"][0]["session_id"], camera);
+        let screen_events = local(shared.clone(), json!({"op":"media_events","kind":"screen"}))
+            .await
+            .unwrap();
+        assert_eq!(screen_events["signals"].as_array().unwrap().len(), 1);
+        assert_eq!(screen_events["signals"][0]["session_id"], screen);
+    }
+
+    #[tokio::test]
+    async fn stopping_audio_readiness_keeps_authorized_screens_alive() {
+        let (_dir, mut state, peer) = setup();
+        state.screen_ready = true;
+        state.screen_seen = now();
+        let id = uuid::Uuid::new_v4().to_string();
+        state
+            .new_session(&id, &peer.device_id, "screen.view", false)
+            .unwrap();
+        let shared = Arc::new(Mutex::new(state));
+        local(shared.clone(), json!({"op":"media_ready","ready":false}))
+            .await
+            .unwrap();
+        assert_eq!(
+            shared.lock().await.sessions[&id].state,
+            SessionState::Requested
+        );
+        local(shared.clone(), json!({"op":"screen_ready","ready":false}))
+            .await
+            .unwrap();
+        assert_eq!(
+            shared.lock().await.sessions[&id].state,
+            SessionState::Closed
+        );
+    }
+
     fn setup() -> (tempfile::TempDir, State, Peer) {
         let d = tempfile::tempdir().unwrap();
         let mut s = State::load(
