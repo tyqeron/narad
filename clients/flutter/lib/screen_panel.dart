@@ -60,8 +60,8 @@ Future<void> shareScreenWith(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Select the new virtual monitor'),
-          content: const Text(
-            'A real secondary monitor has been created. In the next screen picker choose that new virtual monitor, not your main screen. Move windows onto it using your desktop display settings.',
+          content: Text(
+            'A real secondary monitor has been created. In the next screen picker choose ${extension.monitorName ?? 'the new virtual monitor'}. Move windows onto it using your desktop display settings.',
           ),
           actions: [
             TextButton(

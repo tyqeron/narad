@@ -2,12 +2,22 @@
 import importlib.util
 from pathlib import Path
 import unittest
+import tempfile
 
 spec = importlib.util.spec_from_file_location('narad_virtual', Path(__file__).resolve().parents[1] / 'clients/flutter/assets/helpers/screen_virtual_display.py')
 helper = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(helper)
 
 class VirtualOutputTest(unittest.TestCase):
+    def test_concurrent_outputs_have_distinct_registered_app_ids(self):
+        with tempfile.TemporaryDirectory() as directory:
+            one = helper.display_identity(directory)
+            two = helper.display_identity(directory)
+            self.assertNotEqual(one.stem, two.stem)
+            self.assertIn('NoDisplay=true', one.read_text())
+            self.assertIn('Name=Narad display', one.read_text())
+            self.assertEqual(one.parent.name, 'applications')
+
     def test_renumbered_physical_output_is_not_changed(self):
         before = [{'name': 'eDP-1', 'id': 1, 'connected': True}]
         current = [{'name': 'Virtual-narad', 'id': 1, 'connected': True, 'replicationSource': 2},

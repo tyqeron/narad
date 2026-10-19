@@ -8,11 +8,25 @@ import shutil
 import subprocess
 import time
 from collections import Counter
+from pathlib import Path
 
 BUS = 'org.freedesktop.portal.Desktop'
 PATH = '/org/freedesktop/portal/desktop'
 IFACE = 'org.freedesktop.portal.ScreenCast'
 connection = None
+PARENT_PID = os.getppid()
+
+
+def watch_parent(loop):
+    source = GLib.timeout_source_new_seconds(2)
+    def check(*_):
+        if os.getppid() != PARENT_PID:
+            loop.quit()
+            return False
+        return True
+    source.set_callback(check)
+    source.attach(None)
+    return source
 
 
 def property_value(name):
@@ -35,6 +49,7 @@ def request(method, signature, args):
     subscription = connection.signal_subscribe(BUS, 'org.freedesktop.portal.Request', 'Response', path,
                                                None, Gio.DBusSignalFlags.NONE, response)
     timer = GLib.timeout_add_seconds(120, lambda: (loop.quit(), False)[1])
+    watchdog = watch_parent(loop)
     try:
         connection.call_sync(BUS, PATH, IFACE, method, GLib.Variant(signature, args),
                              None, Gio.DBusCallFlags.NONE, 10000, None)
@@ -44,6 +59,7 @@ def request(method, signature, args):
             raise RuntimeError('Virtual display selection was cancelled or unavailable')
         return result[0][1]
     finally:
+        watchdog.destroy()
         connection.signal_unsubscribe(subscription)
         if result:
             GLib.source_remove(timer)
@@ -91,22 +107,33 @@ def extend_new_output(before):
     return configured['name']
 
 
-def main():
-    global Gio, GLib, connection
-    import gi
-    from gi.repository import Gio, GLib
-    connection = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+def display_identity(data_home):
+    app_id = 'dev.narad.narad_client.display' + uuid.uuid4().hex
+    directory = Path(data_home) / 'applications'
+    directory.mkdir(parents=True, exist_ok=True)
+    desktop = directory / (app_id + '.desktop')
+    with desktop.open('x') as entry:
+        entry.write('[Desktop Entry]\nType=Application\nName=Narad display ' + app_id[-6:] +
+                    '\nExec=false\nNoDisplay=true\nIcon=dev.narad.narad_client\n')
+    return desktop
+
+
+def capture(app_id):
+    registered = False
     try:
         # Identify this helper as Narad even when launched from an IDE or shell.
         connection.call_sync(BUS, PATH, 'org.freedesktop.host.portal.Registry',
-                             'Register', GLib.Variant('(sa{sv})', ('dev.narad.narad_client', {})),
+                             'Register', GLib.Variant('(sa{sv})', (app_id, {})),
                              None, Gio.DBusCallFlags.NONE, 5000, None)
+        registered = True
     except GLib.Error:
         pass  # Older portals determine application identity themselves.
     supported = bool(property_value('AvailableSourceTypes') & 4)
     if '--check' in sys.argv:
-        print(json.dumps({'supported': supported}), flush=True)
+        print(json.dumps({'supported': supported and registered}), flush=True)
         return
+    if not registered:
+        raise RuntimeError('The portal cannot register independent Narad displays; update xdg-desktop-portal')
     if not supported:
         raise RuntimeError('This compositor does not provide virtual monitors through the screen portal')
     session = None
@@ -136,7 +163,11 @@ def main():
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, 15, lambda: (loop.quit(), False)[1])
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, 2, lambda: (loop.quit(), False)[1])
         print(json.dumps({'ready': True, 'node': node, 'size': properties.get('size'), 'monitor': monitor}), flush=True)
-        loop.run()
+        watchdog = watch_parent(loop)
+        try:
+            loop.run()
+        finally:
+            watchdog.destroy()
     finally:
         if fd is not None:
             os.close(fd)
@@ -146,6 +177,22 @@ def main():
                                      None, Gio.DBusCallFlags.NONE, 5000, None)
             except GLib.Error:
                 pass  # The portal may have already closed a cancelled session.
+
+
+def main():
+    global Gio, GLib, connection
+    from gi.repository import Gio, GLib
+    connection = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+    if '--check' in sys.argv:
+        capture('dev.narad.narad_client')
+        return
+    # KDE names virtual connectors using the app id. Give each output its own
+    # registered, hidden Narad descriptor so two displays cannot share a layout.
+    desktop = display_identity(os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local/share')))
+    try:
+        capture(desktop.stem)
+    finally:
+        desktop.unlink(missing_ok=True)
 
 
 if __name__ == '__main__':

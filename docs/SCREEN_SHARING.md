@@ -32,8 +32,11 @@ monitor, followed by a second system picker to capture that monitor. Select the
 new virtual output, then arrange windows using desktop display settings. The
 helper needs Python 3, PyGObject/Gio, a running screen-cast portal and PipeWire.
 On KDE, `kscreen-doctor` places it beside existing screens and explicitly disables
-replication. Each session owns and removes its own monitor. GNOME/compositor
-layout behavior depends on its portal implementation; runtime testing covered KDE.
+replication. Each session owns and removes its own monitor.
+Each output uses a temporary hidden application descriptor and a separate portal
+identity to avoid KDE merging the layouts of two virtual outputs. Descriptors
+are removed when the session ends; portal host-registration support is required.
+GNOME/compositor layout behavior depends on its portal implementation; runtime testing covered KDE.
 Cancelling a picker removes any temporary virtual monitor.
 
 Android requires capture consent and a media-projection foreground service with
@@ -53,6 +56,10 @@ silently restart projection after reboot.
   from phone to host and tablet concurrently, stopping one receiver without
   interrupting the other, and a real independent Wayland virtual desktop
   streamed to the phone. RTP statistics confirmed decoded video frames.
+- Two simultaneously created virtual monitors had unique connector names,
+  distinct desktop positions and no replication. Stopping one preserved the
+  other; stopping both removed the monitors and hidden descriptors.
 
 Platform interfaces: [ScreenCast portal](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.ScreenCast.html),
+[portal host registration](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.host.portal.Registry.html),
 [Android media projection](https://developer.android.com/media/grow/media-projection).

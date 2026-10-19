@@ -8,6 +8,7 @@ class ScreenExtension {
   Directory? _directory;
   Process? _process;
   bool _stopping = false;
+  String? monitorName;
   void Function()? onStopped;
 
   Future<String> _helper() async {
@@ -58,7 +59,10 @@ class ScreenExtension {
         .listen((line) {
           try {
             final result = jsonDecode(line) as Map;
-            if (!ready.isCompleted && result['ready'] == true) ready.complete();
+            if (!ready.isCompleted && result['ready'] == true) {
+              monitorName = result['monitor'] as String?;
+              ready.complete();
+            }
             if (!ready.isCompleted && result['error'] != null) {
               ready.completeError(StateError(result['error'] as String));
             }
