@@ -27,11 +27,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     if (existing) {
       const auto arguments = GetCommandLineArguments();
       std::vector<std::wstring> shared;
-      bool collecting = false;
       for (const auto &arg : arguments) {
-        if (arg == "--share") { collecting = true; continue; }
-        if (arg == "--background") continue;
-        if (collecting || (!arg.empty() && arg[0] != '-')) {
+        if (arg == "--share" || arg == "--background") continue;
+        if (!arg.empty() && arg[0] != '-') {
           const int size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, arg.c_str(), -1, nullptr, 0);
           if (size > 1) { std::wstring converted(size, L'\0'); MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, arg.c_str(), -1, converted.data(), size); converted.pop_back(); shared.push_back(std::move(converted)); }
         }

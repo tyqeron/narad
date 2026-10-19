@@ -86,10 +86,10 @@ def argument(value):
     return string('"' + value + '"')
 Path(sys.argv[1]).write_text('[Desktop Entry]\nType=Application\nName=Narad\n'
     'Comment=Connect your trusted nearby devices\n'
-    f'Exec={argument(prefix + "/narad-linux")} --share %U\n'
+    f'Exec={argument(prefix + "/narad-linux")} --share %F\n'
     f'Icon={string(prefix + "/app/data/narad.png")}\n'
     'Terminal=false\nCategories=Network;Utility;\nStartupNotify=true\n'
-    'MimeType=text/uri-list;text/plain;application/pdf;application/octet-stream;image/png;image/jpeg;image/webp;video/mp4;audio/mpeg;application/zip;x-scheme-handler/http;x-scheme-handler/https;\n')
+    'MimeType=text/uri-list;text/plain;application/octet-stream;application/pdf;application/zip;application/x-7z-compressed;application/x-tar;application/msword;application/vnd.openxmlformats-officedocument.wordprocessingml.document;application/vnd.ms-excel;application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;application/vnd.ms-powerpoint;application/vnd.openxmlformats-officedocument.presentationml.presentation;image/*;video/*;audio/*;x-scheme-handler/http;x-scheme-handler/https;\n')
 PY
 if [[ -e "$prefix" ]]; then
   backup="$(mktemp -d "$parent/.narad-old.XXXXXX")"
