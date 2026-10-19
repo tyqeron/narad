@@ -24,6 +24,7 @@ import 'windows_backend.dart';
 import 'desktop_integration.dart';
 import 'pairing_scanner.dart';
 import 'remote_input_page.dart';
+import 'share_url_dialog.dart';
 
 void main(List<String> args) => runApp(NaradApp(shareArgs: args));
 
@@ -2442,40 +2443,13 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   }
 
   Future<void> _shareUrl(String peer) async {
-    final controller = TextEditingController();
-    try {
-      final url = await showDialog<String>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text('Share link with ${_peerName(peer)}'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            keyboardType: TextInputType.url,
-            decoration: const InputDecoration(
-              labelText: 'Web address',
-              hintText: 'https://example.com',
-            ),
-            onSubmitted: (value) => Navigator.pop(context, value.trim()),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, controller.text.trim()),
-              child: const Text('Share'),
-            ),
-          ],
-        ),
-      );
-      if (url == null || url.isEmpty) return;
-      await _api!.call({'op': 'open_url', 'peer_id': peer, 'url': url});
-      _notice('Link sent to ${_peerName(peer)}');
-    } finally {
-      controller.dispose();
-    }
+    final url = await showDialog<String>(
+      context: context,
+      builder: (_) => ShareUrlDialog(deviceName: _peerName(peer)),
+    );
+    if (url == null || !mounted) return;
+    await _api!.call({'op': 'open_url', 'peer_id': peer, 'url': url});
+    _notice('Link sent to ${_peerName(peer)}');
   }
 
   Future<void> _receiveSharedContent() async {
