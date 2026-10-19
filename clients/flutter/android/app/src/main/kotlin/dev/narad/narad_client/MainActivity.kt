@@ -113,12 +113,11 @@ class MainActivity : FlutterActivity() {
         val text=incoming.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()?.take(10000)
         val sharedUris=(streams(incoming)+List(incoming.clipData?.itemCount ?: 0){index->incoming.clipData?.getItemAt(index)?.uri}.filterNotNull()).distinct().take(16)
         val dataUrl=incoming.data?.takeIf{it.scheme=="http" || it.scheme=="https"}?.toString()
-        // Clear the consumed share intent while preserving the activity's launch
-        // extras. A blank explicit intent can reset Flutter's startup state.
+        // Consume this share once; future shares arrive through onNewIntent.
         setIntent(Intent(this,MainActivity::class.java))
         io.execute {
             try {
-                val files=org.json.JSONArray()
+                val files=mutableListOf<Map<String,String>>()
                 val directory=File(cacheDir,"narad-shares").apply{mkdirs()}
                 for(uri in sharedUris) {
                     if(uri.scheme=="http" || uri.scheme=="https")continue
@@ -128,9 +127,9 @@ class MainActivity : FlutterActivity() {
                     val input=contentResolver.openInputStream(uri) ?: error("Cannot read shared file")
                     var total=0L
                     try {input.use {source -> destination.outputStream().buffered().use {target -> val buffer=ByteArray(64*1024);while(true){val count=source.read(buffer);if(count<0)break;total+=count;check(total<=100L*1024*1024){"Shared files are limited to 100 MB"};target.write(buffer,0,count)}}}}catch(error:Throwable){destination.delete();throw error}
-                    files.put(org.json.JSONObject().put("path",destination.absolutePath).put("name",safeName))
+                    files.add(mapOf("path" to destination.absolutePath,"name" to safeName))
                 }
-                val payload=org.json.JSONObject().put("text",text ?: "").put("url",dataUrl ?: "").put("files",files)
+                val payload=SharedContentPayload.create(text,dataUrl,files)
                 main.post {result.success(payload)}
             }catch(error:Exception){main.post {result.error("share_intent",error.message ?: "Could not read shared content",null)}}
         }
