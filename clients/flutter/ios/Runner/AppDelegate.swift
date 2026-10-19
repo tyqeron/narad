@@ -7,12 +7,18 @@ import Security
 import AVFoundation
 import Darwin
 import UniformTypeIdentifiers
+import UserNotifications
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var mobile: NaradMobileBridge?
   override func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-    return super.application(application, didFinishLaunchingWithOptions: options)
+    let started = super.application(application, didFinishLaunchingWithOptions: options)
+    UNUserNotificationCenter.current().delegate = self
+    return started
+  }
+  override func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+    completionHandler([.alert, .badge])
   }
   func didInitializeImplicitFlutterEngine(_ bridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: bridge.pluginRegistry)
@@ -43,6 +49,7 @@ final class NaradMobileBridge: NSObject, UIDocumentPickerDelegate, MFMessageComp
     channel = FlutterMethodChannel(name: "dev.narad/ios", binaryMessenger: messenger)
     super.init()
     Self.active = self
+    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge]) { _, _ in }
     backgroundObserver = NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in self?.background() }
     phoneTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
       guard UIApplication.shared.applicationState == .active else { return }
@@ -201,8 +208,44 @@ final class NaradMobileBridge: NSObject, UIDocumentPickerDelegate, MFMessageComp
     default: result(FlutterMethodNotImplemented)
     }
   }
+  private var transferNotices: [String: String] = [:]
+  private var transfersInitialized = false
+  private func pollTransfers() throws {
+    let snapshot = try native(["op": "bridge", "command": ["op": "status"]])
+    for direction in ["transfers", "outbound", "shared_transfers"] {
+      for item in snapshot[direction] as? [[String: Any]] ?? [] {
+        guard let id = item["id"] as? String, UUID(uuidString: id) != nil,
+              let status = item["status"] as? String else { continue }
+        let key = "\(direction):\(id)"
+        let name = (item["file_name"] as? String) ?? URL(fileURLWithPath: item["path"] as? String ?? "File").lastPathComponent
+        let total = (item["total"] as? NSNumber ?? item["file_size"] as? NSNumber)?.int64Value ?? 0
+        let done = (item["sent"] as? NSNumber ?? item["received"] as? NSNumber)?.int64Value ?? 0
+        let percent = total > 0 ? min(100, done * 100 / total) : 0
+        if direction == "transfers", status == "completed", !UserDefaults.standard.bool(forKey: "download.\(id)") {
+          guard !name.contains("/"), !name.contains("\\"), name != ".", name != ".." else { continue }
+          let source = try directory().appendingPathComponent("downloads/\(id)/\(name)")
+          let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+          let destination = documents.appendingPathComponent("Downloads/Narad/\(id)")
+          try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+          let file = destination.appendingPathComponent(name)
+          if !FileManager.default.fileExists(atPath: file.path) { try FileManager.default.copyItem(at: source, to: file) }
+          UserDefaults.standard.set(true, forKey: "download.\(id)")
+        }
+        let signature = "\(status):\(percent)"
+        let previous = transferNotices.updateValue(signature, forKey: key)
+        if previous == signature || (!transfersInitialized && previous == nil && ["completed", "cancelled"].contains(status)) { continue }
+        let content = UNMutableNotificationContent()
+        content.title = "\(direction == "outbound" || item["outgoing"] as? Bool == true ? "Sending" : "Receiving") \(name)"
+        content.body = status == "completed" ? (direction == "shared_transfers" ? "Transfer complete · Shared folder" : "Transfer complete · Downloads/Narad") : "\(percent)% · \(done) / \(total) bytes · \(status)"
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: key, content: content, trigger: nil))
+      }
+    }
+    transfersInitialized = true
+  }
+
   private func pollPhone(smsAvailable: Bool) {
     do {
+      try pollTransfers()
       let contacts = UserDefaults.standard.bool(forKey: "narad.contactsSharing") && contactsAllowed()
       let handoff = UserDefaults.standard.bool(forKey: "narad.phoneHandoff")
       let enabled = handoff || contacts

@@ -21,6 +21,32 @@ use std::{
 };
 use tokio::sync::Mutex;
 
+fn transfer_notice(
+    state: &mut State,
+    id: &str,
+    peer: &str,
+    name: &str,
+    (size, received): (u64, u64),
+    status: &str,
+    outgoing: bool,
+) {
+    if !state.shared_transfer_activity.contains_key(id)
+        && state.shared_transfer_activity.len() >= 256
+    {
+        let old = state
+            .shared_transfer_activity
+            .iter()
+            .find(|(_, value)| value["status"] == "completed" || value["status"] == "cancelled")
+            .map(|(key, _)| key.clone());
+        if let Some(key) = old {
+            state.shared_transfer_activity.remove(&key);
+        } else {
+            return;
+        }
+    }
+    state.shared_transfer_activity.insert(id.into(), json!({"id":id,"peer_id":peer,"file_name":name,"file_size":size,"received":received,"status":status,"outgoing":outgoing}));
+}
+
 pub struct Upload {
     pub transfer: Transfer,
     pub folder: SharedFolder,
@@ -668,6 +694,15 @@ pub async fn upload(
         narad_core::transfer::validate_windows_name(&t.file_name)?;
         narad_core::storage::private_dir(&stage)?;
         t.approve(&stage, &key)?;
+        transfer_notice(
+            &mut s,
+            id,
+            &peer.device_id,
+            &t.file_name,
+            (t.file_size, 0),
+            "receiving",
+            false,
+        );
         s.share_uploads.insert(
             id.into(),
             Upload {
@@ -694,7 +729,17 @@ pub async fn upload(
             &data,
             string(p, "checksum")?,
         )?;
-        return Ok(json!({"ok":true,"received":t.received}));
+        let progress = t.clone();
+        transfer_notice(
+            &mut s,
+            id,
+            &peer.device_id,
+            &progress.file_name,
+            (progress.file_size, progress.received),
+            "receiving",
+            false,
+        );
+        return Ok(json!({"ok":true,"received":progress.received}));
     }
     ensure!(op == "shared_upload_finish", "Unknown upload operation");
     let folder = u.folder.clone();
@@ -769,6 +814,22 @@ pub async fn upload(
     }
     .await;
     let mut s = shared.lock().await;
+    if let Some(upload) = s.share_uploads.get(id) {
+        let progress = upload.transfer.clone();
+        transfer_notice(
+            &mut s,
+            id,
+            &peer.device_id,
+            &name,
+            (progress.file_size, progress.received),
+            if result.is_ok() {
+                "completed"
+            } else {
+                "cancelled"
+            },
+            false,
+        );
+    }
     s.share_uploads.remove(id);
     let _ = std::fs::remove_dir_all(done.join(id));
     let _ = std::fs::remove_file(stage.join(format!("{id}.json.enc")));
@@ -796,6 +857,16 @@ async fn send_upload(shared: Arc<Mutex<State>>, p: &Value) -> Result<Value> {
     };
     let id = uuid::Uuid::new_v4().to_string();
     let checksum = narad_core::transfer::hash_file(&path)?;
+    transfer_notice(
+        &mut *shared.lock().await,
+        &id,
+        peer_id,
+        name,
+        (size, 0),
+        "sending",
+        true,
+    );
+    let result = async {
     remote_call(&identity,&own,&peer,false,json!({"op":"shared_upload_begin","id":id,"path":p["path"],"name":name,"size":size,"checksum":checksum})).await?;
     let mut input = std::fs::File::open(&path)?;
     let mut data = vec![0; CHUNK_SIZE];
@@ -807,6 +878,7 @@ async fn send_upload(shared: Arc<Mutex<State>>, p: &Value) -> Result<Value> {
         let r=remote_call(&identity,&own,&peer,true,json!({"op":"shared_upload_chunk","id":id,"offset":offset,"data":STANDARD.encode(&data[..n]),"checksum":blake3::hash(&data[..n]).to_hex().to_string()})).await?;
         offset += n as u64;
         ensure!(r["received"] == offset, "Invalid upload acknowledgement");
+        transfer_notice(&mut *shared.lock().await, &id, peer_id, name, (size, offset), "sending", true);
     }
     let r = remote_call(
         &identity,
@@ -820,7 +892,22 @@ async fn send_upload(shared: Arc<Mutex<State>>, p: &Value) -> Result<Value> {
         .lock()
         .await
         .event("browse.uploaded", json!({"peer_id":peer_id,"name":name}));
-    Ok(r)
+    Ok::<_, anyhow::Error>(r)
+    }.await;
+    transfer_notice(
+        &mut *shared.lock().await,
+        &id,
+        peer_id,
+        name,
+        (size, if result.is_ok() { size } else { 0 }),
+        if result.is_ok() {
+            "completed"
+        } else {
+            "cancelled"
+        },
+        true,
+    );
+    result
 }
 
 #[cfg(test)]

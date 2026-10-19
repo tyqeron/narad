@@ -148,6 +148,7 @@ class NaradService : Service() {
             var offset=0
             do {
                 val snapshot=LocalBackendClient.call(this,JSONObject().put("op","status").put("offset",offset),3000)
+                TransferNotices.update(this,snapshot)
                 val page=snapshot.getJSONObject("paired")
                 for(id in page.keys())paired.put(id,page.getJSONObject(id))
                 presence=snapshot.optJSONObject("presence") ?: JSONObject()

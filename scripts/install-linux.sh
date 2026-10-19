@@ -137,4 +137,4 @@ if command -v update-desktop-database >/dev/null; then
   update-desktop-database "$data_home/applications" >/dev/null 2>&1 || true
 fi
 printf 'Installed Narad: %s\nOpen Narad from your application menu, or run:\n  %q\n' "$prefix" "$prefix/narad-linux"
-printf 'Identity, pairings and downloads stay in ${XDG_DATA_HOME:-$HOME/.local/share}/narad.\n'
+printf 'Identity and pairings stay in ${XDG_DATA_HOME:-$HOME/.local/share}/narad. Received files go to Downloads/Narad.\n'

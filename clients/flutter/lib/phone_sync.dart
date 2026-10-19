@@ -10,7 +10,9 @@ class PhoneNotice {
     required this.title,
     required this.body,
     required this.actions,
+    this.progress,
   });
+  final int? progress;
   final int id;
   final String peer, key, title, body;
   final Map<String, String> actions;

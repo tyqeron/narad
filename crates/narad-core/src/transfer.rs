@@ -167,6 +167,8 @@ impl Transfer {
 #[cfg(any(target_os = "android", target_os = "linux"))]
 pub fn publish_completed(source: &Path, destination: &Path) -> Result<()> {
     use std::{ffi::CString, os::unix::ffi::OsStrExt};
+    let source_path = source;
+    let destination_path = destination;
     let source = CString::new(source.as_os_str().as_bytes())?;
     let destination = CString::new(destination.as_os_str().as_bytes())?;
     // SAFETY: both C strings remain alive for the syscall. AT_FDCWD interprets
@@ -183,13 +185,47 @@ pub fn publish_completed(source: &Path, destination: &Path) -> Result<()> {
         )
     };
     if result != 0 {
-        return Err(std::io::Error::last_os_error()).context("publish completed transfer");
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() == Some(libc::EXDEV) {
+            // Downloads may be on another mount. Copy to a unique staging file
+            // there, then publish atomically without replacing existing data.
+            let staging = destination_path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
+            let outcome = (|| -> Result<()> {
+                let mut target = OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&staging)?;
+                std::io::copy(&mut File::open(source_path)?, &mut target)?;
+                target.sync_all()?;
+                publish_completed(&staging, destination_path)
+            })();
+            let _ = fs::remove_file(&staging);
+            return outcome;
+        }
+        return Err(error).context("publish completed transfer");
     }
     Ok(())
 }
 #[cfg(not(any(target_os = "android", target_os = "linux")))]
 pub fn publish_completed(source: &Path, destination: &Path) -> Result<()> {
-    fs::hard_link(source, destination).context("publish completed transfer")
+    match fs::hard_link(source, destination) {
+        Ok(()) => Ok(()),
+        Err(error) if cfg!(windows) && error.raw_os_error() == Some(17) => {
+            let staging = destination.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
+            let outcome = (|| -> Result<()> {
+                let mut target = OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&staging)?;
+                std::io::copy(&mut File::open(source)?, &mut target)?;
+                target.sync_all()?;
+                fs::hard_link(&staging, destination).context("publish completed transfer")
+            })();
+            let _ = fs::remove_file(&staging);
+            outcome
+        }
+        Err(error) => Err(error).context("publish completed transfer"),
+    }
 }
 
 /// Reject DOS devices, alternate streams and Win32 normalization aliases.

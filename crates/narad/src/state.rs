@@ -76,6 +76,7 @@ pub struct PlatformAction {
 pub struct State {
     pub preferences: crate::preferences::Preferences,
     pub clipboard_digest: Option<[u8; 32]>,
+    pub shared_transfer_activity: BTreeMap<String, Value>,
     pub share_uploads: BTreeMap<String, crate::sharing::Upload>,
     pub storage_jobs: BTreeMap<String, crate::sharing::Job>,
     pub storage_notify: std::sync::Arc<tokio::sync::Notify>,
@@ -106,6 +107,46 @@ pub struct State {
     pub events: Vec<Value>,
 }
 impl State {
+    /// Mobile files are published through the platform's scoped-storage API.
+    pub fn downloads_directory(dir: &std::path::Path) -> PathBuf {
+        if cfg!(test) || cfg!(any(target_os = "android", target_os = "ios")) {
+            return dir.join("downloads");
+        }
+        #[cfg(target_os = "linux")]
+        if let Ok(output) = std::process::Command::new("xdg-user-dir")
+            .arg("DOWNLOAD")
+            .output()
+        {
+            let value = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+            if output.status.success() && std::path::Path::new(&value).is_absolute() {
+                return PathBuf::from(value).join("Narad");
+            }
+        }
+        #[cfg(windows)]
+        unsafe {
+            use windows_sys::Win32::{
+                System::Com::CoTaskMemFree,
+                UI::Shell::{FOLDERID_Downloads, SHGetKnownFolderPath},
+            };
+            let mut path = std::ptr::null_mut();
+            if SHGetKnownFolderPath(&FOLDERID_Downloads, 0, std::ptr::null_mut(), &mut path) == 0
+                && !path.is_null()
+            {
+                let mut len = 0;
+                while *path.add(len) != 0 {
+                    len += 1;
+                }
+                let value = String::from_utf16_lossy(std::slice::from_raw_parts(path, len));
+                CoTaskMemFree(path.cast());
+                return PathBuf::from(value).join("Narad");
+            }
+        }
+        let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" });
+        home.map(PathBuf::from)
+            .map(|home| home.join("Downloads").join("Narad"))
+            .unwrap_or_else(|| dir.join("downloads"))
+    }
+
     #[cfg(test)]
     pub fn load(dir: PathBuf, name: String, address: String, port: u16) -> Result<Self> {
         Self::load_with_identity(dir, name, address, port, None)
@@ -134,7 +175,7 @@ impl State {
         let transfers = load_transfers(
             &dir.join("transfers"),
             &identity.storage_key(),
-            &dir.join("downloads"),
+            &Self::downloads_directory(&dir),
         )?
         .into_iter()
         .map(|t| (t.id.clone(), t))
@@ -158,6 +199,7 @@ impl State {
         let mut state = Self {
             preferences,
             clipboard_digest: None,
+            shared_transfer_activity: BTreeMap::new(),
             share_uploads: BTreeMap::new(),
             storage_jobs: BTreeMap::new(),
             storage_notify: std::sync::Arc::new(tokio::sync::Notify::new()),

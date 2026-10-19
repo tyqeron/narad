@@ -368,7 +368,7 @@ pub async fn download(shared: Arc<Mutex<State>>, payload: &Value) -> Result<Valu
             state.identity.clone(),
             state.own.clone(),
             state.peer(peer_id)?,
-            state.dir.join("downloads").join(&id),
+            State::downloads_directory(&state.dir).join(&id),
         )
     };
     let mut transfer = Transfer {
@@ -377,11 +377,16 @@ pub async fn download(shared: Arc<Mutex<State>>, payload: &Value) -> Result<Valu
         file_name: name.clone(),
         file_size: 0,
         received: 0,
-        status: "completed".into(),
+        status: "downloading".into(),
         checksum: "0".repeat(64),
         updated_at: now(),
     };
     transfer.validate()?;
+    shared
+        .lock()
+        .await
+        .transfers
+        .insert(id.clone(), transfer.clone());
     narad_core::storage::private_dir(&directory)?;
     let path = directory.join(&name);
     let result = async {
@@ -424,6 +429,14 @@ pub async fn download(shared: Arc<Mutex<State>>, payload: &Value) -> Result<Valu
             );
             output.write_all(&bytes)?;
             offset += bytes.len() as u64;
+            transfer.file_size = size;
+            transfer.received = offset;
+            transfer.updated_at = now();
+            shared
+                .lock()
+                .await
+                .transfers
+                .insert(id.clone(), transfer.clone());
             if offset == size {
                 break;
             }
@@ -432,10 +445,11 @@ pub async fn download(shared: Arc<Mutex<State>>, payload: &Value) -> Result<Valu
         transfer.file_size = offset;
         transfer.received = offset;
         transfer.checksum = hash_file(&path)?;
+        transfer.status = "completed".into();
         let mut state = shared.lock().await;
         ensure!(state.transfers.len() < 256, "transfer history full");
         transfer.persist(&state.dir.join("transfers"), &state.identity.storage_key())?;
-        state.transfers.insert(id.clone(), transfer);
+        state.transfers.insert(id.clone(), transfer.clone());
         state.event(
             "browse.downloaded",
             json!({"peer_id":peer_id,"id":id,"name":name}),
@@ -444,6 +458,8 @@ pub async fn download(shared: Arc<Mutex<State>>, payload: &Value) -> Result<Valu
     }
     .await;
     if result.is_err() {
+        transfer.status = "cancelled".into();
+        shared.lock().await.transfers.insert(id.clone(), transfer);
         let _ = std::fs::remove_dir_all(directory);
     }
     result

@@ -33,6 +33,54 @@ class DesktopIntegration {
     });
   }
 
+  final Map<String, String> _transferStates = {};
+  bool _transfersInitialized = false;
+  Future<void> transferStatus(Map<String, dynamic> snapshot) async {
+    for (final direction in ['transfers', 'outbound', 'shared_transfers']) {
+      for (final item in (snapshot[direction] as List? ?? const [])) {
+        final transfer = item as Map;
+        final key = '$direction:${transfer['id']}';
+        final state = transfer['status'] as String;
+        final total = (transfer['total'] ?? transfer['file_size'] ?? 0) as int;
+        final done = (transfer['sent'] ?? transfer['received'] ?? 0) as int;
+        final percent = total == 0 ? 0 : (100 * done ~/ total).clamp(0, 100);
+        final signature = '$state:$percent';
+        final previous = _transferStates[key];
+        _transferStates[key] = signature;
+        if (previous == signature ||
+            (!_transfersInitialized &&
+                previous == null &&
+                ['completed', 'cancelled'].contains(state))) {
+          continue;
+        }
+        final name =
+            transfer['file_name'] ??
+            (transfer['path'] as String? ?? 'File')
+                .split(RegExp(r'[/\\]'))
+                .last;
+        await phoneNotification(
+          PhoneNotice(
+            id: 100000 + (key.hashCode & 0x3fffffff),
+            peer: transfer['peer_id'] as String,
+            key: key,
+            progress: ['completed', 'cancelled'].contains(state)
+                ? null
+                : percent,
+            title:
+                '${direction == 'outbound' || transfer['outgoing'] == true ? 'Sending' : 'Receiving'} $name',
+            body: state == 'completed'
+                ? (direction == 'shared_transfers'
+                      ? 'Transfer complete · Shared folder'
+                      : 'Transfer complete · Downloads/Narad on the receiving device')
+                : '$percent% · $done / $total bytes · $state',
+            actions: const {},
+          ),
+        );
+      }
+    }
+    _transfersInitialized = true;
+  }
+
   Future<bool> autostart() async =>
       (await channel.invokeMapMethod<String, dynamic>(
         'desktopStatus',
@@ -66,6 +114,14 @@ class DesktopIntegration {
         title: n.title,
         body: n.body,
         notificationDetails: WindowsNotificationDetails(
+          progressBars: [
+            if (n.progress != null)
+              WindowsProgressBar(
+                id: 'transfer',
+                status: n.body,
+                value: n.progress! / 100,
+              ),
+          ],
           actions: [
             for (final a in n.actions.entries)
               WindowsAction(

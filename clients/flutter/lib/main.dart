@@ -406,6 +406,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         _pendingDesktopShare = null;
         unawaited(_receiveDesktopShare(pendingDesktopShare));
       }
+      if (_desktop != null) unawaited(_desktop!.transferStatus(data));
       if (_phoneSync != null) unawaited(_phoneSync!.tick(data));
       if (_android != null && !_busy && !_widgetDispatching && _foreground) {
         final pending = await _android!.takeDeviceAction();
@@ -2709,7 +2710,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                 await Clipboard.setData(
                   ClipboardData(
                     text:
-                        '${_directory.text}/downloads/${t['id']}/${t['file_name']}',
+                        '${_data['downloads_directory'] ?? '${_directory.text}/downloads'}/${t['id']}/${t['file_name']}',
                   ),
                 );
                 _notice('Saved path copied');

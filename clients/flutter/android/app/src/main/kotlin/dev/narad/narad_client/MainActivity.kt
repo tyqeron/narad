@@ -71,6 +71,8 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                     "start" -> {
+                        if(Build.VERSION.SDK_INT<=28 && checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)!=PackageManager.PERMISSION_GRANTED)
+                            requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE),1907)
                         if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
                             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),1901)
                         startForegroundService(Intent(this,NaradService::class.java))

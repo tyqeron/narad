@@ -20,6 +20,35 @@ void main() {
         .setMockMethodCallHandler(channel, null),
   );
   test(
+    'transfer notification updates one ID as bytes advance and completes',
+    () async {
+      final desktop = DesktopIntegration(channel: channel);
+      Map<String, dynamic> snapshot(int done, String state) => {
+        'transfers': [
+          {
+            'id': 'fixture',
+            'peer_id': 'peer',
+            'file_name': 'photo.jpg',
+            'file_size': 100,
+            'received': done,
+            'status': state,
+          },
+        ],
+      };
+      await desktop.transferStatus(snapshot(20, 'receiving'));
+      await desktop.transferStatus(snapshot(20, 'receiving'));
+      await desktop.transferStatus(snapshot(70, 'receiving'));
+      await desktop.transferStatus(snapshot(100, 'completed'));
+      expect(calls.length, 3);
+      final notices = calls.map((call) => call.arguments as Map).toList();
+      expect(notices.map((n) => n['id']).toSet().length, 1);
+      expect(notices[0]['text'], contains('20%'));
+      expect(notices[1]['text'], contains('70%'));
+      expect(notices[2]['text'], contains('Transfer complete'));
+    },
+  );
+
+  test(
     'reads login preference and forwards explicit enable and disable changes',
     () async {
       final desktop = DesktopIntegration(channel: channel);
