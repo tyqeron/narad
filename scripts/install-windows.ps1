@@ -27,7 +27,7 @@ $Shortcut.Save()
 $SendTo = Join-Path ([Environment]::GetFolderPath('SendTo')) 'Narad.lnk'
 $ShareShortcut = $Shell.CreateShortcut($SendTo)
 $ShareShortcut.TargetPath = Join-Path $Destination 'narad_client.exe'
-$ShareShortcut.Arguments = '--share "%1"'
+$ShareShortcut.Arguments = '--share'
 $ShareShortcut.WorkingDirectory = $Destination
 $ShareShortcut.IconLocation = "$Destination\narad_client.exe,0"
 $ShareShortcut.Description = 'Share files or links with a paired Narad device'

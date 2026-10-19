@@ -335,11 +335,6 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     _api = api;
     _clipboardSync = ClipboardSync(api);
     _audio = AudioController(api, _showError);
-    final pendingShare = _pendingDesktopShare;
-    if (pendingShare != null) {
-      _pendingDesktopShare = null;
-      scheduleMicrotask(() => _receiveDesktopShare(pendingShare));
-    }
     unawaited(_refresh());
     _timer?.cancel();
     _timer = Timer.periodic(
@@ -2517,7 +2512,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
 
   Future<void> _receiveDesktopShare(List<String> arguments) async {
     if (!mounted) return;
-    if (_api == null) {
+    if (_api == null || !_online) {
       _pendingDesktopShare = [...?_pendingDesktopShare, ...arguments];
       _notice('File received. Connect Narad to share it with a device.');
       return;
@@ -2564,7 +2559,8 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     String? url,
     String? text,
   }) async {
-    if (paths.isEmpty && (url == null || url.isEmpty) &&
+    if (paths.isEmpty &&
+        (url == null || url.isEmpty) &&
         (text == null || text.isEmpty)) {
       _notice('No file or link was received from the system share.');
       return;
@@ -2601,7 +2597,11 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         await _api!.call({'op': 'send_file', 'peer_id': id, 'path': path});
       } catch (error) {
         failedFiles++;
-        _showError(StateError('Could not share ${File(path).uri.pathSegments.last}: $error'));
+        _showError(
+          StateError(
+            'Could not share ${File(path).uri.pathSegments.last}: $error',
+          ),
+        );
       }
     }
     final parsed = Uri.tryParse(url ?? text ?? '');
@@ -2617,7 +2617,9 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     if (failedFiles == 0) {
       _notice('Shared with ${target['device_name']}');
     } else {
-      _notice('$failedFiles file(s) could not be shared. See the error message.');
+      _notice(
+        '$failedFiles file(s) could not be shared. See the error message.',
+      );
     }
   }
 

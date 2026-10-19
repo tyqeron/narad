@@ -150,7 +150,7 @@ static gboolean my_application_local_command_line(GApplication* application,
   std::vector<GFile*> files;
   for(gchar** arg=*arguments+1;*arg!=nullptr;++arg) {
     if(g_strcmp0(*arg,"--background")==0 || g_strcmp0(*arg,"--share")==0)continue;
-    if(g_str_has_prefix(*arg,"file:") || g_str_has_prefix(*arg,"http:") || g_str_has_prefix(*arg,"https:"))
+    if(**arg != '-')
       files.push_back(g_file_new_for_commandline_arg(*arg));
   }
   if(g_application_get_is_remote(application) && !files.empty())

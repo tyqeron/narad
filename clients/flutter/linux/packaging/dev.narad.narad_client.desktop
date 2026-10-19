@@ -1,8 +1,9 @@
 [Desktop Entry]
 Name=Narad
 Comment=Connect and control your trusted nearby devices
-Exec=narad_client
+Exec=narad_client --share %U
 Icon=dev.narad.narad_client
 Type=Application
 Terminal=false
 Categories=Network;Utility;
+MimeType=text/plain;text/uri-list;application/octet-stream;application/pdf;image/png;image/jpeg;video/mp4;audio/mpeg;x-scheme-handler/http;x-scheme-handler/https;

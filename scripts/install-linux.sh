@@ -98,6 +98,27 @@ if [[ -e "$prefix" ]]; then
 fi
 mv -- "$stage" "$prefix"
 install -m 644 "$prefix/narad.desktop" "$data_home/applications/dev.narad.narad_client.desktop"
+# File managers have separate Send To registries; installing an application
+# desktop entry alone does not populate these menus.
+python3 - "$prefix/narad.desktop" "$data_home" <<'PY_SENDTO'
+import sys
+from pathlib import Path
+entry = Path(sys.argv[1]).read_text()
+data = Path(sys.argv[2])
+for relative in ['Thunar/sendto/narad.desktop', 'caja/sendto/narad.desktop']:
+    target = data / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(entry)
+target = data / 'kio/servicemenus/narad.desktop'
+target.parent.mkdir(parents=True, exist_ok=True)
+execute = next(line for line in entry.splitlines() if line.startswith('Exec='))
+icon = next(line for line in entry.splitlines() if line.startswith('Icon='))
+target.write_text('[Desktop Entry]\nType=Service\nMimeType=all/allfiles;\n'
+                  'X-KDE-ServiceTypes=KonqPopupMenu/Plugin\nActions=narad;\n'
+                  '\n[Desktop Action narad]\nName=Share with Narad\n'
+                  + icon + '\n' + execute + '\n')
+target.chmod(0o755)
+PY_SENDTO
 config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
 mkdir -p -- "$config_home/autostart"
 if [[ ! -e "$config_home/narad/autostart-disabled" ]]; then
