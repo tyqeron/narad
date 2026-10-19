@@ -150,7 +150,8 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
-      - run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;28.2.13676358"
+        with:
+          packages: 'platforms;android-36,build-tools;36.0.0,ndk;28.2.13676358'
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}

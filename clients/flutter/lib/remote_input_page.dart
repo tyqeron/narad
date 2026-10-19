@@ -23,14 +23,16 @@ class _RemoteInputPageState extends State<RemoteInputPage> {
     try {
       await widget.send(event);
     } catch (error) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('$error')));
+      }
     } finally {
       done.complete();
-      if (mounted && identical(_queue, done.future))
+      if (mounted && identical(_queue, done.future)) {
         setState(() => _sending = false);
+      }
     }
   }
 

@@ -66,7 +66,7 @@ pub fn network(address: &str, phone: Option<&Value>) -> Value {
             }
         }
         let cellular = interfaces.iter().any(|item| item["type"] == "cellular");
-        return json!({"address":address,"interfaces":interfaces,"cellular":{"available":cellular,"connected":interfaces.iter().any(|item| item["type"]=="cellular" && item["state"]=="up")}});
+        json!({"address":address,"interfaces":interfaces,"cellular":{"available":cellular,"connected":interfaces.iter().any(|item| item["type"]=="cellular" && item["state"]=="up")}})
     }
     #[cfg(not(target_os = "linux"))]
     {

@@ -110,7 +110,7 @@ class _DeviceInfoCardState extends State<_DeviceInfoCard> {
     child: FutureBuilder<Map<String, dynamic>>(
       future: _info,
       builder: (context, snapshot) {
-        if (snapshot.hasError)
+        if (snapshot.hasError) {
           return ListTile(
             leading: const Icon(Icons.info_outline),
             title: const Text('Device information'),
@@ -120,12 +120,14 @@ class _DeviceInfoCardState extends State<_DeviceInfoCard> {
               onPressed: () => setState(() => _info = widget.loadInfo()),
             ),
           );
-        if (!snapshot.hasData)
+        }
+        if (!snapshot.hasData) {
           return const ListTile(
             leading: Icon(Icons.info_outline),
             title: Text('Device information'),
             subtitle: Text('Loading…'),
           );
+        }
         final data = snapshot.data!;
         final battery = data['battery'] as Map? ?? const {};
         final network = data['network'] as Map? ?? const {};
