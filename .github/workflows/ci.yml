@@ -40,6 +40,7 @@ jobs:
         working-directory: clients/flutter
       - run: flutter test
         working-directory: clients/flutter
+      - run: python3 tests/screen_virtual_display_test.py
       - run: ./scripts/build-linux-installer.sh debug
       - run: python3 tests/linux_packaging.py dist/narad-linux-x64-debug.run
       - run: xvfb-run -a dbus-run-session -- python3 tests/linux_background.py clients/flutter/build/linux/x64/debug/bundle

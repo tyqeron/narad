@@ -25,6 +25,8 @@ import 'desktop_integration.dart';
 import 'pairing_scanner.dart';
 import 'remote_input_page.dart';
 import 'share_url_dialog.dart';
+import 'screen_share.dart';
+import 'screen_panel.dart';
 
 void main(List<String> args) => runApp(NaradApp(shareArgs: args));
 
@@ -130,6 +132,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   bool _restoredMedia = false;
   NaradApi? _api;
   AudioController? _audio;
+  ScreenController? _screens;
   Map<String, dynamic> _data = {};
   Timer? _timer;
   bool _online = false, _busy = false, _refreshing = false;
@@ -194,6 +197,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   Future<void> _shutdownNow() async {
     _timer?.cancel();
     try {
+      await _screens?.shutdown();
       await _finder?.stop();
     } finally {
       try {
@@ -335,6 +339,11 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     if (previous != null) unawaited(previous.dispose().catchError(_showError));
     _api = api;
     _clipboardSync = ClipboardSync(api);
+    final oldScreens = _screens;
+    if (oldScreens != null) {
+      unawaited(oldScreens.shutdown().catchError(_showError));
+    }
+    _screens = ScreenController(api, _showError);
     _audio = AudioController(api, _showError);
     unawaited(_refresh());
     _timer?.cancel();
@@ -407,6 +416,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         _pendingDesktopShare = null;
         unawaited(_receiveDesktopShare(pendingDesktopShare));
       }
+      if (_screens != null) unawaited(_screens!.tick(data));
       if (_desktop != null) unawaited(_desktop!.transferStatus(data));
       if (_phoneSync != null) unawaited(_phoneSync!.tick(data));
       if (_android != null && !_busy && !_widgetDispatching && _foreground) {
@@ -564,6 +574,9 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     if (_finder != null) unawaited(_finder!.stop());
+    if (_screens != null) {
+      unawaited(_screens!.shutdown().catchError(_showError));
+    }
     if (_audio != null) unawaited(_audio!.dispose());
     _phoneSync?.dispose();
     _clipboardSync?.dispose();
@@ -1705,6 +1718,13 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         () => _deviceAction(id, 'find_stop'),
       ),
       'Send file': (Icons.upload_file, () => _sendFile(id)),
+      'Use as display': (
+        Icons.connected_tv,
+        () async {
+          await shareScreenWith(context, _screens!, id, _peerName(id));
+          if (mounted) _openTab(1);
+        },
+      ),
       'Share URL': (Icons.open_in_browser, () => _shareUrl(id)),
       'Send clipboard': (Icons.content_paste, () => _sendClipboard(id)),
       'Send audio': (
@@ -2120,6 +2140,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                         peer['platform'] == 'windows')
                       'input.control':
                           'Allow remote keyboard and mouse control',
+                    'screen.view': 'Show shared screens automatically',
                     'file.transfer': 'Receive files automatically',
                     'clipboard.sync': 'Apply shared clipboard automatically',
                     'audio.output': 'Play shared audio',
@@ -2260,9 +2281,11 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
             'audio.output',
             'audio.input',
             'camera.stream',
+            'screen.view',
           ].contains(s['capability']) &&
           s['state'] == 'requested' &&
-          !(_audio?.links[s['id']]?.outgoing ?? false),
+          !(_audio?.links[s['id']]?.outgoing ?? false) &&
+          !(_screens?.links[s['id']]?.outgoing ?? false),
     );
     final clipboard = _items(
       'clipboard',
@@ -2370,12 +2393,16 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       for (final s in media)
         _card(
           Icons.speaker_outlined,
-          '${s['capability'] == 'camera.stream'
+          '${s['capability'] == 'screen.view'
+              ? 'Screen display request'
+              : s['capability'] == 'camera.stream'
               ? 'Camera request'
               : s['capability'] == 'audio.input'
               ? 'Microphone request'
               : 'Audio'} from ${_peerName(s['peer_id'] as String)}',
-          s['capability'] == 'camera.stream'
+          s['capability'] == 'screen.view'
+              ? 'Show the requesting device’s shared screen on this device?'
+              : s['capability'] == 'camera.stream'
               ? (s['with_audio'] == true
                     ? 'Allow the requesting device to view this device’s camera and listen to its microphone?'
                     : 'Allow the requesting device to view this device’s camera?')
@@ -2384,7 +2411,9 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
               : 'Allow the requesting device to play audio through this device’s speakers?',
           [
             _button(
-              s['capability'] == 'camera.stream'
+              s['capability'] == 'screen.view'
+                  ? 'Show screen'
+                  : s['capability'] == 'camera.stream'
                   ? 'Allow camera'
                   : s['capability'] == 'audio.input'
                   ? 'Allow microphone'
@@ -2718,6 +2747,14 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   ];
 
   List<Widget> _audioPage() => [
+    if (_screens != null && _api != null)
+      ScreenPanel(
+        controller: _screens!,
+        api: _api!,
+        status: _data,
+        onError: _showError,
+      ),
+    const SizedBox(height: 20),
     _section('Camera'),
     SwitchListTile(
       title: const Text('Camera sharing'),

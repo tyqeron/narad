@@ -36,6 +36,10 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger,"dev.narad/android").setMethodCallHandler {call,result ->
             try {
                 when(call.method) {
+                    "screenProjection" -> {
+                        (NaradService.instance ?: error("Narad is not running")).screenProjection(call.argument<Boolean>("enabled") == true)
+                        result.success(null)
+                    }
                     "takeSharedContent" -> takeSharedContent(result)
                     "chooseSharedDirectory" -> {
                         check(sharedFolderResult==null){"Folder picker already open"}

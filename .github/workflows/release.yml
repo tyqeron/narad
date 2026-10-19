@@ -64,6 +64,7 @@ jobs:
           flutter analyze
           flutter test
       - run: ./scripts/build-linux-installer.sh
+      - run: python3 tests/screen_virtual_display_test.py
       - run: python3 tests/linux_packaging.py dist/narad-linux-x64-release.run
       - uses: actions/upload-artifact@v7
         with:

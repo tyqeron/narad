@@ -74,6 +74,10 @@ on TCP 45700 binds only to loopback and requires a private token.
 
 Navigate between **Devices**, **Media**, **Activity** and **Settings**.
 
+**Media → Screens** can mirror a screen to a paired device, with receiver
+approval and a full-screen viewer. Supported Linux Wayland desktops can also
+create a virtual secondary monitor. See [screen sharing and platform support](docs/SCREEN_SHARING.md).
+
 1. Under **Nearby devices**, select **Send pairing request**. On the receiver,
    open **Devices**, recognize the device and compare the displayed code, then
    select **Accept request**. Both devices pair automatically. No code entry or

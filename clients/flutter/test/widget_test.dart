@@ -595,10 +595,25 @@ void main() {
       await tester.tap(find.byTooltip('Device settings and permissions'));
       await tester.pumpAndSettle();
       expect(find.text('Device settings'), findsOneWidget);
-      expect(find.byType(SwitchListTile), findsNWidgets(11));
+      expect(find.text('Show shared screens automatically'), findsOneWidget);
       expect(find.text('Share this device’s camera'), findsOneWidget);
       expect(find.text('Share this device’s microphone'), findsOneWidget);
       expect(find.text('Ring this device (Find device)'), findsOneWidget);
+      await tester.ensureVisible(
+        find.text('Show shared screens automatically'),
+      );
+      await tester.tap(find.text('Show shared screens automatically'));
+      await tester.pumpAndSettle();
+      expect(
+        api.calls.any(
+          (c) =>
+              c['op'] == 'permission' &&
+              c['peer_id'] == 'peer' &&
+              c['capability'] == 'screen.view' &&
+              c['allow'] == true,
+        ),
+        isTrue,
+      );
       await tester.ensureVisible(find.text('Receive files automatically'));
       await tester.tap(find.text('Receive files automatically'));
       await tester.pumpAndSettle();

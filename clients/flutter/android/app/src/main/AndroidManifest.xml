@@ -8,6 +8,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -53,7 +54,7 @@
             <intent-filter><action android:name="android.app.action.DEVICE_ADMIN_ENABLED" /></intent-filter>
         </receiver>
         <service android:name=".NaradService" android:exported="false"
-            android:foregroundServiceType="connectedDevice|camera|microphone|mediaPlayback" android:stopWithTask="false" />
+            android:foregroundServiceType="connectedDevice|camera|microphone|mediaPlayback|mediaProjection" android:stopWithTask="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
