@@ -117,8 +117,13 @@ bool FlutterWindow::OnCreate() {
   AddTray();
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
+    dart_ready_ = true;
     if (!start_hidden_)
       this->Show();
+    if (pending_shared_ && backend_channel_) {
+      backend_channel_->InvokeMethod("sharedContent", std::make_unique<flutter::EncodableValue>(std::move(*pending_shared_)));
+      pending_shared_.reset();
+    }
   });
 
   // Flutter can complete the first frame before the "show window" callback is
@@ -153,6 +158,31 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     ShowWindow(hwnd, SW_SHOW);
     SetForegroundWindow(hwnd);
     return 0;
+  }
+  if (message == WM_COPYDATA) {
+    const auto *data = reinterpret_cast<const COPYDATASTRUCT *>(lparam);
+    if (!data || data->dwData != 0x4E415241 || data->cbData < sizeof(wchar_t) ||
+        data->cbData % sizeof(wchar_t) != 0 || !data->lpData) return FALSE;
+    const auto *items = static_cast<const wchar_t *>(data->lpData);
+    const size_t count = data->cbData / sizeof(wchar_t);
+    if (items[count - 1] != L'\0') return FALSE;
+    flutter::EncodableList paths;
+    size_t start = 0;
+    while (start + 1 < count && items[start] != L'\0') {
+      size_t end = start;
+      while (end < count && items[end] != L'\0') ++end;
+      if (end == count) return FALSE;
+      const std::wstring value(items + start, items + end);
+      paths.emplace_back(Utf8FromUtf16(value.c_str()));
+      start = end + 1;
+    }
+    if (!paths.empty() && backend_channel_) {
+      if (dart_ready_) backend_channel_->InvokeMethod("sharedContent", std::make_unique<flutter::EncodableValue>(std::move(paths)));
+      else pending_shared_ = std::move(paths);
+      ShowWindow(hwnd, SW_SHOW); SetForegroundWindow(hwnd);
+      return TRUE;
+    }
+    return FALSE;
   }
   if (message == WM_TIMER && wparam == 47001) {
     KillTimer(hwnd, 47001);

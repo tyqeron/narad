@@ -5,6 +5,7 @@ import android.app.Activity
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
@@ -14,6 +15,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.util.UUID
+import android.provider.OpenableColumns
 import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
@@ -34,6 +36,7 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger,"dev.narad/android").setMethodCallHandler {call,result ->
             try {
                 when(call.method) {
+                    "takeSharedContent" -> takeSharedContent(result)
                     "chooseSharedDirectory" -> {
                         check(sharedFolderResult==null){"Folder picker already open"}
                         sharedFolderResult=result
@@ -101,6 +104,38 @@ class MainActivity : FlutterActivity() {
     override fun onNewIntent(intent:Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+    }
+    private fun takeSharedContent(result:MethodChannel.Result) {
+        val incoming=intent
+        if(incoming.action!=Intent.ACTION_SEND && incoming.action!=Intent.ACTION_SEND_MULTIPLE) {result.success(null);return}
+        val text=incoming.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()?.take(10000)
+        val sharedUris=(streams(incoming)+List(incoming.clipData?.itemCount ?: 0){index->incoming.clipData?.getItemAt(index)?.uri}.filterNotNull()).distinct().take(16)
+        val dataUrl=incoming.data?.takeIf{it.scheme=="http" || it.scheme=="https"}?.toString()
+        setIntent(Intent(this,MainActivity::class.java))
+        io.execute {
+            try {
+                val files=org.json.JSONArray()
+                val directory=File(cacheDir,"narad-shares").apply{mkdirs()}
+                for(uri in sharedUris) {
+                    if(uri.scheme=="http" || uri.scheme=="https")continue
+                    val displayName=contentResolver.query(uri,arrayOf(OpenableColumns.DISPLAY_NAME),null,null,null)?.use { cursor -> if(cursor.moveToFirst())cursor.getString(0) else null } ?: "Shared file"
+                    val safeName=displayName.substringAfterLast('/').substringAfterLast('\\').filter{it.isLetterOrDigit() || it in " ._()-"}.trim().take(180).ifBlank{"Shared file"}
+                    val destination=File(directory,"${UUID.randomUUID()}-$safeName")
+                    val input=contentResolver.openInputStream(uri) ?: error("Cannot read shared file")
+                    var total=0L
+                    try {input.use {source -> destination.outputStream().buffered().use {target -> val buffer=ByteArray(64*1024);while(true){val count=source.read(buffer);if(count<0)break;total+=count;check(total<=100L*1024*1024){"Shared files are limited to 100 MB"};target.write(buffer,0,count)}}}}catch(error:Throwable){destination.delete();throw error}
+                    files.put(org.json.JSONObject().put("path",destination.absolutePath).put("name",safeName))
+                }
+                val payload=org.json.JSONObject().put("text",text ?: "").put("url",dataUrl ?: "").put("files",files)
+                main.post {result.success(payload)}
+            }catch(error:Exception){main.post {result.error("share_intent",error.message ?: "Could not read shared content",null)}}
+        }
+    }
+    @Suppress("DEPRECATION")
+    private fun streams(from:Intent):List<Uri> {
+        val single=if(Build.VERSION.SDK_INT>=33)from.getParcelableExtra(Intent.EXTRA_STREAM,Uri::class.java) else from.getParcelableExtra(Intent.EXTRA_STREAM)
+        val multiple=if(Build.VERSION.SDK_INT>=33)from.getParcelableArrayListExtra(Intent.EXTRA_STREAM,Uri::class.java) else from.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+        return multiple ?: listOfNotNull(single)
     }
     override fun onRequestPermissionsResult(requestCode:Int,permissions:Array<out String>,grantResults:IntArray) {
         super.onRequestPermissionsResult(requestCode,permissions,grantResults)

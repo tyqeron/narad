@@ -24,6 +24,14 @@ $Shortcut.TargetPath = Join-Path $Destination 'narad_client.exe'
 $Shortcut.WorkingDirectory = $Destination
 $Shortcut.IconLocation = "$Destination\narad_client.exe,0"
 $Shortcut.Save()
+$SendTo = Join-Path ([Environment]::GetFolderPath('SendTo')) 'Narad.lnk'
+$ShareShortcut = $Shell.CreateShortcut($SendTo)
+$ShareShortcut.TargetPath = Join-Path $Destination 'narad_client.exe'
+$ShareShortcut.Arguments = '--share'
+$ShareShortcut.WorkingDirectory = $Destination
+$ShareShortcut.IconLocation = "$Destination\narad_client.exe,0"
+$ShareShortcut.Description = 'Share files or links with a paired Narad device'
+$ShareShortcut.Save()
 # Enable first-install startup, while preserving an explicit Settings opt-out.
 $Prefs = 'HKCU:\Software\Narad'
 $Run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'

@@ -5,6 +5,7 @@
 #ifdef GDK_WINDOWING_X11
 #include <gdk/gdkx.h>
 #endif
+#include <vector>
 
 #include "flutter/generated_plugin_registrant.h"
 
@@ -19,7 +20,13 @@ G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
+  g_object_set_data(G_OBJECT(self),"narad-ready",GINT_TO_POINTER(1));
   if(!self->start_hidden)gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
+  narad_desktop_flush_pending(GTK_APPLICATION(self));
+}
+static void open_files_cb(GApplication* application,GFile** files,gint count,const gchar*,gpointer) {
+  narad_desktop_open_files(GTK_APPLICATION(application),files,count);
+  g_application_activate(application);
 }
 
 // Keep the Flutter engine and authenticated IPC alive when the window closes.
@@ -140,8 +147,16 @@ static gboolean my_application_local_command_line(GApplication* application,
     *exit_status = 1;
     return TRUE;
   }
-
-  g_application_activate(application);
+  std::vector<GFile*> files;
+  for(gchar** arg=*arguments+1;*arg!=nullptr;++arg) {
+    if(g_strcmp0(*arg,"--background")==0 || g_strcmp0(*arg,"--share")==0)continue;
+    if(g_str_has_prefix(*arg,"file:") || g_str_has_prefix(*arg,"http:") || g_str_has_prefix(*arg,"https:"))
+      files.push_back(g_file_new_for_commandline_arg(*arg));
+  }
+  if(g_application_get_is_remote(application) && !files.empty())
+    g_application_open(application,files.data(),static_cast<gint>(files.size()),"");
+  else g_application_activate(application);
+  for(auto* file:files)g_object_unref(file);
   *exit_status = 0;
 
   return TRUE;
@@ -191,7 +206,9 @@ MyApplication* my_application_new() {
   // the application to be recognized beyond its binary name.
   g_set_prgname(APPLICATION_ID);
 
-  return MY_APPLICATION(g_object_new(my_application_get_type(),
+  auto* application=MY_APPLICATION(g_object_new(my_application_get_type(),
                                      "application-id", APPLICATION_ID, "flags",
-                                     static_cast<GApplicationFlags>(0), nullptr));
+                                     static_cast<GApplicationFlags>(G_APPLICATION_HANDLES_OPEN), nullptr));
+  g_signal_connect(application,"open",G_CALLBACK(open_files_cb),nullptr);
+  return application;
 }

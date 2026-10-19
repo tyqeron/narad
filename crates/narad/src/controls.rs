@@ -41,10 +41,14 @@ pub async fn remote(
             | "device_action_status"
             | "device_info"
             | "input_event"
+            | "open_url"
     ) {
         return handler::remote(&mut *shared.lock().await, peer, payload, file_plane);
     }
     ensure!(!file_plane, "command sent on wrong transport plane");
+    if op == "open_url" {
+        crate::open_url::validate(handler::string(payload, "url")?)?;
+    }
     let kind = payload["kind"].as_str().unwrap_or("");
     let capability = match op {
         "browse" | "shared_read" => "file.browse",
@@ -57,6 +61,7 @@ pub async fn remote(
         },
         "device_info" => "device.info",
         "input_event" => "input.control",
+        "open_url" => "device.open_url",
         _ => "",
     };
     {
@@ -85,6 +90,14 @@ pub async fn remote(
         if op == "input_event" {
             return crate::input::inject(&payload["event"]);
         }
+        if op == "open_url"
+            && !matches!(
+                state.peer(&peer.device_id)?.platform.as_str(),
+                "android" | "ios"
+            )
+        {
+            return crate::open_url::open(handler::string(payload, "url")?);
+        }
         if op == "device_action_status" {
             let action = state
                 .platform_actions
@@ -104,8 +117,13 @@ pub async fn remote(
             );
             return Ok(result);
         }
-        if op == "device_action"
-            && (cfg!(target_os = "android") || matches!(kind, "find" | "find_stop"))
+        if (op == "device_action"
+            && (cfg!(target_os = "android") || matches!(kind, "find" | "find_stop")))
+            || (op == "open_url"
+                && matches!(
+                    state.peer(&peer.device_id)?.platform.as_str(),
+                    "android" | "ios"
+                ))
         {
             if kind == "find" {
                 ensure!(
@@ -136,11 +154,16 @@ pub async fn remote(
                 PlatformAction {
                     id: id.clone(),
                     peer_id: peer.device_id.clone(),
-                    kind: kind.into(),
+                    kind: if op == "open_url" { "open_url" } else { kind }.into(),
                     capability: capability.into(),
                     expires_at: now() + 60,
                     status: "pending".into(),
                     message: String::new(),
+                    data: if op == "open_url" {
+                        json!({"url": payload["url"]})
+                    } else {
+                        Value::Null
+                    },
                 },
             );
             state.event(
@@ -466,6 +489,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn url_opening_is_per_device_granted_and_queued_on_mobile() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut state = State::load(
+            directory.path().join("state"),
+            "URL test".into(),
+            "127.0.0.1".into(),
+            46000,
+        )
+        .unwrap();
+        let mut peer =
+            Identity::generate()
+                .unwrap()
+                .peer("Phone".into(), "127.0.0.1".into(), 46002);
+        peer.platform = "android".into();
+        state.trust.peers.insert(
+            peer.device_id.clone(),
+            TrustRecord {
+                peer: peer.clone(),
+                paired_at: now(),
+            },
+        );
+        let shared = Arc::new(Mutex::new(state));
+        let request = json!({"op":"open_url","url":"https://example.com"});
+        assert!(remote(shared.clone(), &peer, &request, false)
+            .await
+            .is_err());
+        handler::local(shared.clone(), json!({"op":"permission","peer_id":peer.device_id,"capability":"device.open_url","allow":true,"automatic":true})).await.unwrap();
+        let queued = remote(shared.clone(), &peer, &request, false)
+            .await
+            .unwrap();
+        let id = queued["id"].as_str().unwrap();
+        let events = platform_events(&mut *shared.lock().await).unwrap();
+        assert_eq!(events["actions"][0]["kind"], "open_url");
+        assert_eq!(events["actions"][0]["data"]["url"], "https://example.com");
+        handler::local(shared.clone(), json!({"op":"platform_validate","id":id}))
+            .await
+            .unwrap();
+        assert!(remote(
+            shared,
+            &peer,
+            &json!({"op":"open_url","url":"javascript:alert(1)"}),
+            false
+        )
+        .await
+        .is_err());
+    }
+
+    #[tokio::test]
     async fn native_actions_recheck_permissions_after_dispatch() {
         let directory = tempfile::tempdir().unwrap();
         let mut state = State::load(
@@ -500,6 +571,7 @@ mod tests {
                 expires_at: now() + 60,
                 status: "pending".into(),
                 message: String::new(),
+                data: Value::Null,
             },
         );
         let events = platform_events(&mut state).unwrap();

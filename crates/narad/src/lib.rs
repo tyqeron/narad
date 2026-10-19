@@ -3,6 +3,7 @@ mod controls;
 mod discovery;
 mod handler;
 mod input;
+mod open_url;
 mod phone;
 mod preferences;
 mod sharing;

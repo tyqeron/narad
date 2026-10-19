@@ -5,6 +5,7 @@
 #include <flutter/flutter_view_controller.h>
 
 #include <memory>
+#include <optional>
 
 #include "backend_host.h"
 #include "win32_window.h"
@@ -31,6 +32,8 @@ private:
   bool quitting_ = false;
   bool quit_requested_ = false;
   bool tray_added_ = false;
+  bool dart_ready_ = false;
+  std::optional<flutter::EncodableList> pending_shared_;
   void AddTray();
   void RemoveTray();
   BackendHost backend_;

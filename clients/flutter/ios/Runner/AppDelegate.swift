@@ -130,6 +130,14 @@ final class NaradMobileBridge: NSObject, UIDocumentPickerDelegate, MFMessageComp
         result(nil)
       } catch { result(FlutterError(code: "find_device", message: error.localizedDescription, details: nil)) }
     case "stopFinding": findPlayer?.stop();findPlayer=nil;result(nil)
+    case "openUrl":
+      guard let raw = args["url"] as? String, raw.utf8.count <= 2048,
+            let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil else {
+        result(FlutterError(code: "open_url", message: "Only valid web links can be opened", details: nil)); return
+      }
+      UIApplication.shared.open(url, options: [:]) { opened in
+        if opened { result(nil) } else { result(FlutterError(code: "open_url", message: "No default app can open this link", details: nil)) }
+      }
     case "getTheme": result(UserDefaults.standard.string(forKey: "narad.theme") ?? "system")
     case "setTheme": UserDefaults.standard.set(args["theme"] as? String ?? "system", forKey: "narad.theme"); result(nil)
     case "setDeviceName":

@@ -1,6 +1,7 @@
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
 #include <windows.h>
+#include <shellapi.h>
 
 #include "flutter_window.h"
 #include "utils.h"
@@ -23,8 +24,27 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     return EXIT_FAILURE;
   if (GetLastError() == ERROR_ALREADY_EXISTS) {
     HWND existing = FindWindowW(L"FLUTTER_RUNNER_WIN32_WINDOW", L"Narad");
-    if (existing)
-      PostMessageW(existing, WM_APP + 11, 0, 0);
+    if (existing) {
+      const auto arguments = GetCommandLineArguments();
+      std::vector<std::wstring> shared;
+      bool collecting = false;
+      for (const auto &arg : arguments) {
+        if (arg == "--share") { collecting = true; continue; }
+        if (arg == "--background") continue;
+        if (collecting || (!arg.empty() && arg[0] != '-')) {
+          const int size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, arg.c_str(), -1, nullptr, 0);
+          if (size > 1) { std::wstring converted(size, L'\0'); MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, arg.c_str(), -1, converted.data(), size); converted.pop_back(); shared.push_back(std::move(converted)); }
+        }
+      }
+      if (!shared.empty()) {
+        std::vector<wchar_t> payload;
+        for (const auto &value : shared) { payload.insert(payload.end(), value.begin(), value.end()); payload.push_back(L'\0'); }
+        payload.push_back(L'\0');
+        COPYDATASTRUCT data{}; data.dwData = 0x4E415241; data.cbData = static_cast<DWORD>(payload.size() * sizeof(wchar_t)); data.lpData = payload.data();
+        DWORD_PTR ignored = 0;
+        SendMessageTimeoutW(existing, WM_COPYDATA, 0, reinterpret_cast<LPARAM>(&data), SMTO_ABORTIFHUNG, 3000, &ignored);
+      } else PostMessageW(existing, WM_APP + 11, 0, 0);
+    }
     CloseHandle(singleton);
     CoUninitialize();
     return EXIT_SUCCESS;

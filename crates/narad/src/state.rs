@@ -70,6 +70,8 @@ pub struct PlatformAction {
     pub expires_at: u64,
     pub status: String,
     pub message: String,
+    #[serde(default)]
+    pub data: serde_json::Value,
 }
 pub struct State {
     pub preferences: crate::preferences::Preferences,

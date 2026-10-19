@@ -25,12 +25,18 @@ import 'desktop_integration.dart';
 import 'pairing_scanner.dart';
 import 'remote_input_page.dart';
 
-void main() => runApp(const NaradApp());
+void main(List<String> args) => runApp(NaradApp(shareArgs: args));
 
 class NaradApp extends StatefulWidget {
-  const NaradApp({super.key, this.api, this.preferences});
+  const NaradApp({
+    super.key,
+    this.api,
+    this.preferences,
+    this.shareArgs = const [],
+  });
   final NaradApi? api;
   final ThemePreferences? preferences;
+  final List<String> shareArgs;
   @override
   State<NaradApp> createState() => _NaradAppState();
 }
@@ -89,14 +95,15 @@ class _NaradAppState extends State<NaradApp> {
       theme: _theme(Brightness.light),
       darkTheme: _theme(Brightness.dark),
       themeMode: _mode,
-      home: Dashboard(api: widget.api),
+      home: Dashboard(api: widget.api, shareArgs: widget.shareArgs),
     ),
   );
 }
 
 class Dashboard extends StatefulWidget {
-  const Dashboard({super.key, this.api});
+  const Dashboard({super.key, this.api, this.shareArgs = const []});
   final NaradApi? api;
+  final List<String> shareArgs;
   @override
   State<Dashboard> createState() => _DashboardState();
 }
@@ -114,6 +121,8 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   bool? _autostart;
   bool _starting = false;
   bool _widgetDispatching = false;
+  bool _handlingShare = false;
+  List<String>? _pendingDesktopShare;
   FindDeviceController? _finder;
   bool _foreground = true;
   bool _restoredMedia = false;
@@ -146,9 +155,11 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     _directory = TextEditingController(
       text: Platform.environment['NARAD_STATE'] ?? '../../.narad',
     );
+    _pendingDesktopShare = widget.shareArgs.isEmpty ? null : widget.shareArgs;
     if (widget.api == null && (Platform.isLinux || Platform.isWindows)) {
       _desktop = DesktopIntegration();
       _desktop!.onPrepareQuit(_shutdown);
+      _desktop!.onSharedContent = _receiveDesktopShare;
       unawaited(
         _desktop!
             .autostart()
@@ -383,6 +394,14 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         _online = true;
         _error = null;
       });
+      if (Platform.isAndroid && _android != null && _foreground) {
+        unawaited(_receiveSharedContent());
+      }
+      final pendingDesktopShare = _pendingDesktopShare;
+      if (pendingDesktopShare != null) {
+        _pendingDesktopShare = null;
+        unawaited(_receiveDesktopShare(pendingDesktopShare));
+      }
       if (_phoneSync != null) unawaited(_phoneSync!.tick(data));
       if (_android != null && !_busy && !_widgetDispatching && _foreground) {
         final pending = await _android!.takeDeviceAction();
@@ -1680,6 +1699,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         () => _deviceAction(id, 'find_stop'),
       ),
       'Send file': (Icons.upload_file, () => _sendFile(id)),
+      'Share URL': (Icons.open_in_browser, () => _shareUrl(id)),
       'Send clipboard': (Icons.content_paste, () => _sendClipboard(id)),
       'Send audio': (
         Icons.mic_outlined,
@@ -2088,6 +2108,8 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                     },
                     'device.find': 'Ring this device (Find device)',
                     'device.info': 'Share battery, cellular and network status',
+                    'device.open_url':
+                        'Open shared web links with the default app',
                     if (peer['platform'] == 'linux' ||
                         peer['platform'] == 'windows')
                       'input.control':
@@ -2410,6 +2432,150 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     }
     await _command({'op': 'send_clipboard', 'peer_id': peer, 'text': text});
     _notice('Clipboard offered for approval');
+  }
+
+  Future<void> _shareUrl(String peer) async {
+    final controller = TextEditingController();
+    try {
+      final url = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Share link with ${_peerName(peer)}'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            keyboardType: TextInputType.url,
+            decoration: const InputDecoration(
+              labelText: 'Web address',
+              hintText: 'https://example.com',
+            ),
+            onSubmitted: (value) => Navigator.pop(context, value.trim()),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              child: const Text('Share'),
+            ),
+          ],
+        ),
+      );
+      if (url == null || url.isEmpty) return;
+      await _api!.call({'op': 'open_url', 'peer_id': peer, 'url': url});
+      _notice('Link sent to ${_peerName(peer)}');
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  Future<void> _receiveSharedContent() async {
+    if (_handlingShare ||
+        !Platform.isAndroid ||
+        _android == null ||
+        !_foreground) {
+      return;
+    }
+    _handlingShare = true;
+    try {
+      final share = await const MethodChannel(
+        'dev.narad/android',
+      ).invokeMapMethod<String, dynamic>('takeSharedContent');
+      if (share == null || !mounted) return;
+      final files = (share['files'] as List? ?? const []).cast<Map>();
+      final url =
+          ((share['url'] as String?)?.isNotEmpty == true
+                  ? share['url']
+                  : share['text'])
+              as String? ??
+          '';
+      await _deliverShare(
+        paths: [for (final file in files) file['path'] as String],
+        url: url,
+        text: share['text'] as String?,
+      );
+    } catch (error) {
+      _showError(error);
+    } finally {
+      _handlingShare = false;
+    }
+  }
+
+  Future<void> _receiveDesktopShare(List<String> arguments) async {
+    if (_handlingShare || !mounted) return;
+    _handlingShare = true;
+    try {
+      final paths = <String>[];
+      String? url;
+      for (final value in arguments.where(
+        (arg) => arg != '--share' && arg != '--background',
+      )) {
+        final parsed = Uri.tryParse(value);
+        if (parsed != null &&
+            ['http', 'https'].contains(parsed.scheme) &&
+            parsed.host.isNotEmpty) {
+          url = value;
+        } else if (parsed?.scheme == 'file') {
+          paths.add(parsed!.toFilePath(windows: Platform.isWindows));
+        } else {
+          paths.add(value);
+        }
+      }
+      await _deliverShare(paths: paths, url: url);
+    } catch (error) {
+      _showError(error);
+    } finally {
+      _handlingShare = false;
+    }
+  }
+
+  Future<void> _deliverShare({
+    List<String> paths = const [],
+    String? url,
+    String? text,
+  }) async {
+    final peers = _pairedPeers
+        .where((peer) => _isOnline(peer['device_id'] as String))
+        .toList();
+    if (peers.isEmpty) {
+      _notice('No paired devices are online to receive this share.');
+      return;
+    }
+    final target = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Share with a device'),
+        children: [
+          for (final peer in peers)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, peer),
+              child: ListTile(
+                leading: const Icon(Icons.devices_outlined),
+                title: Text(peer['device_name'] as String),
+                subtitle: Text(peer['platform'] as String),
+              ),
+            ),
+        ],
+      ),
+    );
+    if (target == null || !mounted) return;
+    final id = target['device_id'] as String;
+    for (final path in paths) {
+      await _sendFile(id, path: path);
+    }
+    final parsed = Uri.tryParse(url ?? text ?? '');
+    final isUrl =
+        parsed != null &&
+        ['http', 'https'].contains(parsed.scheme) &&
+        parsed.host.isNotEmpty;
+    if (url != null && isUrl) {
+      await _api!.call({'op': 'open_url', 'peer_id': id, 'url': url});
+    } else if (paths.isEmpty && text != null && text.isNotEmpty) {
+      await _api!.call({'op': 'send_clipboard', 'peer_id': id, 'text': text});
+    }
+    _notice('Shared with ${target['device_name']}');
   }
 
   List<Widget> _transfers() => [

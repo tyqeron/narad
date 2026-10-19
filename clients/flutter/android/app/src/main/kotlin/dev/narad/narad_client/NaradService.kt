@@ -224,6 +224,23 @@ class NaradService : Service() {
                                 message="Unlock requested. Authenticate on this device."
                             }
                         }
+                        "open_url" -> {
+                            val raw=action.optJSONObject("data")?.optString("url") ?: error("Missing shared URL")
+                            val uri=android.net.Uri.parse(raw)
+                            check(uri.scheme in listOf("http","https") && !uri.host.isNullOrBlank()){"Only web links can be opened"}
+                            val viewIntent=Intent(Intent.ACTION_VIEW,uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            if(MediaRuntime.visible && MediaRuntime.activity!=null) {
+                                MediaRuntime.activity?.runOnUiThread { MediaRuntime.activity?.startActivity(viewIntent) }
+                                message="Opening with the default app"
+                            } else {
+                                val open=PendingIntent.getActivity(this,83,viewIntent,PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                                val notice=Notification.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_narad_notification)
+                                    .setContentTitle("Link shared with this device").setContentText(uri.host)
+                                    .setContentIntent(open).setAutoCancel(true).setVisibility(Notification.VISIBILITY_PRIVATE).build()
+                                getSystemService(NotificationManager::class.java).notify(83,notice)
+                                message="Tap the Narad notification to open the link"
+                            }
+                        }
                         else -> error("Unsupported device action")
                     }
                 }catch(error:Exception){success=false;message=error.message ?: "Device action failed"}

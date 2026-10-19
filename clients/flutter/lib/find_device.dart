@@ -179,6 +179,17 @@ class FindDeviceController {
         } else if (action['kind'] == 'find_stop') {
           await stop();
           message = 'Ringing stopped';
+        } else if (action['kind'] == 'open_url' && Platform.isIOS) {
+          final url = Uri.tryParse(action['data']?['url'] as String? ?? '');
+          if (url == null ||
+              !['http', 'https'].contains(url.scheme) ||
+              url.host.isEmpty) {
+            throw StateError('Only valid web links can be opened');
+          }
+          await const MethodChannel(
+            'dev.narad/ios',
+          ).invokeMethod<void>('openUrl', {'url': url.toString()});
+          message = 'Opened with the default app';
         } else {
           throw StateError('Unsupported device action');
         }

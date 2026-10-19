@@ -14,6 +14,7 @@ class DesktopIntegration {
   late final _windows = FlutterLocalNotificationsWindows();
   Future<bool>? _ready;
   Future<void> Function(int, String, String?)? onNotificationAction;
+  Future<void> Function(List<String>)? onSharedContent;
 
   void onPrepareQuit(Future<void> Function() shutdown) {
     channel.setMethodCallHandler((call) async {
@@ -25,6 +26,9 @@ class DesktopIntegration {
           args['action'] as String,
           null,
         );
+      }
+      if (call.method == 'sharedContent') {
+        await onSharedContent?.call((call.arguments as List).cast<String>());
       }
     });
   }

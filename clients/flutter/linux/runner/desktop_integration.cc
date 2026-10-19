@@ -4,6 +4,15 @@
 #include <cstring>
 
 namespace {
+void send_shared_files(GtkApplication *application, GPtrArray *files) {
+  auto *channel = static_cast<FlMethodChannel *>(
+      g_object_get_data(G_OBJECT(application), "narad-desktop-channel"));
+  if (!channel || !files || files->len == 0) return;
+  g_autoptr(FlValue) values = fl_value_new_list();
+  for (guint i = 0; i < files->len; ++i)
+    fl_value_append_take(values, fl_value_new_string(static_cast<const gchar *>(g_ptr_array_index(files, i))));
+  fl_method_channel_invoke_method(channel, "sharedContent", values, nullptr, nullptr, nullptr);
+}
 gchar *autostart_path() {
   return g_build_filename(g_get_user_config_dir(), "autostart",
                           "dev.narad.narad_client.desktop", nullptr);
@@ -152,6 +161,28 @@ void handle(FlMethodChannel *, FlMethodCall *call, gpointer user_data) {
   fl_method_call_respond(call, response, nullptr);
 }
 } // namespace
+void narad_desktop_open_files(GtkApplication *application, GFile **files, gint count) {
+  auto *pending = static_cast<GPtrArray *>(g_object_get_data(G_OBJECT(application), "narad-shared-files"));
+  if (!pending) {
+    pending = g_ptr_array_new_with_free_func(g_free);
+    g_object_set_data_full(G_OBJECT(application), "narad-shared-files", pending, reinterpret_cast<GDestroyNotify>(g_ptr_array_unref));
+  }
+  for (gint i = 0; i < count && pending->len < 16; ++i) {
+    g_autofree gchar *uri = g_file_get_uri(files[i]);
+    if (uri) g_ptr_array_add(pending, g_strdup(uri));
+  }
+  if (g_object_get_data(G_OBJECT(application), "narad-ready")) {
+    send_shared_files(application, pending);
+    g_ptr_array_set_size(pending, 0);
+  }
+}
+void narad_desktop_flush_pending(GtkApplication *application) {
+  auto *pending = static_cast<GPtrArray *>(g_object_get_data(G_OBJECT(application), "narad-shared-files"));
+  if (pending && pending->len > 0) {
+    send_shared_files(application, pending);
+    g_ptr_array_set_size(pending, 0);
+  }
+}
 void narad_register_desktop(FlView *view, GtkApplication *application) {
   if(!g_action_map_lookup_action(G_ACTION_MAP(application),"show")){
     GSimpleAction* action=g_simple_action_new("show",nullptr);
