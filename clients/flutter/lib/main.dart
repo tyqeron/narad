@@ -122,6 +122,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   bool _starting = false;
   bool _widgetDispatching = false;
   bool _handlingShare = false;
+  final List<Future<void> Function()> _shareQueue = [];
   List<String>? _pendingDesktopShare;
   FindDeviceController? _finder;
   bool _foreground = true;
@@ -181,6 +182,9 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       unawaited(_startWindows());
     } else {
       unawaited(_autoConnect());
+    }
+    if (widget.shareArgs.isNotEmpty && Platform.isLinux) {
+      _pendingDesktopShare = widget.shareArgs;
     }
   }
 
@@ -331,6 +335,11 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     _api = api;
     _clipboardSync = ClipboardSync(api);
     _audio = AudioController(api, _showError);
+    final pendingShare = _pendingDesktopShare;
+    if (pendingShare != null) {
+      _pendingDesktopShare = null;
+      scheduleMicrotask(() => _receiveDesktopShare(pendingShare));
+    }
     unawaited(_refresh());
     _timer?.cancel();
     _timer = Timer.periodic(
@@ -2408,18 +2417,20 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       path = result?.path;
     }
     if (path == null) return;
-    final result = await _api!.call({
-      'op': 'send_file',
-      'peer_id': peer,
-      'path': path,
-      'id': ?id,
+    await _run(() async {
+      final result = await _api!.call({
+        'op': 'send_file',
+        'peer_id': peer,
+        'path': path,
+        'id': ?id,
+      });
+      _notice(
+        result['status'] == 'pending'
+            ? 'File offered. After the other device accepts, press Send / resume.'
+            : 'Transfer ${result['status']}',
+      );
+      if (mounted) _openTab(2);
     });
-    _notice(
-      result['status'] == 'pending'
-          ? 'File offered. After the other device accepts, press Send / resume.'
-          : 'Transfer ${result['status']}',
-    );
-    if (mounted) _openTab(2);
   }
 
   Future<void> _sendClipboard(String peer) async {
@@ -2500,11 +2511,21 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       _showError(error);
     } finally {
       _handlingShare = false;
+      _drainShareQueue();
     }
   }
 
   Future<void> _receiveDesktopShare(List<String> arguments) async {
-    if (_handlingShare || !mounted) return;
+    if (!mounted) return;
+    if (_api == null) {
+      _pendingDesktopShare = [...?_pendingDesktopShare, ...arguments];
+      _notice('File received. Connect Narad to share it with a device.');
+      return;
+    }
+    if (_handlingShare) {
+      _shareQueue.add(() => _receiveDesktopShare(arguments));
+      return;
+    }
     _handlingShare = true;
     try {
       final paths = <String>[];
@@ -2528,7 +2549,14 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       _showError(error);
     } finally {
       _handlingShare = false;
+      _drainShareQueue();
     }
+  }
+
+  void _drainShareQueue() {
+    if (_handlingShare || _shareQueue.isEmpty || !mounted) return;
+    final next = _shareQueue.removeAt(0);
+    scheduleMicrotask(next);
   }
 
   Future<void> _deliverShare({
@@ -2536,6 +2564,11 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     String? url,
     String? text,
   }) async {
+    if (paths.isEmpty && (url == null || url.isEmpty) &&
+        (text == null || text.isEmpty)) {
+      _notice('No file or link was received from the system share.');
+      return;
+    }
     final peers = _pairedPeers
         .where((peer) => _isOnline(peer['device_id'] as String))
         .toList();
@@ -2562,8 +2595,14 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     );
     if (target == null || !mounted) return;
     final id = target['device_id'] as String;
+    var failedFiles = 0;
     for (final path in paths) {
-      await _sendFile(id, path: path);
+      try {
+        await _api!.call({'op': 'send_file', 'peer_id': id, 'path': path});
+      } catch (error) {
+        failedFiles++;
+        _showError(StateError('Could not share ${File(path).uri.pathSegments.last}: $error'));
+      }
     }
     final parsed = Uri.tryParse(url ?? text ?? '');
     final isUrl =
@@ -2575,7 +2614,11 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     } else if (paths.isEmpty && text != null && text.isNotEmpty) {
       await _api!.call({'op': 'send_clipboard', 'peer_id': id, 'text': text});
     }
-    _notice('Shared with ${target['device_name']}');
+    if (failedFiles == 0) {
+      _notice('Shared with ${target['device_name']}');
+    } else {
+      _notice('$failedFiles file(s) could not be shared. See the error message.');
+    }
   }
 
   List<Widget> _transfers() => [

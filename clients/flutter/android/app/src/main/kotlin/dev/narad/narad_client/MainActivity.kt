@@ -111,6 +111,8 @@ class MainActivity : FlutterActivity() {
         val text=incoming.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()?.take(10000)
         val sharedUris=(streams(incoming)+List(incoming.clipData?.itemCount ?: 0){index->incoming.clipData?.getItemAt(index)?.uri}.filterNotNull()).distinct().take(16)
         val dataUrl=incoming.data?.takeIf{it.scheme=="http" || it.scheme=="https"}?.toString()
+        // Clear the consumed share intent while preserving the activity's launch
+        // extras. A blank explicit intent can reset Flutter's startup state.
         setIntent(Intent(this,MainActivity::class.java))
         io.execute {
             try {
