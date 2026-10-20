@@ -94,8 +94,8 @@ void notification_action(GSimpleAction*, GVariant* parameter, gpointer app) {
   fl_value_set_string_take(args,"action",fl_value_new_string(separator+1));
   fl_method_channel_invoke_method(channel,"notificationAction",args,nullptr,nullptr,nullptr);
 }
-// Per-device sender headings require the freedesktop API: GNotification only
-// supports a single application-wide name. Keep stable IDs and action routing.
+// The freedesktop API carries source image data alongside the notification.
+// Keep stable IDs and route actions back through the authenticated phone bridge.
 std::map<gint64, guint32> mirrored_notifications;
 GDBusConnection* notification_bus(GApplication* app, GError** error) {
   static GDBusConnection* bus=nullptr;
@@ -148,7 +148,6 @@ void notification_image_hint(FlValue* args, GVariantBuilder* hints) {
 bool send_device_notification(GApplication* app,FlValue* args,GError** error) {
   auto* bus=notification_bus(app,error);if(!bus)return false;
   const auto id=fl_value_get_int(fl_value_lookup_string(args,"id"));
-  const auto device=fl_value_get_string(fl_value_lookup_string(args,"deviceName"));
   GVariantBuilder actions;g_variant_builder_init(&actions,G_VARIANT_TYPE("as"));
   g_variant_builder_add(&actions,"s","default");g_variant_builder_add(&actions,"s","Open Narad");
   auto* buttons=fl_value_lookup_string(args,"actions");
@@ -159,7 +158,7 @@ bool send_device_notification(GApplication* app,FlValue* args,GError** error) {
     }
   GVariantBuilder hints;g_variant_builder_init(&hints,G_VARIANT_TYPE_VARDICT);
   notification_image_hint(args,&hints);
-  const auto heading=std::string("Narad · ")+device;
+  const auto heading=std::string("Narad");
   g_autofree gchar* body=g_markup_escape_text(fl_value_get_string(fl_value_lookup_string(args,"text")),-1);
   auto found=mirrored_notifications.find(id);
   g_autoptr(GVariant) result=g_dbus_connection_call_sync(bus,"org.freedesktop.Notifications",

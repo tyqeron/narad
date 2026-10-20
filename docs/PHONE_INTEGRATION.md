@@ -134,3 +134,7 @@ the existing notification permission and payload budget. Text and action buttons
 have priority; missing or invalid icons fall back to the normal Narad appearance.
 Windows keeps only the active notification icons in its application cache and
 removes them on withdrawal or the next icon-cache startup.
+
+Mirrored notification titles use **device · app name**, with the original title
+and full message below, followed by the available action buttons. Android and
+Windows may additionally show the operating system's Narad app attribution.

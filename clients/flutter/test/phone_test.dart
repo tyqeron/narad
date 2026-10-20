@@ -95,11 +95,13 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('fixture body'), findsOneWidget);
+    expect(find.text('Test phone · Generated app'), findsOneWidget);
+    expect(find.text('Private fixture\nfixture body'), findsOneWidget);
     api.denied = true;
     await tester.tap(find.byTooltip('Refresh'));
     await tester.pumpAndSettle();
-    expect(find.text('fixture body'), findsNothing);
+    expect(find.text('Private fixture\nfixture body'), findsNothing);
+    expect(find.text('Test phone · Generated app'), findsNothing);
     expect(find.textContaining('permission denied'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
@@ -152,7 +154,7 @@ void main() {
       }
 
       await tick();
-      expect(banners.first.title, 'Generated app');
+      expect(banners.first.title, 'Test phone · Generated app');
       expect(banners.first.deviceName, 'Test phone');
       expect(banners.first.icon, isNotNull);
       expect(banners.first.body, 'Private fixture\nfixture body');

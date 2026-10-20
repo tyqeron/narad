@@ -385,7 +385,7 @@ class _PhonePageState extends State<PhonePage> with WidgetsBindingObserver {
                                 Expanded(
                                   child: Text(
                                     _tab == 0
-                                        ? '${item['app']} · ${item['title']}'
+                                        ? '${widget.peer['device_name']} · ${item['app']}'
                                         : _tab == 1
                                         ? '${item['address']}'
                                         : '${item['name'] ?? ''} ${item['number']}',
@@ -400,8 +400,15 @@ class _PhonePageState extends State<PhonePage> with WidgetsBindingObserver {
                         ),
                         if (_tab == 0 || _tab == 1)
                           SelectableText(
-                            (item[_tab == 0 ? 'text' : 'body'] ?? '')
-                                .toString(),
+                            _tab == 0
+                                ? [
+                                        item['title']?.toString() ?? '',
+                                        item['text']?.toString() ?? '',
+                                      ]
+                                      .where((s) => s.isNotEmpty)
+                                      .toSet()
+                                      .join('\n')
+                                : (item['body'] ?? '').toString(),
                           ),
                         Text(_date(item[_tab == 0 ? 'time' : 'date'])),
                         if (_tab == 2)

@@ -91,8 +91,7 @@ class PhoneNotificationSync(private val context:Context) {
                         val open=PendingIntent.getActivity(context,id,Intent(context,MainActivity::class.java),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
                         val body=if(kind=="notifications") listOf(item.optString("title"),item.optString("text")).filter{it.isNotBlank()}.distinct().joinToString("\n") else "Open Phone in Narad for call controls"
                         val builder=Notification.Builder(context,"narad_phone_notifications").setSmallIcon(R.drawable.ic_narad_notification)
-                            .setSubText(name)
-                            .setContentTitle(if(kind=="notifications")item.optString("app") else "Incoming call")
+                            .setContentTitle("$name · ${if(kind=="notifications")item.optString("app") else "Incoming call"}")
                             .setContentText(body).setStyle(Notification.BigTextStyle().bigText(body))
                             .setContentIntent(open).setAutoCancel(false).setVisibility(Notification.VISIBILITY_PRIVATE).setOnlyAlertOnce(true)
                         if(kind=="notifications") {

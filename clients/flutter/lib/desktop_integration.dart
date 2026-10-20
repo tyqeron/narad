@@ -142,13 +142,6 @@ class DesktopIntegration {
                 placement: WindowsImagePlacement.appLogoOverride,
               ),
           ],
-          header: n.deviceName == null
-              ? null
-              : WindowsHeader(
-                  id: n.peer,
-                  title: 'Narad · ${n.deviceName}',
-                  arguments: 'device:${n.peer}',
-                ),
           progressBars: [
             if (n.progress != null)
               WindowsProgressBar(

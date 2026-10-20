@@ -130,8 +130,8 @@ class PhoneSync {
                 icon: notificationIcon(item['icon']),
                 key: raw,
                 title: kind == 'notifications'
-                    ? '${item['app']}'
-                    : 'Incoming call',
+                    ? '${peer['device_name']} · ${item['app']}'
+                    : '${peer['device_name']} · Incoming call',
                 body: kind == 'notifications'
                     ? [
                         item['title']?.toString() ?? '',
