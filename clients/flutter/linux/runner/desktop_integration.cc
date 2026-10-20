@@ -126,6 +126,25 @@ GDBusConnection* notification_bus(GApplication* app, GError** error) {
       },app,nullptr);
   return bus;
 }
+// Decode only the fixed-size PNG format emitted by the phone bridge.
+void notification_image_hint(FlValue* args, GVariantBuilder* hints) {
+  auto* icon=fl_value_lookup_string(args,"icon");
+  if(!icon || fl_value_get_type(icon)!=FL_VALUE_TYPE_UINT8_LIST)return;
+  const auto size=fl_value_get_length(icon);
+  const auto* bytes=fl_value_get_uint8_list(icon);
+  const guint8 signature[]={137,80,78,71,13,10,26,10};
+  if(size<33 || size>6144 || memcmp(bytes,signature,8)!=0 || memcmp(bytes+12,"IHDR",4)!=0)return;
+  guint32 width,height;
+  memcpy(&width,bytes+16,4);memcpy(&height,bytes+20,4);
+  if(GUINT32_FROM_BE(width)!=32 || GUINT32_FROM_BE(height)!=32)return;
+  g_autoptr(GInputStream) stream=g_memory_input_stream_new_from_data(bytes,size,nullptr);
+  g_autoptr(GdkPixbuf) image=gdk_pixbuf_new_from_stream(stream,nullptr,nullptr);
+  if(!image || gdk_pixbuf_get_width(image)!=32 || gdk_pixbuf_get_height(image)!=32)return;
+  const auto length=gdk_pixbuf_get_byte_length(image);
+  auto* data=g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE,gdk_pixbuf_get_pixels(image),length,1);
+  g_variant_builder_add(hints,"{sv}","image-data",g_variant_new("(iiibii@ay)",32,32,
+      gdk_pixbuf_get_rowstride(image),gdk_pixbuf_get_has_alpha(image),8,gdk_pixbuf_get_n_channels(image),data));
+}
 bool send_device_notification(GApplication* app,FlValue* args,GError** error) {
   auto* bus=notification_bus(app,error);if(!bus)return false;
   const auto id=fl_value_get_int(fl_value_lookup_string(args,"id"));
@@ -139,6 +158,7 @@ bool send_device_notification(GApplication* app,FlValue* args,GError** error) {
       g_variant_builder_add(&actions,"s",fl_value_get_string(fl_value_get_map_value(buttons,i)));
     }
   GVariantBuilder hints;g_variant_builder_init(&hints,G_VARIANT_TYPE_VARDICT);
+  notification_image_hint(args,&hints);
   const auto heading=std::string("Narad · ")+device;
   g_autofree gchar* body=g_markup_escape_text(fl_value_get_string(fl_value_lookup_string(args,"text")),-1);
   auto found=mirrored_notifications.find(id);

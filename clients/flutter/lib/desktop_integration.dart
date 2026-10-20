@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications_windows/flutter_local_notifications_windows.dart';
 import 'phone_sync.dart';
@@ -13,6 +14,24 @@ class DesktopIntegration {
   final MethodChannel channel;
   late final _windows = FlutterLocalNotificationsWindows();
   Future<bool>? _ready;
+  Future<Directory>? _iconDirectory;
+  Future<File?> _windowsIcon(int id, Uint8List? bytes) async {
+    if (bytes == null) return null;
+    try {
+      final directory = await (_iconDirectory ??= () async {
+        final cache = await getApplicationCacheDirectory();
+        final folder = Directory('${cache.path}/notification-icons');
+        if (await folder.exists()) await folder.delete(recursive: true);
+        return folder.create(recursive: true);
+      }());
+      final file = File('${directory.path}/notice-$id.png');
+      await file.writeAsBytes(bytes, flush: true);
+      return file;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> Function(int, String, String?)? onNotificationAction;
   Future<void> Function(List<String>)? onSharedContent;
 
@@ -109,11 +128,20 @@ class DesktopIntegration {
         },
       );
       if (!await _ready!) throw StateError('Windows notifications unavailable');
+      final icon = await _windowsIcon(n.id, n.icon);
       await _windows.show(
         id: n.id,
         title: n.title,
         body: n.body,
         notificationDetails: WindowsNotificationDetails(
+          images: [
+            if (icon != null)
+              WindowsImage(
+                icon.uri,
+                altText: n.title,
+                placement: WindowsImagePlacement.appLogoOverride,
+              ),
+          ],
           header: n.deviceName == null
               ? null
               : WindowsHeader(
@@ -148,6 +176,7 @@ class DesktopIntegration {
         'id': n.id,
         'title': n.title,
         'deviceName': n.deviceName,
+        'icon': n.icon,
         'text': n.body,
         'actions': n.actions,
       });
@@ -157,6 +186,13 @@ class DesktopIntegration {
   Future<void> cancelPhoneNotification(int id) async {
     if (Platform.isWindows) {
       if (_ready != null && await _ready!) await _windows.cancel(id: id);
+      if (_iconDirectory != null) {
+        try {
+          final folder = await _iconDirectory!;
+          final file = File('${folder.path}/notice-$id.png');
+          if (await file.exists()) await file.delete();
+        } catch (_) {}
+      }
     } else {
       await channel.invokeMethod<void>('cancelPhoneNotification', {'id': id});
     }

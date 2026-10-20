@@ -1,3 +1,6 @@
+import 'package:narad_client/notification_icon.dart';
+import 'package:narad_client/phone_sync.dart';
+import 'fixtures/notification_icon.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:narad_client/desktop_integration.dart';
@@ -19,6 +22,31 @@ void main() {
     () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null),
   );
+  test(
+    'forwards validated source icon bytes with the device notification',
+    () async {
+      final desktop = DesktopIntegration(channel: channel);
+      final icon = notificationIcon(sampleNotificationIcon)!;
+      await desktop.phoneNotification(
+        PhoneNotice(
+          id: 1,
+          peer: 'phone',
+          key: 'key',
+          title: 'Test app',
+          body: 'Test content',
+          actions: {'dismiss': 'Dismiss'},
+          deviceName: 'Test phone',
+          icon: icon,
+        ),
+      );
+      final args = calls.single.arguments as Map;
+      expect(args['icon'], orderedEquals(icon));
+      expect(args['title'], 'Test app');
+      expect(args['deviceName'], 'Test phone');
+      expect(args['actions'], {'dismiss': 'Dismiss'});
+    },
+  );
+
   test(
     'transfer notification updates one ID as bytes advance and completes',
     () async {

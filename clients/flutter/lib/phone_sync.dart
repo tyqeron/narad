@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
+import 'notification_icon.dart';
 import 'api.dart';
 
 class PhoneNotice {
@@ -12,7 +14,9 @@ class PhoneNotice {
     required this.actions,
     this.progress,
     this.deviceName,
+    this.icon,
   });
+  final Uint8List? icon;
   final String? deviceName;
   final int? progress;
   final int id;
@@ -123,6 +127,7 @@ class PhoneSync {
                 id: _posted[key]?.id ?? _nextId++,
                 peer: id,
                 deviceName: peer['device_name']?.toString(),
+                icon: notificationIcon(item['icon']),
                 key: raw,
                 title: kind == 'notifications'
                     ? '${item['app']}'

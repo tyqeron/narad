@@ -126,3 +126,11 @@ can view/export phone contacts but does not yet publish a desktop address book.
 
 References: [Android contact insertion](https://developer.android.com/reference/android/provider/ContactsContract.Intents.Insert),
 [Apple contact access](https://developer.apple.com/documentation/contacts/accessing-the-contact-store).
+
+Mirrored notifications include a compact source app icon on Android, Linux and
+Windows, and in Narad's notification list. App logos use a 32 × 32 PNG; a
+notification's small icon is used if its app logo cannot be resolved. Icons share
+the existing notification permission and payload budget. Text and action buttons
+have priority; missing or invalid icons fall back to the normal Narad appearance.
+Windows keeps only the active notification icons in its application cache and
+removes them on withdrawal or the next icon-cache startup.

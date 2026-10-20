@@ -96,6 +96,7 @@ class PhoneNotificationSync(private val context:Context) {
                             .setContentText(body).setStyle(Notification.BigTextStyle().bigText(body))
                             .setContentIntent(open).setAutoCancel(false).setVisibility(Notification.VISIBILITY_PRIVATE).setOnlyAlertOnce(true)
                         if(kind=="notifications") {
+                            NotificationIcons.decode(item.optString("icon"))?.let{builder.setLargeIcon(it)}
                             var count=0
                             if(item.optBoolean("reply")){builder.addAction(PhoneNotificationAction.button(context,id,peer,raw,"notification_reply","Reply"));count++}
                             val actions=item.optJSONArray("actions")

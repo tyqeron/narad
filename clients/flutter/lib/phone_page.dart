@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'api.dart';
+import 'notification_icon.dart';
 import 'contacts_page.dart';
 
 /// Content is kept only while this screen is open. Side effects require a user tap.
@@ -362,13 +363,40 @@ class _PhonePageState extends State<PhonePage> with WidgetsBindingObserver {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          _tab == 0
-                              ? '${item['app']} · ${item['title']}'
-                              : _tab == 1
-                              ? '${item['address']}'
-                              : '${item['name'] ?? ''} ${item['number']}',
-                          style: Theme.of(context).textTheme.titleMedium,
+                        Builder(
+                          builder: (context) {
+                            final icon = _tab == 0
+                                ? notificationIcon(item['icon'])
+                                : null;
+                            return Row(
+                              children: [
+                                if (icon != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 10),
+                                    child: Image.memory(
+                                      icon,
+                                      width: 32,
+                                      height: 32,
+                                      errorBuilder: (_, _, _) => const Icon(
+                                        Icons.notifications_outlined,
+                                      ),
+                                    ),
+                                  ),
+                                Expanded(
+                                  child: Text(
+                                    _tab == 0
+                                        ? '${item['app']} · ${item['title']}'
+                                        : _tab == 1
+                                        ? '${item['address']}'
+                                        : '${item['name'] ?? ''} ${item['number']}',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium,
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
                         ),
                         if (_tab == 0 || _tab == 1)
                           SelectableText(

@@ -1,3 +1,4 @@
+import 'fixtures/notification_icon.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:narad_client/api.dart';
@@ -12,6 +13,7 @@ class PhoneApi implements NaradApi {
       'key': 'old',
       'app': 'Generated app',
       'title': 'Private fixture',
+      'icon': sampleNotificationIcon,
       'text': 'fixture body',
       'time': 1,
     },
@@ -152,6 +154,7 @@ void main() {
       await tick();
       expect(banners.first.title, 'Generated app');
       expect(banners.first.deviceName, 'Test phone');
+      expect(banners.first.icon, isNotNull);
       expect(banners.first.body, 'Private fixture\nfixture body');
       final id = banners.first.id;
       banners.clear();

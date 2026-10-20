@@ -76,7 +76,18 @@ class NaradNotificationListener:NotificationListenerService() {
                     .put("dismissible",n.isClearable).put("actions",actions)
                 if(result.length()>=30 || result.toString().toByteArray().size+item.toString().toByteArray().size>38000)break
                 result.put(item)
-            };return result
+            }
+            // Allocate icons only after text/actions fit, so logos never displace messages.
+            var budget=38000-result.toString().toByteArray(Charsets.UTF_8).size
+            val icons=mutableMapOf<String,String?>()
+            for(i in 0 until result.length()) {
+                val item=result.getJSONObject(i)
+                val posted=active.firstOrNull{it.key==item.getString("key")} ?: continue
+                val icon=icons.getOrPut(posted.packageName){NotificationIcons.capture(s,posted)} ?: continue
+                val cost=icon.length+10
+                if(cost<=budget){item.put("icon",icon);budget-=cost}
+            }
+            return result
         }
         @Synchronized fun perform(c:Context,key:String,token:String) {
             val s=service();val button=buttons[token] ?: error("Notification action expired")
