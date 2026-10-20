@@ -158,13 +158,17 @@ bool send_device_notification(GApplication* app,FlValue* args,GError** error) {
     }
   GVariantBuilder hints;g_variant_builder_init(&hints,G_VARIANT_TYPE_VARDICT);
   notification_image_hint(args,&hints);
-  const auto heading=std::string("Narad");
-  g_autofree gchar* body=g_markup_escape_text(fl_value_get_string(fl_value_lookup_string(args,"text")),-1);
+  const auto heading=std::string(fl_value_get_string(fl_value_lookup_string(args,"title")));
+  const auto content=std::string(fl_value_get_string(fl_value_lookup_string(args,"text")));
+  const auto line=content.find('\n');
+  const auto summary=content.substr(0,line);
+  const auto remaining=line==std::string::npos?std::string():content.substr(line+1);
+  g_autofree gchar* body=g_markup_escape_text(remaining.c_str(),-1);
   auto found=mirrored_notifications.find(id);
   g_autoptr(GVariant) result=g_dbus_connection_call_sync(bus,"org.freedesktop.Notifications",
       "/org/freedesktop/Notifications","org.freedesktop.Notifications","Notify",
       g_variant_new("(susss@as@a{sv}i)",heading.c_str(),found==mirrored_notifications.end()?0:found->second,
-          "dev.narad.narad_client",fl_value_get_string(fl_value_lookup_string(args,"title")),body,
+          "dev.narad.narad_client",summary.c_str(),body,
           g_variant_builder_end(&actions),g_variant_builder_end(&hints),-1),
       G_VARIANT_TYPE("(u)"),G_DBUS_CALL_FLAGS_NONE,2000,nullptr,error);
   if(!result)return false;

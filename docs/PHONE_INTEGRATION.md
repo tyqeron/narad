@@ -137,4 +137,6 @@ removes them on withdrawal or the next icon-cache startup.
 
 Mirrored notification titles use **device · app name**, with the original title
 and full message below, followed by the available action buttons. Android and
-Windows may additionally show the operating system's Narad app attribution.
+Windows retain Narad's system app attribution, which is not a per-notification
+content field. On Linux, the notification sender heading
+is **device · app name** beside the Narad icon, with message content below.
