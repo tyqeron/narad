@@ -236,7 +236,9 @@ final class NaradMobileBridge: NSObject, UIDocumentPickerDelegate, MFMessageComp
         if previous == signature || (!transfersInitialized && previous == nil && ["completed", "cancelled"].contains(status)) { continue }
         let content = UNMutableNotificationContent()
         content.title = "\(direction == "outbound" || item["outgoing"] as? Bool == true ? "Sending" : "Receiving") \(name)"
-        content.body = status == "completed" ? (direction == "shared_transfers" ? "Transfer complete · Shared folder" : "Transfer complete · Downloads/Narad") : "\(percent)% · \(done) / \(total) bytes · \(status)"
+        let doneText = ByteCountFormatter.string(fromByteCount: done, countStyle: .binary)
+        let totalText = ByteCountFormatter.string(fromByteCount: total, countStyle: .binary)
+        content.body = status == "completed" ? (direction == "shared_transfers" ? "Transfer complete · Shared folder" : "Transfer complete · Downloads/Narad") : "\(percent)% · \(doneText) / \(totalText) · \(status)"
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: key, content: content, trigger: nil))
       }
     }

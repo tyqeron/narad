@@ -7,9 +7,18 @@ import android.os.Build
 import android.provider.MediaStore
 import org.json.JSONObject
 import java.io.File
+import java.util.Locale
 
 /** Transfer polling belongs to the service so closing Flutter does not hide progress. */
 object TransferNotices {
+    private fun sizeText(bytes:Long):String {
+        if(bytes<1024)return "$bytes B"
+        val units=arrayOf("B","KB","MB","GB","TB","PB","EB")
+        var value=bytes.toDouble()
+        var unit=0
+        while(value>=1024 && unit<units.lastIndex){value/=1024;unit++}
+        return String.format(Locale.getDefault(),"%.1f %s",value,units[unit])
+    }
     private var initialized=false
     private val states = mutableMapOf<String,String>()
     fun update(context: Context, snapshot: JSONObject) {
@@ -38,7 +47,7 @@ object TransferNotices {
                 val previous=states.put(key,signature)
                 if(previous==signature || (!initialized && previous==null && saveError==null && status in listOf("completed","cancelled")))continue
                 val active=status !in listOf("completed","cancelled","denied")
-                val body=if(saveError!=null)"Could not save to Downloads/Narad: $saveError" else if(status=="completed") { if(direction=="transfers")"Saved in Downloads/Narad" else if(direction=="shared_transfers")"Saved in shared folder" else "Transfer complete" } else "$progress% · $done / $total bytes · $status"
+                val body=if(saveError!=null)"Could not save to Downloads/Narad: $saveError" else if(status=="completed") { if(direction=="transfers")"Saved in Downloads/Narad" else if(direction=="shared_transfers")"Saved in shared folder" else "Transfer complete" } else "$progress% · ${sizeText(done)} / ${sizeText(total)} · $status"
                 val notice=Notification.Builder(context,"narad_transfers")
                     .setSmallIcon(R.drawable.ic_narad_notification)
                     .setContentTitle("${if(direction=="outbound" || t.optBoolean("outgoing"))"Sending" else "Receiving"} $name")

@@ -2430,9 +2430,18 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     ];
   }
 
-  String _bytes(int bytes) => bytes >= 1024 * 1024
-      ? '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB'
-      : '${(bytes / 1024).toStringAsFixed(1)} KB';
+  String _bytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB'];
+    var value = bytes.toDouble();
+    var unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit++;
+    }
+    return '${value.toStringAsFixed(1)} ${units[unit]}';
+  }
+
   Future<void> _sendFile(String peer, {String? path, String? id}) async {
     if (path != null && !await File(path).exists()) {
       path = null;
