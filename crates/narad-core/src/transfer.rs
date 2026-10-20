@@ -11,8 +11,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub const MAX_FILE_SIZE: u64 = 1024 * 1024 * 1024;
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Transfer {
     pub id: String,
@@ -41,8 +39,8 @@ impl Transfer {
         #[cfg(windows)]
         validate_windows_name(&self.file_name)?;
         ensure!(
-            self.file_size <= MAX_FILE_SIZE && self.received <= self.file_size,
-            "file size exceeds limit"
+            self.received <= self.file_size,
+            "received bytes exceed file size"
         );
         ensure!(
             self.checksum.len() == 64 && self.checksum.bytes().all(|b| b.is_ascii_hexdigit()),
@@ -91,8 +89,11 @@ impl Transfer {
             blake3::hash(data).to_hex().as_str() == checksum,
             "chunk checksum mismatch"
         );
+        let end = offset
+            .checked_add(data.len() as u64)
+            .context("chunk offset overflow")?;
         ensure!(
-            offset <= self.received && offset + data.len() as u64 <= self.file_size,
+            offset <= self.received && end <= self.file_size,
             "invalid chunk offset"
         );
         let mut file = OpenOptions::new()
@@ -100,10 +101,7 @@ impl Transfer {
             .write(true)
             .open(self.path(dir))?;
         if offset < self.received {
-            ensure!(
-                offset + data.len() as u64 <= self.received,
-                "overlapping retry chunk"
-            );
+            ensure!(end <= self.received, "overlapping retry chunk");
             let mut previous = vec![0; data.len()];
             file.seek(SeekFrom::Start(offset))?;
             file.read_exact(&mut previous)?;
@@ -311,6 +309,65 @@ pub fn load_transfers(dir: &Path, key: &[u8; 32], downloads: &Path) -> Result<Ve
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn large_transfers_resume_across_four_gib_without_a_size_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = [3; 32];
+        let mut t = transfer(b"tail");
+        t.file_size = (1u64 << 32) + 2;
+        t.validate().unwrap();
+        t.approve(dir.path(), &key).unwrap();
+        t.received = t.file_size - 4;
+        OpenOptions::new()
+            .write(true)
+            .open(t.path(dir.path()))
+            .unwrap()
+            .set_len(t.received)
+            .unwrap();
+        t.persist(dir.path(), &key).unwrap();
+        let mut resumed = load_transfers(dir.path(), &key, &dir.path().join("downloads"))
+            .unwrap()
+            .remove(0);
+        resumed
+            .append(
+                dir.path(),
+                &key,
+                t.received,
+                b"tail",
+                blake3::hash(b"tail").to_hex().as_str(),
+            )
+            .unwrap();
+        assert_eq!(resumed.received, t.file_size);
+        let mut file = File::open(t.path(dir.path())).unwrap();
+        file.seek(SeekFrom::Start(t.received)).unwrap();
+        let mut tail = [0; 4];
+        file.read_exact(&mut tail).unwrap();
+        assert_eq!(&tail, b"tail");
+    }
+
+    #[test]
+    fn large_transfer_offsets_cannot_wrap() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut t = transfer(b"x");
+        t.file_size = u64::MAX;
+        t.received = u64::MAX;
+        t.status = "receiving".into();
+        t.validate().unwrap();
+        assert!(t
+            .append(
+                dir.path(),
+                &[0; 32],
+                u64::MAX,
+                b"x",
+                blake3::hash(b"x").to_hex().as_str()
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("overflow"));
+        t.received = 2;
+        t.file_size = 1;
+        assert!(t.validate().is_err());
+    }
     fn transfer(bytes: &[u8]) -> Transfer {
         Transfer {
             id: uuid::Uuid::new_v4().to_string(),

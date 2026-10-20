@@ -352,7 +352,7 @@ pub fn platform_events(state: &mut State) -> Result<Value> {
 
 pub async fn download(shared: Arc<Mutex<State>>, payload: &Value) -> Result<Value> {
     use crate::transport::remote_call;
-    use narad_core::transfer::{hash_file, Transfer, MAX_FILE_SIZE};
+    use narad_core::transfer::{hash_file, Transfer};
     use std::io::Write;
     let peer_id = handler::string(payload, "peer_id")?;
     let relative = handler::string(payload, "path")?;
@@ -411,16 +411,15 @@ pub async fn download(shared: Arc<Mutex<State>>, payload: &Value) -> Result<Valu
             )
             .await?;
             let size = chunk["size"].as_u64().context("invalid shared file size")?;
-            ensure!(
-                size <= MAX_FILE_SIZE && expected.is_none_or(|n| n == size),
-                "shared file changed or exceeds 1 GiB"
-            );
+            ensure!(expected.is_none_or(|n| n == size), "shared file changed");
             expected = Some(size);
             let bytes = STANDARD.decode(handler::string(&chunk, "data")?)?;
             ensure!(
                 bytes.len() <= 48 * 1024
                     && chunk["offset"] == offset
-                    && offset + bytes.len() as u64 <= size,
+                    && offset
+                        .checked_add(bytes.len() as u64)
+                        .is_some_and(|end| end <= size),
                 "invalid shared file chunk"
             );
             ensure!(

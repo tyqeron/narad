@@ -24,7 +24,7 @@ class DaemonApi implements NaradApi {
       await socket.flush();
       // Bound the local response before decoding it.
       final bytes = <int>[];
-      final response = await (() async {
+      final responseFuture = (() async {
         await for (final chunk in socket) {
           for (final byte in chunk) {
             if (byte == 10) {
@@ -37,7 +37,15 @@ class DaemonApi implements NaradApi {
           }
         }
         throw const SocketException('Daemon disconnected before responding');
-      })().timeout(const Duration(minutes: 10));
+      })();
+      final transfer = const {
+        'send_file',
+        'upload_shared',
+        'download_shared',
+      }.contains(command['op']);
+      final response = transfer
+          ? await responseFuture
+          : await responseFuture.timeout(const Duration(minutes: 10));
       if (response['ok'] != true) {
         throw StateError(response['error'] as String? ?? 'Command failed');
       }

@@ -82,6 +82,18 @@ class Device:
 
 
 class NaradIntegration(unittest.TestCase):
+    def test_file_offer_above_one_gib_has_no_size_cap(self):
+        self.pair()
+        source = self.root / "large-file.bin"
+        size = 1024 * 1024 * 1024 + 65537
+        with source.open("wb") as output:
+            output.truncate(size)  # Sparse fixture; no giant memory allocation.
+        offered = self.a.call(op="send_file", peer_id=self.bid, path=str(source))
+        self.assertEqual(offered["status"], "pending")
+        incoming = next(t for t in self.b.call(op="status")["transfers"] if t["id"] == offered["id"])
+        self.assertEqual(incoming["file_size"], size)
+        self.b.call(op="file_cancel", id=offered["id"])
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="narad-e2e-")
         self.root = Path(self.tmp.name)

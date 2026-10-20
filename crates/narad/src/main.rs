@@ -138,7 +138,7 @@ async fn run() -> Result<()> {
     };
     let token = std::fs::read_to_string(args.state.join("api-token"))
         .context("start the daemon first, using the same --state directory")?;
-    let result = tokio::time::timeout(Duration::from_secs(600), async {
+    let operation = async {
         let mut stream = TcpStream::connect(("127.0.0.1", args.api_port))
             .await
             .context("local daemon unavailable")?;
@@ -149,9 +149,14 @@ async fn run() -> Result<()> {
         )
         .await?;
         transport::read_frame_limit::<_, Value>(&mut stream, transport::LOCAL_MAX_FRAME).await
-    })
-    .await
-    .context("local command timed out")??;
+    };
+    let result = if transport::is_file_transfer(&value) {
+        operation.await?
+    } else {
+        tokio::time::timeout(Duration::from_secs(600), operation)
+            .await
+            .context("local command timed out")??
+    };
     ensure!(
         result["ok"] != false,
         "{}",

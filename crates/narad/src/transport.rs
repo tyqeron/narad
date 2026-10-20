@@ -129,7 +129,7 @@ pub async fn remote_call(
         }))
         .with_no_client_auth();
     let request = identity.sign(own, payload)?;
-    let response = tokio::time::timeout(Duration::from_secs(15), async {
+    let mut tls = tokio::time::timeout(Duration::from_secs(15), async {
         let socket = TcpStream::connect((peer.address.as_str(), peer.port + u16::from(file_plane)))
             .await
             .context("device unreachable")?;
@@ -137,7 +137,19 @@ pub async fn remote_call(
             .connect(ServerName::try_from("narad.local")?, socket)
             .await?;
         write_frame(&mut tls, &request).await?;
-        let response: SignedFrame = read_frame(&mut tls).await?;
+        Ok::<_, anyhow::Error>(tls)
+    })
+    .await
+    .context("peer connection timed out")??;
+    let response = async {
+        let read = read_frame::<_, SignedFrame>(&mut tls);
+        let response = if is_file_completion(&request.payload) {
+            read.await?
+        } else {
+            tokio::time::timeout(Duration::from_secs(15), read)
+                .await
+                .context("peer request timed out")??
+        };
         response.verify(&mut HashMap::new())?;
         ensure!(
             response.sender.public_key == peer.public_key
@@ -156,15 +168,48 @@ pub async fn remote_call(
             );
         }
         Ok(result)
-    })
-    .await
-    .context("peer request timed out")??;
+    }
+    .await?;
     Ok(response)
+}
+
+/// Whole-file operations stream chunks and must not inherit a total-duration cap.
+pub fn is_file_transfer(command: &serde_json::Value) -> bool {
+    matches!(
+        command["op"].as_str(),
+        Some("send_file" | "upload_shared" | "download_shared")
+    )
+}
+/// Final verification may hash arbitrarily large files on slow storage.
+pub fn is_file_completion(command: &serde_json::Value) -> bool {
+    matches!(
+        command["op"].as_str(),
+        Some("file_finish" | "shared_upload_finish")
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn only_whole_file_operations_skip_total_duration_limits() {
+        for op in ["send_file", "upload_shared", "download_shared"] {
+            assert!(is_file_transfer(&serde_json::json!({"op":op})));
+        }
+        for op in ["file_finish", "shared_upload_finish"] {
+            assert!(is_file_completion(&serde_json::json!({"op":op})));
+        }
+        for op in [
+            "status",
+            "command",
+            "file_chunk",
+            "shared_upload_chunk",
+            "unknown",
+        ] {
+            assert!(!is_file_transfer(&serde_json::json!({"op":op})));
+            assert!(!is_file_completion(&serde_json::json!({"op":op})));
+        }
+    }
     #[tokio::test]
     async fn bounded_frames_reject_oversized_input() {
         let (mut a, mut b) = tokio::io::duplex(MAX_FRAME + 2);

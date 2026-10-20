@@ -210,19 +210,21 @@ pub async fn serve(
             accepted=local.accept()=>{
                 let (mut socket,_)=accepted?;let Ok(permit)=local_permits.clone().try_acquire_owned() else {continue;};let shared=shared.clone();let discovered=discovered.clone();let discovery=discovery.clone();
                 workers.spawn(async move {let _permit=permit;
-                    let result=tokio::time::timeout(Duration::from_secs(600),async {
+                    let result=async {
                         let request:Value=tokio::time::timeout(Duration::from_secs(10),transport::read_frame_limit(&mut socket,transport::LOCAL_MAX_FRAME)).await??;
                         {let s=shared.lock().await;let token=request["token"].as_str().unwrap_or("");ensure!(token.len()==s.token.len() && token.bytes().zip(s.token.bytes()).fold(0u8,|a,(b,c)|a|(b^c))==0,"local API authentication failed");}
                         let candidates=discovered.lock().unwrap().values().map(|(p,_)|p.clone()).collect::<Vec<_>>();
                         {let mut s=shared.lock().await;for candidate in candidates {if let Some(record)=s.trust.peers.get_mut(&candidate.device_id){if record.peer.public_key==candidate.public_key && record.peer.certificate_hash==candidate.certificate_hash {record.peer.address=candidate.address;record.peer.port=candidate.port;}}}}
                         let before=shared.lock().await.own.clone();
-                        let mut result=handler::local(shared.clone(),request["command"].clone()).await?;
+                        let command=&request["command"];
+                        let operation=handler::local(shared.clone(),command.clone());
+                        let mut result=if transport::is_file_transfer(command) {operation.await?} else {tokio::time::timeout(Duration::from_secs(600),operation).await.context("command timed out")??};
                         let own=shared.lock().await.own.clone();
                         if before!=own {if let Some(d)=&discovery {let _=discovery::advertise(d,&own);}}
                         if request["command"]["op"]=="status" {let map=discovered.lock().unwrap();let peers=map.values().map(|(p,_)|p).take(32).collect::<Vec<_>>();result["discovered"]=json!(peers);}
                         Ok::<_,anyhow::Error>(result)
-                    }).await;
-                    let result=match result {Ok(Ok(v))=>v,Ok(Err(e))=>json!({"ok":false,"error":e.to_string()}),Err(_)=>json!({"ok":false,"error":"command timed out"})};let _=transport::write_frame_limit(&mut socket,&result,transport::LOCAL_MAX_FRAME).await;
+                    }.await;
+                    let result=match result {Ok(v)=>v,Err(e)=>json!({"ok":false,"error":e.to_string()})};let _=transport::write_frame_limit(&mut socket,&result,transport::LOCAL_MAX_FRAME).await;
                 });
             }
         }
@@ -255,9 +257,14 @@ fn spawn_remote(
     let observed_ip = socket.peer_addr().map(|a| a.ip().to_string());
     workers.spawn(async move {
         let _permit = permit;
-        let result = tokio::time::timeout(Duration::from_secs(20), async {
-            let mut stream = tls.accept(socket).await?;
-            let frame: SignedFrame = read_frame(&mut stream).await?;
+        let result = async {
+            let (mut stream, frame) = tokio::time::timeout(Duration::from_secs(20), async {
+                let mut stream = tls.accept(socket).await?;
+                let frame: SignedFrame = read_frame(&mut stream).await?;
+                Ok::<_, anyhow::Error>((stream, frame))
+            })
+            .await
+            .context("peer handshake timed out")??;
             let mut sender = frame.sender.clone();
             let verification = { frame.verify(&mut shared.lock().await.replay) };
             if let Ok(ip) = &observed_ip {
@@ -265,7 +272,15 @@ fn spawn_remote(
             }
             let result = match verification {
                 Ok(()) => {
-                    controls::remote(shared.clone(), &sender, &frame.payload, file_plane).await
+                    let operation =
+                        controls::remote(shared.clone(), &sender, &frame.payload, file_plane);
+                    if transport::is_file_completion(&frame.payload) {
+                        operation.await
+                    } else {
+                        tokio::time::timeout(Duration::from_secs(20), operation)
+                            .await
+                            .context("peer operation timed out")?
+                    }
                 }
                 Err(error) => Err(error),
             };
@@ -283,11 +298,13 @@ fn spawn_remote(
                     json!({"reply_to":frame.request_id,"result":value}),
                 )?
             };
-            write_frame(&mut stream, &response).await?;
+            tokio::time::timeout(Duration::from_secs(20), write_frame(&mut stream, &response))
+                .await
+                .context("peer response timed out")??;
             Ok::<_, anyhow::Error>(())
-        })
+        }
         .await;
-        if let Ok(Err(e)) = result {
+        if let Err(e) = result {
             eprintln!("connection rejected: {e}");
         }
     });

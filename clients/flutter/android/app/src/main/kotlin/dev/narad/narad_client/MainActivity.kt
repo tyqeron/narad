@@ -129,8 +129,7 @@ class MainActivity : FlutterActivity() {
                     val safeName=displayName.substringAfterLast('/').substringAfterLast('\\').filter{it.isLetterOrDigit() || it in " ._()-"}.trim().take(180).ifBlank{"Shared file"}
                     val destination=File(directory,"${UUID.randomUUID()}-$safeName")
                     val input=contentResolver.openInputStream(uri) ?: error("Cannot read shared file")
-                    var total=0L
-                    try {input.use {source -> destination.outputStream().buffered().use {target -> val buffer=ByteArray(64*1024);while(true){val count=source.read(buffer);if(count<0)break;total+=count;check(total<=100L*1024*1024){"Shared files are limited to 100 MB"};target.write(buffer,0,count)}}}}catch(error:Throwable){destination.delete();throw error}
+                    try {input.use {source -> destination.outputStream().buffered().use {target -> val buffer=ByteArray(64*1024);while(true){val count=source.read(buffer);if(count<0)break;target.write(buffer,0,count)}}}}catch(error:Throwable){destination.delete();throw error}
                     files.add(mapOf("path" to destination.absolutePath,"name" to safeName))
                 }
                 val payload=SharedContentPayload.create(text,dataUrl,files)

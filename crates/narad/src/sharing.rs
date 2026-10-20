@@ -9,7 +9,7 @@ use anyhow::{ensure, Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use narad_core::{
     model::{now, Peer},
-    transfer::{Transfer, MAX_FILE_SIZE},
+    transfer::Transfer,
     CHUNK_SIZE,
 };
 use serde_json::{json, Value};
@@ -236,7 +236,9 @@ async fn native(
             );
             return Ok(result);
         }
-        if tokio::time::Instant::now() >= deadline {
+        if (kind == "publish" && job.expires <= now())
+            || (kind != "publish" && tokio::time::Instant::now() >= deadline)
+        {
             s.storage_jobs.remove(&id);
             anyhow::bail!("Shared folder request timed out. Reopen Narad on the source device.");
         }
@@ -529,6 +531,11 @@ pub async fn local(shared: Arc<Mutex<State>>, p: &Value) -> Result<Value> {
             "Shared folder request completed or expired"
         );
         allowed(&s, &s.peer(&j.peer)?, &j.folder, &j.capability)?;
+        if op == "storage_validate" && j.kind == "publish" {
+            // Native copying revalidates access while streaming. Renew its idle
+            // lease so publishing a large upload has no total-duration cap.
+            s.storage_jobs.get_mut(id).unwrap().expires = now() + 25;
+        }
         if op == "storage_result" {
             ensure!(
                 p["result"].is_object() && serde_json::to_vec(&p["result"])?.len() <= 72000,
@@ -850,7 +857,6 @@ async fn send_upload(shared: Arc<Mutex<State>>, p: &Value) -> Result<Value> {
         .and_then(|v| v.to_str())
         .context("Invalid file name")?;
     let size = path.metadata()?.len();
-    ensure!(size <= MAX_FILE_SIZE, "File exceeds 1 GiB");
     let (identity, own, peer) = {
         let s = shared.lock().await;
         (s.identity.clone(), s.own.clone(), s.peer(peer_id)?)
@@ -1186,6 +1192,44 @@ mod tests {
         )
         .await
         .is_err());
+    }
+    #[tokio::test]
+    async fn publishing_large_documents_renews_idle_lease_and_still_checks_permission() {
+        let (_temp, s, peer, folder) = setup();
+        let id = share(s.clone(), &folder, true).await;
+        let mount = s
+            .lock()
+            .await
+            .preferences
+            .shares
+            .iter()
+            .find(|f| f.id == id)
+            .unwrap()
+            .clone();
+        let cloned = s.clone();
+        let p = peer.clone();
+        let publisher = tokio::spawn(async move {
+            native(cloned, &p, &mount, "file.upload", "publish", json!({})).await
+        });
+        let jobs = local(s.clone(), &json!({"op":"storage_jobs"}))
+            .await
+            .unwrap();
+        let job = jobs["jobs"][0]["id"].as_str().unwrap();
+        s.lock().await.storage_jobs.get_mut(job).unwrap().expires = now() + 3;
+        local(s.clone(), &json!({"op":"storage_validate","id":job}))
+            .await
+            .unwrap();
+        assert!(s.lock().await.storage_jobs[job].expires >= now() + 24);
+        local(
+            s.clone(),
+            &json!({"op":"share_access","id":id,"peer_id":peer.device_id,"allow":false}),
+        )
+        .await
+        .unwrap();
+        assert!(local(s.clone(), &json!({"op":"storage_validate","id":job}))
+            .await
+            .is_err());
+        assert!(publisher.await.unwrap().is_err());
     }
     #[tokio::test]
     async fn native_document_jobs_recheck_folder_and_peer_permission() {

@@ -74,6 +74,13 @@ on TCP 45700 binds only to loopback and requires a private token.
 
 Navigate between **Devices**, **Media**, **Activity** and **Settings**.
 
+File sharing has no Narad-imposed file-size cap, including Android's Share action
+and shared-folder uploads/downloads. Transfers stream in fixed-size chunks and
+can resume. Available storage, filesystem limits and connectivity still apply;
+Android stages files from other apps in its cache before sending.
+Whole-file operations and final checksum verification have no total-duration
+deadline; connection and per-chunk timeouts still detect interrupted transfers.
+
 **Media → Screens** can mirror a screen to a paired device, with receiver
 approval and a full-screen viewer. Supported Linux Wayland desktops can also
 create a virtual secondary monitor. See [screen sharing and platform support](docs/SCREEN_SHARING.md).

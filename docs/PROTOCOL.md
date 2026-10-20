@@ -142,8 +142,8 @@ Every command uses a JSON payload containing `op` plus the fields below.
 | `file_finish` | `id` | all bytes and whole-file checksum validated |
 
 File IDs are UUIDs. Checksums are lowercase BLAKE3 hex. `data` is standard
-base64. Chunks are at most 64 KiB, offsets are byte positions, and files are at
-most 1 GiB. A duplicate chunk is accepted only when it exactly matches already
+base64. Chunks are at most 64 KiB and offsets are 64-bit byte positions. There
+is no application-imposed file-size cap. A duplicate chunk is accepted only when it exactly matches already
 stored bytes. Each acknowledged offset is durably checkpointed. Changed
 metadata or ownership cannot reuse a transfer ID.
 
@@ -202,7 +202,7 @@ or copy the token to peers.
 
 Additional local operations: `browse_peer(peer_id,path)`,
 `read_shared(peer_id,path,offset)`, `download_shared(peer_id,path)` (new private
-UUID download, max 1 GiB), `command_set(label,script,id?)`, `command_remove(id)`,
+UUID download, streamed without a file-size cap), `command_set(label,script,id?)`, `command_remove(id)`,
 `list_commands(peer_id)`, `run_command(peer_id,id)`,
 `device_action(peer_id,kind)` and `device_action_status(peer_id,id)`.
 The private native adapter uses `platform_events`, `platform_validate(id)` and

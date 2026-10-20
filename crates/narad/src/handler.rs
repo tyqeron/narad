@@ -8,7 +8,7 @@ use narad_core::{
     identity::{pairing_code, random_token},
     model::{now, Invitation, Peer, SessionState, TrustRecord},
     policy::permission_key,
-    transfer::{hash_file, Transfer, MAX_FILE_SIZE},
+    transfer::{hash_file, Transfer},
     CHUNK_SIZE,
 };
 use serde_json::{json, Value};
@@ -1280,7 +1280,6 @@ async fn outgoing(shared: Arc<Mutex<State>>, op: &str, p: &Value) -> Result<Valu
 async fn send_file(shared: Arc<Mutex<State>>, p: &Value) -> Result<Value> {
     let path = Path::new(string(p, "path")?);
     let size = std::fs::metadata(path)?.len();
-    ensure!(size <= MAX_FILE_SIZE, "file too large (maximum 1 GiB)");
     let checksum = hash_file(path)?;
     let peer_id = string(p, "peer_id")?;
     let id = if let Some(id) = p["id"].as_str() {
