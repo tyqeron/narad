@@ -176,10 +176,18 @@ pub fn remote(s: &mut State, peer: &Peer, p: &Value, file_plane: bool) -> Result
         return Ok(json!({"ok":true,"status":status}));
     }
     s.trust.authenticate(peer)?;
-    // Authenticated metadata can refresh the address after a network change.
+    // Only authenticated metadata may refresh a paired device's name.
+    let mut renamed = false;
     if let Some(record) = s.trust.peers.get_mut(&peer.device_id) {
         record.peer.address = peer.address.clone();
         record.peer.port = peer.port;
+        if record.peer.device_name != peer.device_name {
+            record.peer.device_name = peer.device_name.clone();
+            renamed = true;
+        }
+    }
+    if renamed {
+        s.save_trust()?;
     }
     s.note_presence(&peer.device_id, true);
     match op {
@@ -1376,6 +1384,36 @@ async fn send_file(shared: Arc<Mutex<State>>, p: &Value) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn paired_name_refresh_requires_authentication_and_survives_restart() {
+        let (dir, mut state, mut peer) = setup();
+        let original = state.trust.peers[&peer.device_id].peer.device_name.clone();
+        peer.device_name = "My phone".into();
+        let mut impostor = peer.clone();
+        impostor.public_key = state.own.public_key.clone();
+        assert!(remote(&mut state, &impostor, &json!({"op":"ping"}), false).is_err());
+        assert_eq!(
+            state.trust.peers[&peer.device_id].peer.device_name,
+            original
+        );
+        remote(&mut state, &peer, &json!({"op":"ping"}), false).unwrap();
+        let loaded = State::load(
+            dir.path().join("receiver"),
+            "Host".into(),
+            "127.0.0.1".into(),
+            45678,
+        )
+        .unwrap();
+        assert_eq!(
+            loaded.trust.peers[&peer.device_id].peer.device_name,
+            "My phone"
+        );
+        assert_eq!(
+            loaded.trust.peers[&peer.device_id].peer.public_key,
+            peer.public_key
+        );
+    }
+
     #[tokio::test]
     async fn screen_permissions_and_readiness_are_independent_of_audio() {
         let (_dir, mut state, peer) = setup();

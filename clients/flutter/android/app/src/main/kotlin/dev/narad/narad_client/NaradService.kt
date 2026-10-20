@@ -32,8 +32,18 @@ class NaradService : Service() {
         @Volatile var state = "stopped"
         @Volatile var lastError: String? = null
         fun stateDirectory(context: Context) = File(context.noBackupFilesDir,"narad")
-        fun deviceName(context: Context): String = context.getSharedPreferences("narad",MODE_PRIVATE)
-            .getString("device_name",null) ?: "${Build.MANUFACTURER} ${Build.MODEL}".take(80)
+        fun deviceName(context: Context): String {
+            val custom=context.getSharedPreferences("narad",MODE_PRIVATE).getString("device_name",null)?.trim()
+            if(!custom.isNullOrEmpty())return custom
+            // Settings > About phone/tablet > Device name, then older OEM Bluetooth names.
+            for(key in listOf("device_name","bluetooth_name")) {
+                val name=try {android.provider.Settings.Global.getString(context.contentResolver,key)?.trim()}catch(_:Exception){null}
+                if(!name.isNullOrEmpty())return name.take(80)
+                val legacy=try {android.provider.Settings.Secure.getString(context.contentResolver,key)?.trim()}catch(_:Exception){null}
+                if(!legacy.isNullOrEmpty())return legacy.take(80)
+            }
+            return "${Build.MANUFACTURER} ${Build.MODEL}".take(80)
+        }
     }
     var cameraReady=false
         private set

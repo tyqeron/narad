@@ -114,6 +114,13 @@ class DesktopIntegration {
         title: n.title,
         body: n.body,
         notificationDetails: WindowsNotificationDetails(
+          header: n.deviceName == null
+              ? null
+              : WindowsHeader(
+                  id: n.peer,
+                  title: 'Narad · ${n.deviceName}',
+                  arguments: 'device:${n.peer}',
+                ),
           progressBars: [
             if (n.progress != null)
               WindowsProgressBar(
@@ -140,6 +147,7 @@ class DesktopIntegration {
       await channel.invokeMethod<void>('phoneNotification', {
         'id': n.id,
         'title': n.title,
+        'deviceName': n.deviceName,
         'text': n.body,
         'actions': n.actions,
       });

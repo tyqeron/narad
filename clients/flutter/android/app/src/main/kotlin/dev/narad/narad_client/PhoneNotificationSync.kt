@@ -83,15 +83,16 @@ class PhoneNotificationSync(private val context:Context) {
                     if(stopped)return
                     for(i in 0 until items.length()) {
                         val item=items.getJSONObject(i);val raw=if(kind=="notifications")item.getString("key") else "${item.getString("id")}/${item.getString("state")}"
-                        val key="$bucket/$raw";val fingerprint=item.toString();current[key]=fingerprint
+                        val name=paired.getJSONObject(peer).getJSONObject("peer").getString("device_name")
+                        val key="$bucket/$raw";val fingerprint=name+"\n"+item.toString();current[key]=fingerprint
                         if(seen[bucket]?.get(key)==fingerprint)continue
                         if(kind=="call_state" && item.optString("state")!="ringing")continue
                         val id=posted.getOrPut(key){nextId++};PhoneNotificationAction.clear(id)
                         val open=PendingIntent.getActivity(context,id,Intent(context,MainActivity::class.java),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-                        val name=paired.getJSONObject(peer).getJSONObject("peer").getString("device_name")
                         val body=if(kind=="notifications") listOf(item.optString("title"),item.optString("text")).filter{it.isNotBlank()}.distinct().joinToString("\n") else "Open Phone in Narad for call controls"
                         val builder=Notification.Builder(context,"narad_phone_notifications").setSmallIcon(R.drawable.ic_narad_notification)
-                            .setContentTitle(if(kind=="notifications")"${item.optString("app")} : $name" else "Incoming call on $name")
+                            .setSubText(name)
+                            .setContentTitle(if(kind=="notifications")item.optString("app") else "Incoming call")
                             .setContentText(body).setStyle(Notification.BigTextStyle().bigText(body))
                             .setContentIntent(open).setAutoCancel(false).setVisibility(Notification.VISIBILITY_PRIVATE).setOnlyAlertOnce(true)
                         if(kind=="notifications") {

@@ -30,8 +30,13 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 if ! "$app_root/narad" --state "$NARAD_STATE" --api-port "$api_port" status >/dev/null 2>&1; then
+  device_name="${NARAD_DEVICE_NAME:-}"
+  if [[ -z "$device_name" ]]; then
+    device_name="$(hostnamectl --pretty 2>/dev/null || true)"
+    [[ -n "$device_name" ]] || device_name="$(hostname -s)"
+  fi
   "$app_root/narad" --state "$NARAD_STATE" --api-port "$api_port" serve \
-    --name "${NARAD_DEVICE_NAME:-$(hostname -s)}" --port "$control_port" &
+    --name "$device_name" --port "$control_port" &
   daemon_pid=$!
   ready=false
   for ((attempt=0; attempt<100; attempt++)); do

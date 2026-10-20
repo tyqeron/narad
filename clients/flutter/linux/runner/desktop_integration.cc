@@ -2,6 +2,7 @@
 #include <glib/gstdio.h>
 #include <string>
 #include <cstring>
+#include <map>
 
 namespace {
 void send_shared_files(GtkApplication *application, GPtrArray *files) {
@@ -93,6 +94,64 @@ void notification_action(GSimpleAction*, GVariant* parameter, gpointer app) {
   fl_value_set_string_take(args,"action",fl_value_new_string(separator+1));
   fl_method_channel_invoke_method(channel,"notificationAction",args,nullptr,nullptr,nullptr);
 }
+// Per-device sender headings require the freedesktop API: GNotification only
+// supports a single application-wide name. Keep stable IDs and action routing.
+std::map<gint64, guint32> mirrored_notifications;
+GDBusConnection* notification_bus(GApplication* app, GError** error) {
+  static GDBusConnection* bus=nullptr;
+  if(bus)return bus;
+  bus=g_bus_get_sync(G_BUS_TYPE_SESSION,nullptr,error);
+  if(!bus)return nullptr;
+  g_dbus_connection_signal_subscribe(bus,"org.freedesktop.Notifications",
+      "org.freedesktop.Notifications",nullptr,"/org/freedesktop/Notifications",
+      nullptr,G_DBUS_SIGNAL_FLAGS_NONE,
+      [](GDBusConnection*,const gchar*,const gchar*,const gchar*,const gchar* signal,GVariant* params,gpointer data) {
+        guint32 server_id=0;
+        if(g_strcmp0(signal,"ActionInvoked")==0) {
+          const gchar* action=nullptr;g_variant_get(params,"(u&s)",&server_id,&action);
+          for(const auto& entry:mirrored_notifications)if(entry.second==server_id) {
+            if(g_strcmp0(action,"default")==0)show_phone(nullptr,nullptr,data);
+            else {
+              auto target=std::to_string(entry.first)+":"+action;
+              g_autoptr(GVariant) value=g_variant_ref_sink(g_variant_new_string(target.c_str()));
+              notification_action(nullptr,value,data);
+            }
+            break;
+          }
+        } else if(g_strcmp0(signal,"NotificationClosed")==0) {
+          guint32 reason=0;g_variant_get(params,"(uu)",&server_id,&reason);
+          for(auto it=mirrored_notifications.begin();it!=mirrored_notifications.end();)
+            if(it->second==server_id)it=mirrored_notifications.erase(it);else ++it;
+        }
+      },app,nullptr);
+  return bus;
+}
+bool send_device_notification(GApplication* app,FlValue* args,GError** error) {
+  auto* bus=notification_bus(app,error);if(!bus)return false;
+  const auto id=fl_value_get_int(fl_value_lookup_string(args,"id"));
+  const auto device=fl_value_get_string(fl_value_lookup_string(args,"deviceName"));
+  GVariantBuilder actions;g_variant_builder_init(&actions,G_VARIANT_TYPE("as"));
+  g_variant_builder_add(&actions,"s","default");g_variant_builder_add(&actions,"s","Open Narad");
+  auto* buttons=fl_value_lookup_string(args,"actions");
+  if(buttons && fl_value_get_type(buttons)==FL_VALUE_TYPE_MAP)
+    for(size_t i=0;i<fl_value_get_length(buttons);++i) {
+      g_variant_builder_add(&actions,"s",fl_value_get_string(fl_value_get_map_key(buttons,i)));
+      g_variant_builder_add(&actions,"s",fl_value_get_string(fl_value_get_map_value(buttons,i)));
+    }
+  GVariantBuilder hints;g_variant_builder_init(&hints,G_VARIANT_TYPE_VARDICT);
+  const auto heading=std::string("Narad · ")+device;
+  g_autofree gchar* body=g_markup_escape_text(fl_value_get_string(fl_value_lookup_string(args,"text")),-1);
+  auto found=mirrored_notifications.find(id);
+  g_autoptr(GVariant) result=g_dbus_connection_call_sync(bus,"org.freedesktop.Notifications",
+      "/org/freedesktop/Notifications","org.freedesktop.Notifications","Notify",
+      g_variant_new("(susss@as@a{sv}i)",heading.c_str(),found==mirrored_notifications.end()?0:found->second,
+          "dev.narad.narad_client",fl_value_get_string(fl_value_lookup_string(args,"title")),body,
+          g_variant_builder_end(&actions),g_variant_builder_end(&hints),-1),
+      G_VARIANT_TYPE("(u)"),G_DBUS_CALL_FLAGS_NONE,2000,nullptr,error);
+  if(!result)return false;
+  guint32 server_id=0;g_variant_get(result,"(u)",&server_id);mirrored_notifications[id]=server_id;
+  return true;
+}
 void handle(FlMethodChannel *, FlMethodCall *call, gpointer user_data) {
   const gchar *method = fl_method_call_get_name(call);
   g_autoptr(FlMethodResponse) response = nullptr;
@@ -124,6 +183,15 @@ void handle(FlMethodChannel *, FlMethodCall *call, gpointer user_data) {
     FlValue* args=fl_method_call_get_args(call);
     FlValue* id=args && fl_value_get_type(args)==FL_VALUE_TYPE_MAP?fl_value_lookup_string(args,"id"):nullptr;
     if(id && fl_value_get_type(id)==FL_VALUE_TYPE_INT) {
+      auto found=mirrored_notifications.find(fl_value_get_int(id));
+      if(found!=mirrored_notifications.end()) {
+        g_autoptr(GError) error=nullptr;
+        auto* bus=notification_bus(G_APPLICATION(user_data),&error);
+        if(bus)g_dbus_connection_call(bus,"org.freedesktop.Notifications","/org/freedesktop/Notifications",
+            "org.freedesktop.Notifications","CloseNotification",g_variant_new("(u)",found->second),
+            nullptr,G_DBUS_CALL_FLAGS_NONE,2000,nullptr,nullptr,nullptr);
+        mirrored_notifications.erase(found);
+      }
       auto key=std::string("narad-phone-")+std::to_string(fl_value_get_int(id));
       g_application_withdraw_notification(G_APPLICATION(user_data),key.c_str());
     }
@@ -135,6 +203,11 @@ void handle(FlMethodChannel *, FlMethodCall *call, gpointer user_data) {
     FlValue* id=args?fl_value_lookup_string(args,"id"):nullptr;
     if(!id || fl_value_get_type(id)!=FL_VALUE_TYPE_INT || !title || !text || fl_value_get_type(title)!=FL_VALUE_TYPE_STRING || fl_value_get_type(text)!=FL_VALUE_TYPE_STRING) {
       response=FL_METHOD_RESPONSE(fl_method_error_response_new("arguments","Expected notification text",nullptr));
+    } else if(auto* device=fl_value_lookup_string(args,"deviceName");device && fl_value_get_type(device)==FL_VALUE_TYPE_STRING) {
+      g_autoptr(GError) error=nullptr;
+      if(send_device_notification(G_APPLICATION(user_data),args,&error))
+        response=FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+      else response=FL_METHOD_RESPONSE(fl_method_error_response_new("notification",error?error->message:"Notification unavailable",nullptr));
     } else {
       g_autoptr(GNotification) notification=g_notification_new(fl_value_get_string(title));
       g_notification_set_body(notification,fl_value_get_string(text));

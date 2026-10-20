@@ -150,7 +150,8 @@ void main() {
       }
 
       await tick();
-      expect(banners.first.title, 'Generated app : Test phone');
+      expect(banners.first.title, 'Generated app');
+      expect(banners.first.deviceName, 'Test phone');
       expect(banners.first.body, 'Private fixture\nfixture body');
       final id = banners.first.id;
       banners.clear();

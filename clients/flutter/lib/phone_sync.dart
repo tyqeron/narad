@@ -11,7 +11,9 @@ class PhoneNotice {
     required this.body,
     required this.actions,
     this.progress,
+    this.deviceName,
   });
+  final String? deviceName;
   final int? progress;
   final int id;
   final String peer, key, title, body;
@@ -113,17 +115,18 @@ class PhoneSync {
                   ? item['key'].toString()
                   : '${item['id']}/${item['state']}';
               final key = '$bucket/$raw';
-              final fingerprint = jsonEncode(item);
+              final fingerprint = jsonEncode([peer['device_name'], item]);
               current[key] = fingerprint;
               if (_seen[bucket]?[key] == fingerprint) continue;
               if (kind == 'call_state' && item['state'] != 'ringing') continue;
               final n = PhoneNotice(
                 id: _posted[key]?.id ?? _nextId++,
                 peer: id,
+                deviceName: peer['device_name']?.toString(),
                 key: raw,
                 title: kind == 'notifications'
-                    ? '${item['app']} : ${peer['device_name']}'
-                    : 'Incoming call on ${peer['device_name']}',
+                    ? '${item['app']}'
+                    : 'Incoming call',
                 body: kind == 'notifications'
                     ? [
                         item['title']?.toString() ?? '',
