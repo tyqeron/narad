@@ -145,6 +145,17 @@ void notification_image_hint(FlValue* args, GVariantBuilder* hints) {
   g_variant_builder_add(hints,"{sv}","image-data",g_variant_new("(iiibii@ay)",32,32,
       gdk_pixbuf_get_rowstride(image),gdk_pixbuf_get_has_alpha(image),8,gdk_pixbuf_get_n_channels(image),data));
 }
+const char* notification_app_icon() {
+  // Portable/per-user bundles do not add their icons to the system theme path.
+  static const std::string icon=[] {
+    g_autofree gchar* executable=g_file_read_link("/proc/self/exe",nullptr);
+    if(!executable)return std::string("dev.narad.narad_client");
+    g_autofree gchar* directory=g_path_get_dirname(executable);
+    g_autofree gchar* path=g_build_filename(directory,"data","narad.png",nullptr);
+    return g_file_test(path,G_FILE_TEST_IS_REGULAR)?std::string(path):std::string("dev.narad.narad_client");
+  }();
+  return icon.c_str();
+}
 bool send_device_notification(GApplication* app,FlValue* args,GError** error) {
   auto* bus=notification_bus(app,error);if(!bus)return false;
   const auto id=fl_value_get_int(fl_value_lookup_string(args,"id"));
@@ -168,7 +179,7 @@ bool send_device_notification(GApplication* app,FlValue* args,GError** error) {
   g_autoptr(GVariant) result=g_dbus_connection_call_sync(bus,"org.freedesktop.Notifications",
       "/org/freedesktop/Notifications","org.freedesktop.Notifications","Notify",
       g_variant_new("(susss@as@a{sv}i)",heading.c_str(),found==mirrored_notifications.end()?0:found->second,
-          "dev.narad.narad_client",summary.c_str(),body,
+          notification_app_icon(),summary.c_str(),body,
           g_variant_builder_end(&actions),g_variant_builder_end(&hints),-1),
       G_VARIANT_TYPE("(u)"),G_DBUS_CALL_FLAGS_NONE,2000,nullptr,error);
   if(!result)return false;
