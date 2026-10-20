@@ -6,6 +6,7 @@
 #include <flutter/standard_method_codec.h>
 #include <optional>
 #include <shellapi.h>
+#include <windowsx.h>
 
 #include "flutter/generated_plugin_registrant.h"
 
@@ -14,18 +15,28 @@ FlutterWindow::FlutterWindow(const flutter::DartProject &project)
 
 FlutterWindow::~FlutterWindow() { RemoveTray(); }
 void FlutterWindow::AddTray() {
+  if (tray_added_) return;
   NOTIFYICONDATAW icon{};
   icon.cbSize = sizeof(icon);
   icon.hWnd = GetHandle();
   icon.uID = 1;
-  icon.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+  icon.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP;
   icon.uCallbackMessage = WM_APP + 10;
   icon.hIcon =
       LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_APP_ICON));
-  wcscpy_s(icon.szTip, L"Narad · available nearby");
+  wcscpy_s(icon.szTip, L"Narad · running in the background");
   tray_added_ = Shell_NotifyIconW(NIM_ADD, &icon) != FALSE;
+  if (tray_added_) {
+    icon.uVersion = NOTIFYICON_VERSION_4;
+    Shell_NotifyIconW(NIM_SETVERSION, &icon);
+    KillTimer(GetHandle(), 47002);
+  } else {
+    // Explorer may not be ready during login or while restarting.
+    SetTimer(GetHandle(), 47002, 3000, nullptr);
+  }
 }
 void FlutterWindow::RemoveTray() {
+  KillTimer(GetHandle(), 47002);
   if (!tray_added_)
     return;
   NOTIFYICONDATAW icon{};
@@ -184,6 +195,10 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     }
     return FALSE;
   }
+  if (message == WM_TIMER && wparam == 47002) {
+    AddTray();
+    return 0;
+  }
   if (message == WM_TIMER && wparam == 47001) {
     KillTimer(hwnd, 47001);
     quitting_ = true;
@@ -195,12 +210,14 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     return 0;
   }
   if (message == WM_APP + 10) {
-    if (lparam == WM_LBUTTONUP || lparam == WM_LBUTTONDBLCLK || lparam == NIN_BALLOONUSERCLICK) {
+    const UINT event = LOWORD(lparam);
+    if (event == NIN_SELECT || event == NIN_KEYSELECT || event == WM_LBUTTONUP ||
+        event == WM_LBUTTONDBLCLK || event == NIN_BALLOONUSERCLICK) {
       ShowWindow(hwnd, SW_SHOW);
       SetForegroundWindow(hwnd);
-    } else if (lparam == WM_RBUTTONUP || lparam == WM_CONTEXTMENU) {
-      POINT point{};
-      GetCursorPos(&point);
+    } else if (event == WM_RBUTTONUP || event == WM_CONTEXTMENU) {
+      POINT point{GET_X_LPARAM(wparam), GET_Y_LPARAM(wparam)};
+      if (point.x == -1 && point.y == -1) GetCursorPos(&point);
       HMENU menu = CreatePopupMenu();
       AppendMenuW(menu, MF_STRING, 1, L"Open Narad");
       AppendMenuW(menu, MF_STRING, 2, L"Quit Narad");
@@ -209,6 +226,9 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                                          point.x, point.y, 0, hwnd, nullptr);
       DestroyMenu(menu);
       PostMessageW(hwnd, WM_NULL, 0, 0);
+      NOTIFYICONDATAW icon{};
+      icon.cbSize = sizeof(icon); icon.hWnd = hwnd; icon.uID = 1;
+      Shell_NotifyIconW(NIM_SETFOCUS, &icon);
       if (choice == 1) {
         ShowWindow(hwnd, SW_SHOW);
         SetForegroundWindow(hwnd);

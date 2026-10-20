@@ -129,6 +129,10 @@ The per-user installer enables **Start after login** by default. After a reboot,
 Narad starts quietly when you sign into Windows, keeping files, commands and
 clipboard delivery available. Use its notification-area icon or launch Narad
 again to reopen the same window. The tray menu and Settings offer **Quit Narad**.
+The notification-area icon supports keyboard activation and restores itself when
+Explorer restarts. If Explorer is still starting at login, Narad retries adding
+its icon. Windows may initially place Narad in the tray overflow; drag it onto
+the taskbar notification area to keep it visible.
 Settings can disable/enable startup; an explicit opt-out survives installer
 upgrades. The entry is `Narad` in your account's Windows Run registry key, with
 `--background`; it requires no administrator rights. Remove that entry when

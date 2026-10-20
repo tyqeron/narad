@@ -1,5 +1,6 @@
 #include "my_application.h"
 #include "desktop_integration.h"
+#include "system_tray.h"
 
 #include <flutter_linux/flutter_linux.h>
 #ifdef GDK_WINDOWING_X11
@@ -13,7 +14,7 @@ struct _MyApplication {
   GtkApplication parent_instance;
   char** dart_entrypoint_arguments;
   gboolean start_hidden;
-  GtkStatusIcon* tray;
+  NaradSystemTray* tray;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
@@ -33,30 +34,6 @@ static void open_files_cb(GApplication* application,GFile** files,gint count,con
 static gboolean hide_on_close(GtkWidget* window,GdkEvent*,gpointer) {
   gtk_widget_hide(window);return TRUE;
 }
-static void open_narad(GtkMenuItem*,gpointer app) {g_application_activate(G_APPLICATION(app));}
-static void quit_narad(GtkMenuItem*,gpointer app) {narad_request_quit(GTK_APPLICATION(app));}
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-static void tray_open(GtkStatusIcon*,gpointer app) {g_application_activate(G_APPLICATION(app));}
-static void tray_menu(GtkStatusIcon* icon,guint button,guint time,gpointer app) {
-  GtkWidget* menu=gtk_menu_new();
-  GtkWidget* open=gtk_menu_item_new_with_label("Open Narad");
-  GtkWidget* quit=gtk_menu_item_new_with_label("Quit Narad");
-  g_signal_connect(open,"activate",G_CALLBACK(open_narad),app);
-  g_signal_connect(quit,"activate",G_CALLBACK(quit_narad),app);
-  gtk_menu_shell_append(GTK_MENU_SHELL(menu),open);gtk_menu_shell_append(GTK_MENU_SHELL(menu),quit);
-  g_signal_connect_swapped(menu,"selection-done",G_CALLBACK(gtk_widget_destroy),menu);
-  gtk_widget_show_all(menu);
-  gtk_menu_popup(GTK_MENU(menu),nullptr,nullptr,gtk_status_icon_position_menu,icon,button,time);
-}
-static void create_tray(MyApplication* self,const gchar* icon) {
-  self->tray=gtk_status_icon_new_from_file(icon);
-  gtk_status_icon_set_tooltip_text(self->tray,"Narad · available nearby");
-  g_signal_connect(self->tray,"activate",G_CALLBACK(tray_open),self);
-  g_signal_connect(self->tray,"popup-menu",G_CALLBACK(tray_menu),self);
-}
-#pragma GCC diagnostic pop
-
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
@@ -100,7 +77,7 @@ static void my_application_activate(GApplication* application) {
     g_autofree gchar* directory = g_path_get_dirname(executable);
     g_autofree gchar* icon = g_build_filename(directory, "data", "narad.png", nullptr);
     gtk_window_set_icon_from_file(window, icon, nullptr);
-    create_tray(self,icon);
+    self->tray=narad_system_tray_new(GTK_APPLICATION(self),icon);
   }
 
   // Realize the native parent even for hidden startup: Flutter needs its scale
@@ -184,7 +161,7 @@ static void my_application_shutdown(GApplication* application) {
 static void my_application_dispose(GObject* object) {
   MyApplication* self = MY_APPLICATION(object);
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
-  g_clear_object(&self->tray);
+  g_clear_pointer(&self->tray, narad_system_tray_free);
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
 

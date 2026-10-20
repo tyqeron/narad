@@ -47,8 +47,17 @@ You can also extract the `.tar.gz` and run its `install.sh`, or launch its
 backend and GUI together. Closing the window hides it and keeps the app/backend connected. Open Narad
 again from the application menu or tray to restore it. **Quit Narad** in Settings
 or the tray stops the app and its owned backend; an externally owned daemon is
-left running. Desktop shells without a legacy tray still support reopening from
-the menu and quitting in Settings.
+left running. Narad registers a StatusNotifierItem with modern trays (including
+KDE Plasma and GNOME with an AppIndicator extension), with **Open Narad** and
+**Quit Narad** in its menu. It registers again when the tray host restarts and
+falls back to the legacy GTK tray on older desktops. GNOME installations without
+a tray extension can still reopen Narad from the application menu and quit in
+Settings. No additional AppIndicator library is required. The isolated native tray check
+runs in CI; to run it locally after building (requires PyGObject and a display):
+
+```sh
+dbus-run-session -- env NARAD_TRAY_TEST_BUS=1 /usr/bin/python3 scripts/test-linux-tray.py
+```
 
 State defaults to `${XDG_DATA_HOME:-$HOME/.local/share}/narad`, independently of
 the installation folder. Set `NARAD_STATE` to reuse an existing development
