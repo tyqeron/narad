@@ -8,6 +8,8 @@ import android.app.Notification
 import android.app.RemoteInput
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
+import android.service.notification.StatusBarNotification
 import android.os.Bundle
 import android.service.notification.NotificationListenerService
 import org.json.JSONArray
@@ -21,6 +23,25 @@ class NaradNotificationListener:NotificationListenerService() {
         private fun service()=current ?: error("Enable Narad notification access on the phone")
         private data class Button(val key:String,val intent:PendingIntent,val title:String)
         private val buttons=mutableMapOf<String,Button>()
+        private fun appLabel(context:Context, posted:StatusBarNotification):String {
+            val manager=context.packageManager
+            fun label(info:ApplicationInfo):String? {
+                if(info.packageName!=posted.packageName)return null
+                return manager.getApplicationLabel(info).toString().trim()
+                    .takeIf{it.isNotEmpty() && it!=posted.packageName}?.take(120)
+            }
+            // Android includes the posting application's info in notification
+            // metadata. This also handles non-launchable apps when available.
+            try {
+                val extras=posted.notification.extras
+                @Suppress("DEPRECATION")
+                val info=if(Build.VERSION.SDK_INT>=33)extras.getParcelable("android.appInfo",ApplicationInfo::class.java)
+                    else extras.getParcelable<ApplicationInfo>("android.appInfo")
+                if(info!=null)label(info)?.let{return it}
+            } catch(_:Exception) {}
+            return try {label(manager.getApplicationInfo(posted.packageName,0)) ?: "App"}
+                catch(_:Exception){"App"}
+        }
         /** Preserve the text Android exposes, including inbox and conversation styles. */
         fun content(notification:Notification):String {
             val e=notification.extras
@@ -41,7 +62,7 @@ class NaradNotificationListener:NotificationListenerService() {
             for(n in active.sortedByDescending{it.postTime}) {
                 if(n.packageName==s.packageName || n.notification.flags and Notification.FLAG_GROUP_SUMMARY!=0)continue
                 val notification=n.notification
-                val app=try{s.packageManager.getApplicationLabel(s.packageManager.getApplicationInfo(n.packageName,0)).toString().take(120)}catch(_:Exception){n.packageName}
+                val app=appLabel(s,n)
                 val actions=JSONArray()
                 for(a in notification.actions.orEmpty()) {
                     if(a.remoteInputs?.isNotEmpty()==true || a.actionIntent==null)continue
