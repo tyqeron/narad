@@ -38,22 +38,31 @@ class Device:
         self.start()
 
     def start(self):
-        self.log = open(self.state.parent / f"{self.name}.log", "a")
-        self.process = subprocess.Popen([
-            str(BIN), "--state", str(self.state), "--api-port", str(self.api),
-            "serve", "--name", self.name, "--port", str(self.control),
-            "--address", "127.0.0.1", *([] if self.discovery else ["--no-discovery"]),
-        ], stdout=self.log, stderr=self.log)
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            if self.process.poll() is not None:
-                raise RuntimeError((self.state.parent / f"{self.name}.log").read_text())
-            try:
-                self.call(op="status")
-                return
-            except (OSError, ValueError, RuntimeError):
-                time.sleep(0.05)
-        raise RuntimeError("daemon startup timed out")
+        if self.process and self.process.poll() is None:
+            raise RuntimeError("daemon is already running")
+        log_path = self.state.parent / f"{self.name}.log"
+        try:
+            # The child owns its inherited handle; the parent must close its copy
+            # even if Popen or the readiness check fails (Windows locks open files).
+            with log_path.open("a") as log:
+                self.process = subprocess.Popen([
+                    str(BIN), "--state", str(self.state), "--api-port", str(self.api),
+                    "serve", "--name", self.name, "--port", str(self.control),
+                    "--address", "127.0.0.1", *([] if self.discovery else ["--no-discovery"]),
+                ], stdout=log, stderr=log)
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                if self.process.poll() is not None:
+                    raise RuntimeError(log_path.read_text())
+                try:
+                    self.call(op="status")
+                    return
+                except (OSError, ValueError, RuntimeError):
+                    time.sleep(0.05)
+            raise RuntimeError("daemon startup timed out: " + log_path.read_text())
+        except BaseException:
+            self.stop()
+            raise
 
     def stop(self):
         if self.process and self.process.poll() is None:
@@ -67,7 +76,6 @@ class Device:
                 self.process.kill()
                 self.process.wait(timeout=5)
                 raise RuntimeError("daemon did not stop: " + (self.state.parent / f"{self.name}.log").read_text())
-        self.log.close()
 
     def call(self, token=None, **command):
         token = token if token is not None else (self.state / "api-token").read_text()
@@ -96,11 +104,11 @@ class NaradIntegration(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="narad-e2e-")
+        self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.a = Device(self.root, "Alice")
-        self.b = Device(self.root, "Bob")
-        self.addCleanup(self.tmp.cleanup)
         self.addCleanup(self.a.stop)
+        self.b = Device(self.root, "Bob")
         self.addCleanup(self.b.stop)
         self.aid = self.a.call(op="status")["device"]["device_id"]
         self.bid = self.b.call(op="status")["device"]["device_id"]
