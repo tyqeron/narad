@@ -606,11 +606,11 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
             ],
           ),
           actions: [
-            IconButton(
-              tooltip: 'Settings',
-              icon: const Icon(Icons.settings_outlined),
-              onPressed: () => _openTab(3),
-            ),
+            // IconButton(
+            //   tooltip: 'Settings',
+            //   icon: const Icon(Icons.settings_outlined),
+            //   onPressed: () => _openTab(3),
+            // ),
             if (_online)
               Padding(
                 padding: const EdgeInsets.only(right: 16),
