@@ -13,7 +13,9 @@ use windows_sys::Win32::{
             JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
         },
         Shutdown::LockWorkStation,
-        Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME},
+        Threading::{
+            OpenThread, ResumeThread, CREATE_NO_WINDOW, CREATE_SUSPENDED, THREAD_SUSPEND_RESUME,
+        },
     },
 };
 
@@ -26,6 +28,24 @@ impl Drop for Handle {
             CloseHandle(self.0);
         }
     }
+}
+
+/// Build a hidden, suspended system shell for a locally configured preset.
+pub(crate) fn command_builder(script: &str) -> Result<tokio::process::Command> {
+    let system = std::env::var_os("SystemRoot").context("Windows system directory unavailable")?;
+    let mut builder = tokio::process::Command::new(
+        std::path::PathBuf::from(system)
+            .join("System32")
+            .join("cmd.exe"),
+    );
+    // cmd.exe parses a command string, not C-runtime argv. Preserve the
+    // locally saved shell syntax, including quotes and redirection. Remote
+    // callers select a preset ID; they cannot supply this script text.
+    builder
+        .args(["/D", "/S", "/C"])
+        .raw_arg(format!(r#""{script}""#));
+    builder.creation_flags(CREATE_NO_WINDOW | CREATE_SUSPENDED);
+    Ok(builder)
 }
 
 pub struct CommandJob(Handle);
@@ -110,4 +130,69 @@ pub fn device_action(kind: &str) -> Result<Value> {
         std::io::Error::last_os_error()
     );
     Ok(json!({"ok":true,"exit_code":0,"stdout":"Lock requested","stderr":""}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::Stdio;
+    use std::time::Duration;
+
+    async fn output(script: &str) -> std::process::Output {
+        let child = command_builder(script)
+            .unwrap()
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let job = CommandJob::attach(&child).unwrap();
+        let result = tokio::time::timeout(Duration::from_secs(10), child.wait_with_output())
+            .await
+            .expect("command hung")
+            .unwrap();
+        drop(job);
+        result
+    }
+
+    #[tokio::test]
+    async fn command_job_captures_simple_echo() {
+        let result = output("echo narad-windows-fixture").await;
+        assert_eq!(result.status.code(), Some(0), "{result:?}");
+        assert_eq!(
+            String::from_utf8_lossy(&result.stdout).trim(),
+            "narad-windows-fixture",
+            "{result:?}"
+        );
+        assert!(result.stderr.is_empty(), "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn command_job_preserves_stdout_stderr_and_exit_code() {
+        let result =
+            output("echo narad-windows-fixture & echo error-fixture 1>&2 & exit /b 7").await;
+        assert_eq!(result.status.code(), Some(7), "{result:?}");
+        assert_eq!(
+            String::from_utf8_lossy(&result.stdout).trim(),
+            "narad-windows-fixture",
+            "{result:?}"
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&result.stderr).trim(),
+            "error-fixture",
+            "{result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn command_job_preserves_quotes_in_configured_script() {
+        let result = output(r#"echo "quoted fixture""#).await;
+        assert!(result.status.success(), "{result:?}");
+        assert_eq!(
+            String::from_utf8_lossy(&result.stdout).trim(),
+            r#""quoted fixture""#,
+            "{result:?}"
+        );
+    }
 }

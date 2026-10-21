@@ -207,3 +207,22 @@ GitHub Windows CI builds and validates an unsigned MSIX alongside ZIP. Tag relea
 can sign it with optional `WINDOWS_PFX_BASE64` and `WINDOWS_PFX_PASSWORD` secrets;
 without them the release includes the explicitly named unsigned artifact. Windows
 native listener/consent and signed installation still require Windows device QA.
+
+## Command launcher regression checks
+
+The Windows system shell path is built with native path separators. Saved preset
+scripts use cmd.exe command-string quoting, including literal quoted arguments,
+redirection and command chains. Only locally configured presets reach this
+launcher; a remote request supplies a preset ID. Suspended startup and Windows Job
+containment remain enabled.
+
+Windows Rust tests exercise the real launcher and Job setup for a single `echo`,
+quoted output, separate stdout/stderr, and a nonzero exit code. Run them with:
+
+```powershell
+cargo test -p narad --lib windows::tests::command_job
+```
+
+The shared-folder integration fixture grants both `file.browse` and the target
+folder's per-device access. It checks denial before the folder grant and after
+revocation. A capability grant alone intentionally does not expose a folder.
