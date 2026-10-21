@@ -5,6 +5,7 @@ import 'api.dart';
 import 'dart:io';
 import 'camera_tools.dart';
 import 'shared_capture.dart';
+import 'system_audio_sharing.dart';
 
 class AudioLink {
   AudioLink(
@@ -77,7 +78,7 @@ class AudioController {
     },
   );
   bool _startingAudio = false;
-  Future<void> systemAudioCleanup = Future<void>.value();
+  SystemAudioSharing? systemAudioSharing;
 
   bool enabled = false;
   bool cameraEnabled = false;
@@ -858,6 +859,8 @@ class AudioController {
   }
 
   Future<void> dispose() async {
+    await systemAudioSharing?.shutdown();
+    systemAudioSharing = null;
     enabled = false;
     cameraEnabled = false;
     microphoneEnabled = false;

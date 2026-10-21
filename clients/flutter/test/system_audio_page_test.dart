@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -68,76 +67,12 @@ void main() {
       findsNothing,
     );
     await tester.pumpWidget(const SizedBox());
-    await tester.pumpAndSettle();
-  });
-
-  testWidgets('reopening waits for teardown and delayed capture discovery', (
-    tester,
-  ) async {
-    final audio = AudioController(MultiMediaApi(), (e) => fail('$e'));
-    final cleanup = Completer<String>();
-    var created = 0, scans = 0;
-    LinuxAudioRoutes? current;
-    Widget page() => MaterialApp(
-      home: SystemAudioPage(
-        createConnection: (_) async => TestAudioBackend(),
-        key: UniqueKey(),
-        audio: audio,
-        peer: 'phone',
-        name: 'Phone',
-        routeFactory: () {
-          created++;
-          return current = LinuxAudioRoutes(
-            token: 'reopen_$created',
-            command: (args) async {
-              if (args.first == 'get-default-sink') return 'speakers';
-              if (args.first == 'unload-module' && created == 1) {
-                return cleanup.future;
-              }
-              return '123';
-            },
-          );
-        },
-        enumerateDevices: () async {
-          scans++;
-          if (created == 2 && scans < 7) return [];
-          return [
-            MediaDeviceInfo(
-              deviceId: current!.speakerCapture,
-              label: current!.captureLabel,
-              kind: 'audioinput',
-            ),
-          ];
-        },
-      ),
-    );
-    await tester.pumpWidget(page());
-    await tester.tap(find.text('Prepare / refresh audio capture'));
-    await tester.pumpAndSettle();
-    expect(created, 1);
-    await tester.pumpWidget(page());
-    await tester.tap(find.text('Prepare / refresh audio capture'));
-    await tester.pump();
-    expect(created, 1, reason: 'Old native capture must finish cleanup first');
-    cleanup.complete('');
-    await tester.pumpAndSettle();
-    // Discovery can take longer than the former single 700 ms retry.
-    for (var i = 0; i < 10; i++) {
-      await tester.pump(const Duration(milliseconds: 250));
-    }
-    expect(created, 2);
-    expect(scans, greaterThanOrEqualTo(7));
-    expect(find.textContaining('did not become available'), findsNothing);
-    await tester.ensureVisible(find.text('Play on selected devices'));
-    await tester.tap(find.text('Play on selected devices'));
-    await tester.pumpAndSettle();
-    expect(audio.links.values.single.inputDeviceId, current!.speakerCapture);
-    await tester.pumpWidget(const SizedBox());
+    await audio.dispose();
     await tester.pumpAndSettle();
   });
 
   testWidgets(
-    'add a second laptop listener and stop the first without unloading capture',
+    'audio survives Back, reopens with listeners and stops explicitly',
     (tester) async {
       final api = MultiMediaApi();
       final audio = AudioController(api, (e) => fail('$e'));
@@ -189,11 +124,31 @@ void main() {
       expect(commands.where((c) => c.first == 'unload-module'), isEmpty);
       await tester.pumpWidget(const SizedBox());
       await tester.pumpAndSettle();
+      expect(audio.links.values.map((l) => l.peer), ['tablet']);
+      expect(commands.where((c) => c.first == 'unload-module'), isEmpty);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SystemAudioPage(
+            audio: audio,
+            peer: 'phone',
+            name: 'Phone',
+            recipients: const {'tablet': 'Tablet'},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Stop audio on Tablet'), findsOneWidget);
+      await tester.drag(find.byType(ListView), const Offset(0, -400));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Stop all sharing'));
+      await tester.pumpAndSettle();
       expect(audio.links, isEmpty);
       expect(commands.where((c) => c.first == 'unload-module').single, [
         'unload-module',
         '123',
       ]);
+      await tester.pumpWidget(const SizedBox());
+      await audio.dispose();
     },
   );
 }

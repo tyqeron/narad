@@ -22,9 +22,9 @@ requires stopping and preparing again. On Windows choose an installed Stereo Mix
 or virtual audio cable recording endpoint; for a cable, route the video player's
 output to its playback endpoint in Windows sound settings.
 
-Keep the panel open and minimize Narad. Each listener has its own stop button;
+Sharing continues when you press Back or minimize Narad. Return through **Media → Laptop audio sharing** or **Send laptop audio** to manage the same listeners. Each listener has its own stop button;
 stopping or disconnecting one does not stop other listeners. All listeners share
-one selected capture source. Choose **Stop all sharing** (or leave the panel) to
+one selected capture source. Choose **Stop all sharing** or quit Narad to
 end its streams and remove its temporary Linux route. Stop all listeners before
 changing the source. Incoming audio and microphone sends must be stopped before
 starting this playback-sharing mode to avoid feedback. This mode disables speech noise

@@ -2904,6 +2904,40 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         ),
 
     _section('Speaker and microphone'),
+    if (_audio?.systemAudioSharing case final sharing?)
+      Card(
+        child: ListTile(
+          leading: const Icon(Icons.spatial_audio),
+          title: Text(
+            sharing.sessions.isEmpty
+                ? 'Laptop audio sharing'
+                : 'Laptop audio sharing · ${sharing.sessions.length} devices',
+          ),
+          subtitle: const Text('Sharing continues when you leave this screen.'),
+          onTap: sharing.recipients.isEmpty
+              ? null
+              : () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => SystemAudioPage(
+                      audio: _audio!,
+                      peer: sharing.recipients.keys.first,
+                      name: sharing.recipients.values.first,
+                      recipients: {
+                        for (final p in _pairedPeers.where(
+                          (p) => _isOnline(p['device_id'] as String),
+                        ))
+                          p['device_id'] as String: p['device_name'] as String,
+                      },
+                    ),
+                  ),
+                ),
+          trailing: IconButton(
+            tooltip: 'Stop all laptop audio sharing',
+            icon: const Icon(Icons.stop_circle_outlined),
+            onPressed: sharing.busy ? null : () => sharing.run(sharing.stop),
+          ),
+        ),
+      ),
     SwitchListTile(
       title: const Text('Microphone sharing'),
       subtitle: const Text(
