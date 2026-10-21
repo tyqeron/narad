@@ -14,7 +14,10 @@ class SystemAudioPage extends StatefulWidget {
     this.recipients = const {},
     this.routeFactory,
     this.enumerateDevices,
+    this.createConnection = createPeerConnection,
   });
+  final Future<RTCPeerConnection> Function(Map<String, dynamic>)
+  createConnection;
   final AudioController audio;
   final String peer, name;
   final Map<String, String> recipients;
@@ -25,7 +28,9 @@ class SystemAudioPage extends StatefulWidget {
 }
 
 class _SystemAudioPageState extends State<SystemAudioPage> {
+  // A reopened panel must wait for the previous panel to release native audio.
   LinuxAudioRoutes? _route;
+  RTCPeerConnection? _audioBackend;
   String? _input, _error;
   List<MediaDeviceInfo> _devices = [];
   bool _busy = false, _closing = false;
@@ -88,18 +93,35 @@ class _SystemAudioPageState extends State<SystemAudioPage> {
   }
 
   Future<void> _prepare() async {
+    await widget.audio.systemAudioCleanup;
+    if (_closing) return;
+    if (Platform.isLinux && _audioBackend == null) {
+      // The native backend stops its audio-device observer after the last
+      // connection closes. Keep an idle connection while discovering/using
+      // temporary devices; this does not open a microphone or transmit media.
+      _audioBackend = await widget.createConnection({'iceServers': []});
+    }
     if (Platform.isLinux && _route == null) {
       final route = widget.routeFactory?.call() ?? LinuxAudioRoutes();
       await route.createSystemMonitor();
       _route = route;
     }
     await _refresh();
-    if (Platform.isLinux && _input == null) {
-      await Future<void>.delayed(const Duration(milliseconds: 700));
-      await _refresh();
-      if (_input == null) {
+    if (Platform.isLinux) {
+      // PipeWire/PulseAudio device removal and addition reach WebRTC
+      // asynchronously, especially after the last capture stream is closed.
+      for (var attempt = 0; _input == null && attempt < 20; attempt++) {
+        if (_closing) return;
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        await _refresh();
+      }
+      if (_input == null && !_closing) {
+        // Do not retain a route that WebRTC cannot see. A retry must create
+        // a fresh endpoint rather than repeatedly enumerate a broken one.
+        await _route?.dispose();
+        _route = null;
         throw StateError(
-          'Temporary capture device not yet visible. Refresh and try again.',
+          'Audio capture did not become available. Check your audio server and prepare again.',
         );
       }
     }
@@ -111,9 +133,16 @@ class _SystemAudioPageState extends State<SystemAudioPage> {
         await _stopDevice(peer);
       }
     } finally {
-      await _route?.dispose();
-      _route = null;
-      _input = null;
+      try {
+        await _route?.dispose();
+      } finally {
+        _route = null;
+        _input = null;
+        final backend = _audioBackend;
+        _audioBackend = null;
+        await backend?.close();
+        await backend?.dispose();
+      }
     }
   }
 
@@ -143,7 +172,10 @@ class _SystemAudioPageState extends State<SystemAudioPage> {
   void dispose() {
     _closing = true;
     _timer?.cancel();
-    unawaited(_stop().catchError((Object _) {}));
+    final previous = widget.audio.systemAudioCleanup;
+    widget.audio.systemAudioCleanup = previous
+        .then((_) => _stop())
+        .catchError((Object _) {});
     super.dispose();
   }
 

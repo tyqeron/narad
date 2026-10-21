@@ -77,6 +77,7 @@ class AudioController {
     },
   );
   bool _startingAudio = false;
+  Future<void> systemAudioCleanup = Future<void>.value();
 
   bool enabled = false;
   bool cameraEnabled = false;

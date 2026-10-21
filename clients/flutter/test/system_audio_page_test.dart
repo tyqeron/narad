@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -6,7 +7,135 @@ import 'package:narad_client/desktop_audio_routes.dart';
 import 'package:narad_client/system_audio_page.dart';
 import 'audio_test.dart' show MultiMediaApi;
 
+class TestAudioBackend implements RTCPeerConnection {
+  @override
+  Future<void> close() async {}
+  @override
+  Future<void> dispose() async {}
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 void main() {
+  testWidgets('failed discovery unloads its route before retrying', (
+    tester,
+  ) async {
+    final audio = AudioController(MultiMediaApi(), (e) => fail('$e'));
+    var created = 0, removed = 0;
+    LinuxAudioRoutes? route;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SystemAudioPage(
+          createConnection: (_) async => TestAudioBackend(),
+          audio: audio,
+          peer: 'phone',
+          name: 'Phone',
+          routeFactory: () => route = LinuxAudioRoutes(
+            token: 'retry_${++created}',
+            command: (args) async {
+              if (args.first == 'get-default-sink') return 'speakers';
+              if (args.first == 'unload-module') removed++;
+              return '123';
+            },
+          ),
+          enumerateDevices: () async => created == 1
+              ? []
+              : [
+                  MediaDeviceInfo(
+                    deviceId: route!.speakerCapture,
+                    label: route!.captureLabel,
+                    kind: 'audioinput',
+                  ),
+                ],
+        ),
+      ),
+    );
+    await tester.tap(find.text('Prepare / refresh audio capture'));
+    await tester.pump();
+    for (var i = 0; i < 22; i++) {
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    expect(removed, 1);
+    expect(
+      find.textContaining('Audio capture did not become available'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Prepare / refresh audio capture'));
+    await tester.pumpAndSettle();
+    expect(created, 2);
+    expect(
+      find.textContaining('Audio capture did not become available'),
+      findsNothing,
+    );
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('reopening waits for teardown and delayed capture discovery', (
+    tester,
+  ) async {
+    final audio = AudioController(MultiMediaApi(), (e) => fail('$e'));
+    final cleanup = Completer<String>();
+    var created = 0, scans = 0;
+    LinuxAudioRoutes? current;
+    Widget page() => MaterialApp(
+      home: SystemAudioPage(
+        createConnection: (_) async => TestAudioBackend(),
+        key: UniqueKey(),
+        audio: audio,
+        peer: 'phone',
+        name: 'Phone',
+        routeFactory: () {
+          created++;
+          return current = LinuxAudioRoutes(
+            token: 'reopen_$created',
+            command: (args) async {
+              if (args.first == 'get-default-sink') return 'speakers';
+              if (args.first == 'unload-module' && created == 1) {
+                return cleanup.future;
+              }
+              return '123';
+            },
+          );
+        },
+        enumerateDevices: () async {
+          scans++;
+          if (created == 2 && scans < 7) return [];
+          return [
+            MediaDeviceInfo(
+              deviceId: current!.speakerCapture,
+              label: current!.captureLabel,
+              kind: 'audioinput',
+            ),
+          ];
+        },
+      ),
+    );
+    await tester.pumpWidget(page());
+    await tester.tap(find.text('Prepare / refresh audio capture'));
+    await tester.pumpAndSettle();
+    expect(created, 1);
+    await tester.pumpWidget(page());
+    await tester.tap(find.text('Prepare / refresh audio capture'));
+    await tester.pump();
+    expect(created, 1, reason: 'Old native capture must finish cleanup first');
+    cleanup.complete('');
+    await tester.pumpAndSettle();
+    // Discovery can take longer than the former single 700 ms retry.
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    expect(created, 2);
+    expect(scans, greaterThanOrEqualTo(7));
+    expect(find.textContaining('did not become available'), findsNothing);
+    await tester.ensureVisible(find.text('Play on selected devices'));
+    await tester.tap(find.text('Play on selected devices'));
+    await tester.pumpAndSettle();
+    expect(audio.links.values.single.inputDeviceId, current!.speakerCapture);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+  });
+
   testWidgets(
     'add a second laptop listener and stop the first without unloading capture',
     (tester) async {
@@ -27,6 +156,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: SystemAudioPage(
+            createConnection: (_) async => TestAudioBackend(),
             audio: audio,
             peer: 'phone',
             name: 'Phone',

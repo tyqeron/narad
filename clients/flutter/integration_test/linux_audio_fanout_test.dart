@@ -96,144 +96,167 @@ Future<num> _receivedBytes(_Pair pair) async => (await pair.receive.getStats())
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-  testWidgets(
-    'one capture feeds two native receivers and survives stopping one',
-    (tester) async {
-      final route = LinuxAudioRoutes();
-      final directory = await Directory.systemTemp.createTemp('narad-fanout-');
-      final pairs = <_Pair>[];
-      final leases = <CaptureLease<MediaStream>>[];
-      Process? tone, recorder;
-      var captures = 0, releases = 0;
-      final pool = SharedCapturePool<MediaStream>(
-        (id) {
-          captures++;
-          return navigator.mediaDevices.getUserMedia({
-            'audio': audioCaptureConstraints(
-              inputDeviceId: id,
-              systemAudio: true,
+  for (var cycle = 1; cycle <= 2; cycle++) {
+    testWidgets(
+      'capture lifecycle $cycle feeds two receivers and survives stopping one',
+      (tester) async {
+        final route = LinuxAudioRoutes();
+        final backend = await createPeerConnection({'iceServers': []});
+        final directory = await Directory.systemTemp.createTemp(
+          'narad-fanout-',
+        );
+        final pairs = <_Pair>[];
+        final leases = <CaptureLease<MediaStream>>[];
+        Process? tone, recorder;
+        var captures = 0, releases = 0;
+        final pool = SharedCapturePool<MediaStream>(
+          (id) {
+            captures++;
+            return navigator.mediaDevices.getUserMedia({
+              'audio': audioCaptureConstraints(
+                inputDeviceId: id,
+                systemAudio: true,
+              ),
+              'video': false,
+            });
+          },
+          (stream) async {
+            releases++;
+            for (final track in stream.getTracks()) {
+              await track.stop();
+            }
+            await stream.dispose();
+          },
+        );
+        try {
+          await tester.pumpWidget(
+            const MaterialApp(
+              home: Scaffold(body: Text('Two-receiver generated audio test')),
             ),
-            'video': false,
-          });
-        },
-        (stream) async {
-          releases++;
-          for (final track in stream.getTracks()) {
-            await track.stop();
+          );
+          await route.createMeetingDevices();
+          await Future<void>.delayed(const Duration(seconds: 1));
+          var devices = await navigator.mediaDevices.enumerateDevices();
+          for (
+            var attempt = 0;
+            attempt < 20 &&
+                !devices.any(
+                  (d) =>
+                      d.kind == 'audioinput' &&
+                      d.label.contains(route.captureLabel),
+                );
+            attempt++
+          ) {
+            await Future<void>.delayed(const Duration(milliseconds: 250));
+            devices = await navigator.mediaDevices.enumerateDevices();
           }
-          await stream.dispose();
-        },
-      );
-      try {
-        await tester.pumpWidget(
-          const MaterialApp(
-            home: Scaffold(body: Text('Two-receiver generated audio test')),
-          ),
-        );
-        await route.createMeetingDevices();
-        await Future<void>.delayed(const Duration(seconds: 1));
-        final devices = await navigator.mediaDevices.enumerateDevices();
-        final input = devices.firstWhere(
-          (d) =>
-              d.kind == 'audioinput' &&
-              (d.deviceId == route.speakerCapture ||
-                  d.label.contains(route.captureLabel)),
-        );
-        final output = devices.firstWhere(
-          (d) =>
-              d.kind == 'audiooutput' &&
-              (d.deviceId == route.microphoneSink ||
-                  d.label.contains(route.micFeedLabel)),
-        );
-        // Explicit owned source only: no hardware microphone or system-output capture.
-        final first = pool.acquire(input.deviceId),
-            second = pool.acquire(input.deviceId);
-        leases.addAll([first, second]);
-        expect(await first.value, same(await second.value));
-        expect(captures, 1);
-        pairs.add(await _connect(await first.value));
-        pairs.add(await _connect(await second.value));
-        await Helper.selectAudioOutput(output.deviceId);
-        final samples = 48000 * 15;
-        final pcm = ByteData(samples * 4);
-        for (var i = 0; i < samples; i++) {
-          final value = (sin(2 * pi * 440 * i / 48000) * 4000).round();
-          pcm.setInt16(i * 4, value, Endian.little);
-          pcm.setInt16(i * 4 + 2, value, Endian.little);
+          final input = devices.firstWhere(
+            (d) =>
+                d.kind == 'audioinput' &&
+                (d.deviceId == route.speakerCapture ||
+                    d.label.contains(route.captureLabel)),
+          );
+          final output = devices.firstWhere(
+            (d) =>
+                d.kind == 'audiooutput' &&
+                (d.deviceId == route.microphoneSink ||
+                    d.label.contains(route.micFeedLabel)),
+          );
+          // Explicit owned source only: no hardware microphone or system-output capture.
+          final first = pool.acquire(input.deviceId),
+              second = pool.acquire(input.deviceId);
+          leases.addAll([first, second]);
+          expect(await first.value, same(await second.value));
+          expect(captures, 1);
+          pairs.add(await _connect(await first.value));
+          pairs.add(await _connect(await second.value));
+          await Helper.selectAudioOutput(output.deviceId);
+          final samples = 48000 * 15;
+          final pcm = ByteData(samples * 4);
+          for (var i = 0; i < samples; i++) {
+            final value = (sin(2 * pi * 440 * i / 48000) * 4000).round();
+            pcm.setInt16(i * 4, value, Endian.little);
+            pcm.setInt16(i * 4 + 2, value, Endian.little);
+          }
+          final file = File('${directory.path}/tone.pcm');
+          await file.writeAsBytes(pcm.buffer.asUint8List());
+          recorder = await Process.start('parecord', [
+            '--raw',
+            '--format=s16le',
+            '--rate=48000',
+            '--channels=2',
+            '--device=${route.microphoneSource}',
+            '${directory.path}/received.pcm',
+          ]);
+          unawaited(recorder.stdout.drain<void>());
+          unawaited(recorder.stderr.drain<void>());
+          tone = await Process.start('paplay', [
+            '--raw',
+            '--format=s16le',
+            '--rate=48000',
+            '--channels=2',
+            '--device=${route.speakerSink}',
+            file.path,
+          ]);
+          unawaited(tone.stdout.drain<void>());
+          unawaited(tone.stderr.drain<void>());
+          final deadline = DateTime.now().add(const Duration(seconds: 10));
+          while ((await _receivedBytes(pairs[0]) < 1000 ||
+                  await _receivedBytes(pairs[1]) < 1000) &&
+              DateTime.now().isBefore(deadline)) {
+            await Future<void>.delayed(const Duration(milliseconds: 200));
+          }
+          expect(await _receivedBytes(pairs[0]), greaterThan(1000));
+          expect(await _receivedBytes(pairs[1]), greaterThan(1000));
+          await first.release();
+          await pairs.removeAt(0).close();
+          expect(releases, 0);
+          final before = await _receivedBytes(pairs.single);
+          // Record only the remaining listener's decoded virtual output.
+          await Future<void>.delayed(const Duration(seconds: 3));
+          expect(
+            await _receivedBytes(pairs.single),
+            greaterThan(before + 1000),
+          );
+          recorder.kill(ProcessSignal.sigint);
+          await recorder.exitCode;
+          final received = ByteData.sublistView(
+            await File('${directory.path}/received.pcm').readAsBytes(),
+          );
+          var peak = 0;
+          // Last second is after the first listener stopped.
+          for (
+            var i = max(0, received.lengthInBytes - 48000 * 4);
+            i + 1 < received.lengthInBytes;
+            i += 2
+          ) {
+            peak = max(peak, received.getInt16(i, Endian.little).abs());
+          }
+          expect(
+            peak,
+            greaterThan(500),
+            reason:
+                'Remaining listener must decode the tone after the other stops',
+          );
+          await second.release();
+          expect(releases, 1);
+        } finally {
+          tone?.kill();
+          recorder?.kill();
+          for (final pair in pairs) {
+            await pair.close();
+          }
+          for (final lease in leases) {
+            await lease.release();
+          }
+          // The output selection belongs to this isolated test process.
+          await route.dispose();
+          await backend.close();
+          await backend.dispose();
+          await directory.delete(recursive: true);
         }
-        final file = File('${directory.path}/tone.pcm');
-        await file.writeAsBytes(pcm.buffer.asUint8List());
-        recorder = await Process.start('parecord', [
-          '--raw',
-          '--format=s16le',
-          '--rate=48000',
-          '--channels=2',
-          '--device=${route.microphoneSource}',
-          '${directory.path}/received.pcm',
-        ]);
-        unawaited(recorder.stdout.drain<void>());
-        unawaited(recorder.stderr.drain<void>());
-        tone = await Process.start('paplay', [
-          '--raw',
-          '--format=s16le',
-          '--rate=48000',
-          '--channels=2',
-          '--device=${route.speakerSink}',
-          file.path,
-        ]);
-        unawaited(tone.stdout.drain<void>());
-        unawaited(tone.stderr.drain<void>());
-        final deadline = DateTime.now().add(const Duration(seconds: 10));
-        while ((await _receivedBytes(pairs[0]) < 1000 ||
-                await _receivedBytes(pairs[1]) < 1000) &&
-            DateTime.now().isBefore(deadline)) {
-          await Future<void>.delayed(const Duration(milliseconds: 200));
-        }
-        expect(await _receivedBytes(pairs[0]), greaterThan(1000));
-        expect(await _receivedBytes(pairs[1]), greaterThan(1000));
-        await first.release();
-        await pairs.removeAt(0).close();
-        expect(releases, 0);
-        final before = await _receivedBytes(pairs.single);
-        // Record only the remaining listener's decoded virtual output.
-        await Future<void>.delayed(const Duration(seconds: 3));
-        expect(await _receivedBytes(pairs.single), greaterThan(before + 1000));
-        recorder.kill(ProcessSignal.sigint);
-        await recorder.exitCode;
-        final received = ByteData.sublistView(
-          await File('${directory.path}/received.pcm').readAsBytes(),
-        );
-        var peak = 0;
-        // Last second is after the first listener stopped.
-        for (
-          var i = max(0, received.lengthInBytes - 48000 * 4);
-          i + 1 < received.lengthInBytes;
-          i += 2
-        ) {
-          peak = max(peak, received.getInt16(i, Endian.little).abs());
-        }
-        expect(
-          peak,
-          greaterThan(500),
-          reason:
-              'Remaining listener must decode the tone after the other stops',
-        );
-        await second.release();
-        expect(releases, 1);
-      } finally {
-        tone?.kill();
-        recorder?.kill();
-        for (final pair in pairs) {
-          await pair.close();
-        }
-        for (final lease in leases) {
-          await lease.release();
-        }
-        // The output selection belongs to this isolated test process.
-        await route.dispose();
-        await directory.delete(recursive: true);
-      }
-    },
-    timeout: const Timeout(Duration(minutes: 2)),
-  );
+      },
+      timeout: const Timeout(Duration(minutes: 2)),
+    );
+  }
 }
