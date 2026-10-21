@@ -17,11 +17,17 @@ class WindowsIntegration(NaradIntegration):
         with self.assertRaisesRegex(RuntimeError, 'permission denied'):
             self.a.call(op='browse_peer', peer_id=self.bid, path='')
         self.b.call(op='permission', peer_id=self.aid, capability='file.browse', allow=True)
+        with self.assertRaisesRegex(RuntimeError, 'not shared with this device'):
+            self.a.call(op='download_shared', peer_id=self.bid, path='hello.txt')
+        self.b.call(op='share_access', id='default', peer_id=self.aid, allow=True)
         for path in ['../api-token', 'hello.txt:stream', 'CON', '/api-token', 'C:/Windows']:
             with self.assertRaises(RuntimeError):
                 self.a.call(op='read_shared', peer_id=self.bid, path=path, offset=0)
         result = self.a.call(op='download_shared', peer_id=self.bid, path='hello.txt')
         self.assertEqual(Path(result['path']).read_bytes(), b'Windows shared fixture')
+        self.b.call(op='share_access', id='default', peer_id=self.aid, allow=False)
+        with self.assertRaisesRegex(RuntimeError, 'not shared with this device'):
+            self.a.call(op='download_shared', peer_id=self.bid, path='hello.txt')
         self.b.call(op='permission', peer_id=self.aid, capability='file.browse', allow=False)
         with self.assertRaisesRegex(RuntimeError, 'permission denied'):
             self.a.call(op='browse_peer', peer_id=self.bid, path='')
@@ -34,7 +40,7 @@ class WindowsIntegration(NaradIntegration):
         self.b.call(op='permission', peer_id=self.aid, capability='command.run', allow=True)
         self.assertEqual(self.a.call(op='list_commands', peer_id=self.bid)['commands'], [{'id': preset['id'], 'label': 'Fixture'}])
         result = self.a.call(op='run_command', peer_id=self.bid, id=preset['id'])
-        self.assertEqual(result['stdout'].strip(), 'narad-windows-fixture')
+        self.assertEqual(result['stdout'].strip(), 'narad-windows-fixture', result)
         self.assertEqual(result['exit_code'], 0)
         with self.assertRaisesRegex(RuntimeError, 'unknown command'):
             self.a.call(op='run_command', peer_id=self.bid, id='echo arbitrary-command')
