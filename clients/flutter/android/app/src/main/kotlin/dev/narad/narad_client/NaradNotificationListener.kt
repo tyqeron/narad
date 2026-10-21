@@ -74,6 +74,13 @@ class NaradNotificationListener:NotificationListenerService() {
                     .put("text",content(notification))
                     .put("time",n.postTime).put("reply",notification.actions?.any{a->a.remoteInputs?.any{it.allowFreeFormInput}==true}==true)
                     .put("dismissible",n.isClearable).put("actions",actions)
+                    .put("ongoing",n.isOngoing)
+                    .put("progress",notification.extras.getInt(Notification.EXTRA_PROGRESS,0))
+                    .put("progressMax",notification.extras.getInt(Notification.EXTRA_PROGRESS_MAX,0))
+                    .put("progressIndeterminate",notification.extras.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE,false))
+                    .put("usesChronometer",notification.extras.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER,false))
+                    .put("chronometerCountdown",notification.extras.getBoolean(Notification.EXTRA_CHRONOMETER_COUNT_DOWN,false))
+                    .put("when",notification.`when`)
                 if(result.length()>=30 || result.toString().toByteArray().size+item.toString().toByteArray().size>38000)break
                 result.put(item)
             }

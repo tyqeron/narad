@@ -33,8 +33,10 @@ class PhoneNotificationAction:BroadcastReceiver() {
                 if(target.action!=null)args.put("action",target.action)
                 // The source rechecks pairing, capability grants and the live action before executing.
                 LocalBackendClient.call(context,JSONObject().put("op","phone_request").put("peer_id",target.peer).put("kind",target.kind).put("args",args))
-                context.getSystemService(NotificationManager::class.java).cancel(target.notification)
-                clear(target.notification)
+                if(target.kind=="notification_dismiss") {
+                    context.getSystemService(NotificationManager::class.java).cancel(target.notification)
+                    clear(target.notification)
+                }
             } catch(_:Exception) {
                 android.os.Handler(context.mainLooper).post{Toast.makeText(context,"Notification action unavailable. Check the device and its permissions.",Toast.LENGTH_LONG).show()}
             } finally {pending.finish()}
@@ -95,6 +97,11 @@ class PhoneNotificationSync(private val context:Context) {
                             .setContentText(body).setStyle(Notification.BigTextStyle().bigText(body))
                             .setContentIntent(open).setAutoCancel(false).setVisibility(Notification.VISIBILITY_PRIVATE).setOnlyAlertOnce(true)
                         if(kind=="notifications") {
+                            builder.setOngoing(item.optBoolean("ongoing"))
+                                .setProgress(item.optInt("progressMax").coerceAtLeast(0),item.optInt("progress").coerceAtLeast(0),item.optBoolean("progressIndeterminate"))
+                                .setWhen(item.optLong("when",item.optLong("time",System.currentTimeMillis())))
+                                .setUsesChronometer(item.optBoolean("usesChronometer"))
+                                .setChronometerCountDown(item.optBoolean("chronometerCountdown"))
                             NotificationIcons.decode(item.optString("icon"))?.let{builder.setLargeIcon(it)}
                             var count=0
                             if(item.optBoolean("reply")){builder.addAction(PhoneNotificationAction.button(context,id,peer,raw,"notification_reply","Reply"));count++}

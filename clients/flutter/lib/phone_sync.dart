@@ -13,12 +13,15 @@ class PhoneNotice {
     required this.body,
     required this.actions,
     this.progress,
+    this.ongoing = false,
+    this.progressIndeterminate = false,
     this.deviceName,
     this.icon,
   });
   final Uint8List? icon;
   final String? deviceName;
   final int? progress;
+  final bool ongoing, progressIndeterminate;
   final int id;
   final String peer, key, title, body;
   final Map<String, String> actions;
@@ -73,14 +76,15 @@ class PhoneSync {
       },
     });
     for (final key in _posted.keys.toList()) {
-      if (_posted[key]?.id == id) await _remove(key);
+      if (_posted[key]?.id == id && action == 'dismiss') await _remove(key);
     }
+    if (action != 'dismiss') _seen.remove('${n.peer}/notifications');
   }
 
   Future<void> tick(Map<String, dynamic> status) async {
     if (_busy || _disposed || _clock().isBefore(_next)) return;
     _busy = true;
-    _next = _clock().add(const Duration(seconds: 10));
+    _next = _clock().add(const Duration(seconds: 3));
     try {
       final paired = status['paired'] as Map? ?? {},
           presence = status['presence'] as Map? ?? {};
@@ -127,6 +131,18 @@ class PhoneSync {
                 deviceName: peer['device_name']?.toString(),
                 icon: notificationIcon(item['icon']),
                 key: raw,
+                ongoing: item['ongoing'] == true,
+                progressIndeterminate: item['progressIndeterminate'] == true,
+                progress:
+                    item['progressMax'] is num &&
+                        (item['progressMax'] as num) > 0 &&
+                        item['progress'] is num
+                    ? ((item['progress'] as num) *
+                              100 /
+                              (item['progressMax'] as num))
+                          .round()
+                          .clamp(0, 100)
+                    : null,
                 title: kind == 'notifications'
                     ? '${peer['device_name']} · ${item['app']}'
                     : '${peer['device_name']} · Incoming call',

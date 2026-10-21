@@ -85,6 +85,54 @@ void main() {
       sync.dispose();
     },
   );
+  test(
+    'live progress replaces the same notification and is withdrawn on completion',
+    () async {
+      final api = PhoneApi();
+      var now = DateTime(2026);
+      final notices = <PhoneNotice>[];
+      final cancelled = <int>[];
+      final sync = PhoneSync(
+        api,
+        (n) async => notices.add(n),
+        cancel: (id) async => cancelled.add(id),
+        clock: () => now,
+      );
+      final status = {
+        'paired': {
+          'phone': {'peer': peer},
+        },
+        'presence': {
+          'phone': {'online': true},
+        },
+      };
+      api.notifications.first.addAll({
+        'ongoing': true,
+        'progress': 25,
+        'progressMax': 200,
+      });
+      await sync.tick(status);
+      final first = notices.first;
+      expect(first.ongoing, isTrue);
+      expect(first.progress, 13);
+      api.notifications.first['progress'] = 150;
+      now = now.add(const Duration(seconds: 3));
+      await sync.tick(status);
+      expect(notices.last.id, first.id);
+      expect(notices.last.progress, 75);
+      api.notifications.first['progressIndeterminate'] = true;
+      now = now.add(const Duration(seconds: 3));
+      await sync.tick(status);
+      expect(notices.last.progressIndeterminate, isTrue);
+      expect(cancelled, isEmpty);
+      api.notifications.clear();
+      now = now.add(const Duration(seconds: 3));
+      await sync.tick(status);
+      expect(cancelled, contains(first.id));
+      sync.dispose();
+    },
+  );
+
   testWidgets('SMS is sent only after explicit compose confirmation', (
     tester,
   ) async {
@@ -220,7 +268,7 @@ void main() {
         api.commands.where((c) => c['kind'] == 'notification_action'),
         hasLength(1),
       );
-      expect(removed, contains(id));
+      expect(removed, isNot(contains(id)));
       api.notifications.first['text'] = 'Another update';
       await tick();
       final updated = banners.last;

@@ -11,6 +11,8 @@ namespace {
 struct Notice {
   std::string app, title, text, icon;
   gint64 time;
+  bool ongoing = false;
+  gint32 progress = -1;
 };
 struct State {
   std::mutex mutex;
@@ -106,6 +108,10 @@ GDBusMessage *observed(GDBusConnection *, GDBusMessage *message,
     g_autoptr(GVariant) hints = nullptr;
     g_variant_get(body, "(&su&s&s&s@as@a{sv}i)", &app, &replaces, &icon, &title,
                   &text, &actions, &hints, &expiry);
+    gboolean resident = FALSE;
+    gint32 progress = -1;
+    g_variant_lookup(hints, "resident", "b", &resident);
+    g_variant_lookup(hints, "value", "i", &progress);
     gboolean mirrored = FALSE;
     g_variant_lookup(hints, "x-narad-mirrored", "b", &mirrored);
     if (mirrored)
@@ -114,7 +120,7 @@ GDBusMessage *observed(GDBusConnection *, GDBusMessage *message,
       state->pending.erase(state->pending.begin());
     state->pending[{sender, g_dbus_message_get_serial(message)}] = {
         {(*app ? bounded(app, 120) : std::string("App")), bounded(title, 1000),
-         plain_body(text), bounded(icon, 1024), g_get_real_time() / 1000},
+         plain_body(text), bounded(icon, 1024), g_get_real_time() / 1000, resident != FALSE, progress},
         now};
   } else if ((type == G_DBUS_MESSAGE_TYPE_METHOD_RETURN ||
               type == G_DBUS_MESSAGE_TYPE_ERROR) &&
@@ -380,6 +386,11 @@ GVariant *narad_notification_source_items(GtkApplication *app) {
     }
     g_variant_builder_add(&item, "{sv}", "time",
                           g_variant_new_int64(pair.second.time));
+    g_variant_builder_add(&item, "{sv}", "ongoing", g_variant_new_boolean(pair.second.ongoing));
+    if (pair.second.progress >= 0) {
+      g_variant_builder_add(&item, "{sv}", "progress", g_variant_new_int64(pair.second.progress));
+      g_variant_builder_add(&item, "{sv}", "progressMax", g_variant_new_int64(100));
+    }
     g_variant_builder_add(&item, "{sv}", "reply", g_variant_new_boolean(FALSE));
     g_variant_builder_add(&item, "{sv}", "dismissible",
                           g_variant_new_boolean(TRUE));

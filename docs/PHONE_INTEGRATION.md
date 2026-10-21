@@ -41,7 +41,13 @@ Linux and Windows use the same phone panel. Android can also view another paired
 Android phone. Background desktop and Android polling reports new notifications
 and ringing calls with full notification titles and bodies in OS banners. Notification
 actions and **Dismiss** buttons use separate per-device grants, and changed alerts
-update in place. Startup quietly mirrors current alerts; withdrawals, offline devices
+update in place. Ongoing alerts and determinate/indeterminate progress are mirrored;
+Android viewers also preserve supported notification timers. Updates are polled every
+three seconds (network and source processing add latency), retaining the same alert
+instead of adding copies. Source removal withdraws the mirror; using a live action
+keeps it visible while the source updates. Custom app notification layouts and widgets
+are rendered as their exposed text/actions, not copied pixel for pixel. Windows uses
+standard OS toasts and cannot force an un-dismissible ongoing banner. Startup quietly mirrors current alerts; withdrawals, offline devices
 and revoked read access clear their OS entries. Replies use native Android RemoteInput
 and Windows inline input; Linux opens a short reply composer in Narad.
 Mirrored Narad notifications are excluded to prevent forwarding loops. OS banner

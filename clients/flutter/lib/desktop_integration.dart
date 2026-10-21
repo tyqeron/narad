@@ -143,11 +143,11 @@ class DesktopIntegration {
               ),
           ],
           progressBars: [
-            if (n.progress != null)
+            if (n.progress != null || n.progressIndeterminate)
               WindowsProgressBar(
                 id: 'transfer',
                 status: n.body,
-                value: n.progress! / 100,
+                value: n.progressIndeterminate ? null : n.progress! / 100,
               ),
           ],
           actions: [
@@ -169,6 +169,9 @@ class DesktopIntegration {
         'id': n.id,
         'title': n.title,
         'deviceName': n.deviceName,
+        'ongoing': n.ongoing,
+        'progress': n.progress,
+        'progressIndeterminate': n.progressIndeterminate,
         'icon': n.icon,
         'text': n.body,
         'actions': n.actions,

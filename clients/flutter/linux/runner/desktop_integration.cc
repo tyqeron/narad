@@ -171,6 +171,13 @@ bool send_device_notification(GApplication* app,FlValue* args,GError** error) {
   GVariantBuilder hints;g_variant_builder_init(&hints,G_VARIANT_TYPE_VARDICT);
   notification_image_hint(args,&hints);
   g_variant_builder_add(&hints,"{sv}","x-narad-mirrored",g_variant_new_boolean(TRUE));
+  auto* ongoing=fl_value_lookup_string(args,"ongoing");
+  const bool resident=ongoing && fl_value_get_type(ongoing)==FL_VALUE_TYPE_BOOL && fl_value_get_bool(ongoing);
+  g_variant_builder_add(&hints,"{sv}","resident",g_variant_new_boolean(resident));
+  g_variant_builder_add(&hints,"{sv}","suppress-sound",g_variant_new_boolean(TRUE));
+  auto* progress=fl_value_lookup_string(args,"progress");
+  if(progress && fl_value_get_type(progress)==FL_VALUE_TYPE_INT)
+    g_variant_builder_add(&hints,"{sv}","value",g_variant_new_int32(fl_value_get_int(progress)));
   const auto heading=std::string(fl_value_get_string(fl_value_lookup_string(args,"title")));
   const auto content=std::string(fl_value_get_string(fl_value_lookup_string(args,"text")));
   const auto line=content.find('\n');
@@ -182,7 +189,7 @@ bool send_device_notification(GApplication* app,FlValue* args,GError** error) {
       "/org/freedesktop/Notifications","org.freedesktop.Notifications","Notify",
       g_variant_new("(susss@as@a{sv}i)",heading.c_str(),found==mirrored_notifications.end()?0:found->second,
           notification_app_icon(),summary.c_str(),body,
-          g_variant_builder_end(&actions),g_variant_builder_end(&hints),-1),
+          g_variant_builder_end(&actions),g_variant_builder_end(&hints),resident?0:-1),
       G_VARIANT_TYPE("(u)"),G_DBUS_CALL_FLAGS_NONE,2000,nullptr,error);
   if(!result)return false;
   guint32 server_id=0;g_variant_get(result,"(u)",&server_id);mirrored_notifications[id]=server_id;

@@ -81,7 +81,6 @@ class NaradService : Service() {
     private val phoneSyncWorker=Executors.newSingleThreadExecutor()
     private val phoneSync by lazy{PhoneNotificationSync(this)}
     @Volatile private var phoneSyncBusy=false
-    private var phoneSyncTicks=0
     private var lastConnectionText=""
     private var multicast: WifiManager.MulticastLock? = null
     private var callback: ConnectivityManager.NetworkCallback? = null
@@ -91,7 +90,7 @@ class NaradService : Service() {
         override fun run() {
             if(destroyed)return
             if(state=="running")worker.execute {refreshConnections();pollPlatformEvents();try{PhoneBridge.poll(this@NaradService)}catch(_:Exception){}}
-            if(state=="running" && ++phoneSyncTicks%4==0 && !phoneSyncBusy){phoneSyncBusy=true;phoneSyncWorker.execute{try{phoneSync.poll()}catch(_:Exception){}finally{phoneSyncBusy=false}}}
+            if(state=="running" && !phoneSyncBusy){phoneSyncBusy=true;phoneSyncWorker.execute{try{phoneSync.poll()}catch(_:Exception){}finally{phoneSyncBusy=false}}}
             main.postDelayed(this,3000)
         }
     }

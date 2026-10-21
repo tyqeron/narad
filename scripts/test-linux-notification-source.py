@@ -42,8 +42,10 @@ registration = bus.register_object('/org/freedesktop/Notifications', info.interf
 bus.call_sync('org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus', 'RequestName',
     GLib.Variant('(su)', ('org.freedesktop.Notifications', 0)), None, Gio.DBusCallFlags.NONE, 3000, None)
 
-def notify(title, replace=0, mirrored=False):
+def notify(title, replace=0, mirrored=False, progress=None, ongoing=False):
     hints = {'x-narad-mirrored': GLib.Variant('b', True)} if mirrored else {}
+    hints['resident'] = GLib.Variant('b', ongoing)
+    if progress is not None: hints['value'] = GLib.Variant('i', progress)
     return bus.call_sync('org.freedesktop.Notifications', '/org/freedesktop/Notifications',
         'org.freedesktop.Notifications', 'Notify', GLib.Variant('(susssasa{sv}i)',
         ('Fixture app', replace, str(root/'clients/flutter/assets/branding/narad.png'), title, '<b>Generated body</b>', [], hints, 0)),
@@ -82,8 +84,9 @@ with tempfile.TemporaryDirectory(prefix='narad-source-test-') as folder:
         icon=base64.b64decode(items()[0]['icon'])
         assert struct.unpack('>II',icon[16:24])==(32,32)
         assert items()[0]['actions'] == [] and not items()[0]['reply']
-        notify('Updated fixture', id); wait(lambda: items()[0]['title'] == 'Updated fixture')
+        notify('Updated fixture', id, progress=75, ongoing=True); wait(lambda: items()[0]['title'] == 'Updated fixture')
         assert len(items()) == 1
+        assert items()[0]['ongoing'] and items()[0]['progress'] == 75 and items()[0]['progressMax'] == 100
         call('Own'); notify('Mirrored fixture', mirrored=True); time.sleep(.2)
         assert len(items()) == 1, 'Mirrored/own notification loop'
         call('Dismiss', '(s)', ('linux:'+str(id),)); wait(lambda: items() == [])
