@@ -4,6 +4,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'api.dart';
 import 'dart:io';
 import 'camera_tools.dart';
+import 'shared_capture.dart';
 
 class AudioLink {
   AudioLink(
@@ -26,6 +27,7 @@ class AudioLink {
   final bool systemAudio;
   RTCPeerConnection? connection;
   MediaStream? microphone;
+  CaptureLease<MediaStream>? systemCapture;
   MediaStream? cameraOriginalAudio;
   RTCVideoRenderer? renderer;
   CameraTools? tools;
@@ -56,6 +58,26 @@ class AudioController {
   final void Function(Object) onError;
   final Map<String, AudioLink> links = {};
   final List<CameraTools> savedCameras = [];
+  late final _systemCaptures = SharedCapturePool<MediaStream>(
+    (source) => navigator.mediaDevices.getUserMedia({
+      'audio': audioCaptureConstraints(
+        inputDeviceId: source,
+        systemAudio: true,
+      ),
+      'video': false,
+    }),
+    (stream) async {
+      try {
+        for (final track in stream.getTracks()) {
+          await track.stop();
+        }
+      } finally {
+        await stream.dispose();
+      }
+    },
+  );
+  bool _startingAudio = false;
+
   bool enabled = false;
   bool cameraEnabled = false;
   bool microphoneEnabled = false;
@@ -284,25 +306,47 @@ class AudioController {
     if (systemAudio && (inputDeviceId == null || inputDeviceId.isEmpty)) {
       throw StateError('Select an explicit system audio capture device first');
     }
-    if (links.values.any(
+    if (_startingAudio) {
+      throw StateError('An audio request is starting. Try again.');
+    }
+    final sending = links.values.where(
       (l) => l.outgoing && !l.camera && !l.remoteMicrophone,
+    );
+    if (sending.any((l) => l.peer == peer)) {
+      throw StateError('Audio is already being sent to this device');
+    }
+    if (sending.any(
+      (l) => !systemAudio || !l.systemAudio || l.inputDeviceId != inputDeviceId,
     )) {
       throw StateError(
         'Stop the current audio send before changing its capture source',
       );
     }
-    if (!enabled) await setEnabled(true);
-    if (!systemAudio && !microphoneEnabled) await setMicrophoneEnabled(true);
-    final result = await api.call({'op': 'media_start', 'peer_id': peer});
-    final id = result['id'] as String;
-    links[id] = AudioLink(
-      id,
-      peer,
-      true,
-      inputDeviceId: inputDeviceId,
-      systemAudio: systemAudio,
-    );
-    return id;
+    if (systemAudio &&
+        links.values.any(
+          (l) => !l.camera && (!l.outgoing || l.remoteMicrophone),
+        )) {
+      throw StateError(
+        'Stop incoming audio before sharing laptop playback to avoid feedback',
+      );
+    }
+    _startingAudio = true;
+    try {
+      if (!enabled) await setEnabled(true);
+      if (!systemAudio && !microphoneEnabled) await setMicrophoneEnabled(true);
+      final result = await api.call({'op': 'media_start', 'peer_id': peer});
+      final id = result['id'] as String;
+      links[id] = AudioLink(
+        id,
+        peer,
+        true,
+        inputDeviceId: inputDeviceId,
+        systemAudio: systemAudio,
+      );
+      return id;
+    } finally {
+      _startingAudio = false;
+    }
   }
 
   Future<String> requestMicrophone(String peer) async {
@@ -396,19 +440,27 @@ class AudioController {
             );
           }
         }
-        final stream = await navigator.mediaDevices.getUserMedia({
-          'audio': audioCaptureConstraints(
-            inputDeviceId: link.inputDeviceId,
-            systemAudio: link.systemAudio,
-          ),
-          'video': false,
-        });
+        final MediaStream stream;
+        if (link.systemAudio) {
+          final lease = _systemCaptures.acquire(link.inputDeviceId!);
+          link.systemCapture = lease;
+          stream = await lease.value;
+        } else {
+          stream = await navigator.mediaDevices.getUserMedia({
+            'audio': audioCaptureConstraints(inputDeviceId: link.inputDeviceId),
+            'video': false,
+          });
+        }
         // A permission dialog can outlive a cancelled session.
         if (!links.containsKey(link.id)) {
-          for (final track in stream.getTracks()) {
-            await track.stop();
+          if (link.systemCapture != null) {
+            await link.systemCapture!.release();
+          } else {
+            for (final track in stream.getTracks()) {
+              await track.stop();
+            }
+            await stream.dispose();
           }
-          await stream.dispose();
           return;
         }
         link.microphone = stream;
@@ -764,9 +816,13 @@ class AudioController {
     await link.tools?.stopFeed();
     // Stop capture and playback before waiting for network teardown.
     try {
-      for (final track
-          in link.microphone?.getTracks() ?? <MediaStreamTrack>[]) {
-        await track.stop();
+      if (link.systemCapture != null) {
+        await link.systemCapture!.release();
+      } else {
+        for (final track
+            in link.microphone?.getTracks() ?? <MediaStreamTrack>[]) {
+          await track.stop();
+        }
       }
     } finally {
       if (link.tools != null) {
@@ -781,7 +837,7 @@ class AudioController {
         await link.connection?.close();
         await link.connection?.dispose();
       } finally {
-        await link.microphone?.dispose();
+        if (link.systemCapture == null) await link.microphone?.dispose();
         for (final track
             in link.cameraOriginalAudio?.getTracks() ?? <MediaStreamTrack>[]) {
           await track.stop();

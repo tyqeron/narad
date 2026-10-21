@@ -1773,6 +1773,12 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                   audio: _audio!,
                   peer: id,
                   name: peer['device_name'] as String,
+                  recipients: {
+                    for (final p in _pairedPeers.where(
+                      (p) => _isOnline(p['device_id'] as String),
+                    ))
+                      p['device_id'] as String: p['device_name'] as String,
+                  },
                 ),
               ),
             );
@@ -2967,6 +2973,12 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                     audio: _audio!,
                     peer: peer['device_id'] as String,
                     name: peer['device_name'] as String,
+                    recipients: {
+                      for (final p in _pairedPeers.where(
+                        (p) => _isOnline(p['device_id'] as String),
+                      ))
+                        p['device_id'] as String: p['device_name'] as String,
+                    },
                   ),
                 ),
               );

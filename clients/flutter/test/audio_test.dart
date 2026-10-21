@@ -19,7 +19,68 @@ class PendingMediaApi implements NaradApi {
   }
 }
 
+class MultiMediaApi extends PendingMediaApi {
+  int next = 0;
+  @override
+  Future<Map<String, dynamic>> call(Map<String, dynamic> command) async {
+    if (command['op'] == 'media_start') {
+      commands.add(command);
+      return {'ok': true, 'id': 'audio-${++next}'};
+    }
+    return super.call(command);
+  }
+}
+
 void main() {
+  test(
+    'laptop playback fans out to two peers and each can stop independently',
+    () async {
+      final api = MultiMediaApi();
+      final audio = AudioController(api, (e) => fail('$e'));
+      final phone = await audio.start(
+        'phone',
+        inputDeviceId: 'monitor',
+        systemAudio: true,
+      );
+      final tablet = await audio.start(
+        'tablet',
+        inputDeviceId: 'monitor',
+        systemAudio: true,
+      );
+      expect(audio.links.length, 2);
+      expect(audio.microphoneEnabled, false);
+      await expectLater(
+        audio.start('phone', inputDeviceId: 'monitor', systemAudio: true),
+        throwsStateError,
+      );
+      await expectLater(
+        audio.start('third', inputDeviceId: 'different', systemAudio: true),
+        throwsStateError,
+      );
+      await expectLater(audio.start('third'), throwsStateError);
+      await audio.stop(phone);
+      expect(audio.links.keys, [tablet]);
+      expect(
+        api.commands
+            .where((c) => c['op'] == 'session_stop')
+            .map((c) => c['id']),
+        [phone],
+      );
+      await audio.stop(tablet);
+      expect(audio.links, isEmpty);
+    },
+  );
+  test('laptop playback does not capture an incoming audio loop', () async {
+    final api = MultiMediaApi();
+    final audio = AudioController(api, (e) => fail('$e'));
+    audio.links['receive'] = AudioLink('receive', 'phone', false);
+    await expectLater(
+      audio.start('tablet', inputDeviceId: 'monitor', systemAudio: true),
+      throwsStateError,
+    );
+    expect(api.commands, isEmpty);
+    await audio.dispose();
+  });
   test(
     'remote camera viewing never enables this device camera or microphone',
     () async {

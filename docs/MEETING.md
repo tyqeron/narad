@@ -12,15 +12,22 @@ not silently re-enable camera or microphone capture.
 ## Listen to laptop videos on your phone
 
 On the laptop, open the phone's **Device actions → Send laptop audio**. Choose
-**Prepare / refresh audio capture**, then **Play laptop audio on device**. On
+**Prepare / refresh audio capture**, select one or more online devices under
+**Listening devices**, then **Play on selected devices**. You can add another
+listener in the same panel without stopping existing streams. Each receiver
+needs its own **Play shared audio** permission for the laptop. On
 Linux this captures the monitor of the current default output, including other
 applications' sound. Local playback continues. Changing the default output later
 requires stopping and preparing again. On Windows choose an installed Stereo Mix
 or virtual audio cable recording endpoint; for a cable, route the video player's
 output to its playback endpoint in Windows sound settings.
 
-Keep the panel open and minimize Narad. Leaving the panel or selecting Stop ends
-sharing and removes its temporary Linux route. This mode disables speech noise
+Keep the panel open and minimize Narad. Each listener has its own stop button;
+stopping or disconnecting one does not stop other listeners. All listeners share
+one selected capture source. Choose **Stop all sharing** (or leave the panel) to
+end its streams and remove its temporary Linux route. Stop all listeners before
+changing the source. Incoming audio and microphone sends must be stopped before
+starting this playback-sharing mode to avoid feedback. This mode disables speech noise
 suppression, echo cancellation and automatic gain control to preserve video/music.
 
 ## Use all three phone devices in Google Meet
@@ -118,3 +125,20 @@ This creates and removes a temporary pairing, verifies playback does not enable
 microphone sharing, starts both audio directions while Android is backgrounded,
 checks received camera/video-only tracks when requested, and checks remote stop.
 It never changes permissions for real paired peers or saves live media.
+
+### Multiple laptop-audio listeners
+
+The capture pool and controller tests check two recipients, independent stop,
+duplicate/source-change rejection, cancellation during initialization and retry.
+The native fan-out test uses a generated tone and owned virtual devices, verifies
+RTP at two receivers, then checks continuing RTP and decoded PCM after stopping
+one receiver:
+
+```sh
+cd clients/flutter
+dbus-run-session -- flutter test integration_test/linux_audio_fanout_test.dart -d linux
+```
+
+Each recipient still has a separate authenticated session and permission grant.
+There is one local playback capture, released when its last listener stops.
+Different capture sources and incoming-audio loops are not mixed into this mode.
