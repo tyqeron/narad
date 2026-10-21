@@ -559,7 +559,7 @@ void main() {
       Theme.of(tester.element(find.text('Narad'))).brightness,
       Brightness.dark,
     );
-    await tester.tap(find.byTooltip('Settings'));
+    await tester.tap(find.text('Settings'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Light'));
     await tester.pumpAndSettle();
