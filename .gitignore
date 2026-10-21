@@ -30,3 +30,6 @@ clients/flutter/android/app/build/
 **/identity.enc
 
 **/identity.dpapi
+
+# Generated GitHub Pages site.
+/site/_build/

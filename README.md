@@ -10,6 +10,13 @@ Android builds are available. Windows runner, native backend support and packagi
 are implemented; Windows-native builds and physical QA are pending. iOS still needs platform work.
 See [implementation status](docs/IMPLEMENTATION_STATUS.md).
 
+## Website and community
+
+The [Narad website](https://tyqeron.github.io/narad/) provides the app overview,
+searchable documentation, PRD, roadmap, collaborators, feedback and Patreon
+support. It is deployed by GitHub Actions on tag pushes once Pages is enabled.
+See [website setup and deployment](docs/WEBSITE.md).
+
 ## Run on Android
 
 Build an installable APK with `./scripts/build-android.sh`, then install

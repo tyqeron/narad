@@ -1,0 +1,8 @@
+{
+  "name": "Narad",
+  "repository": "https://github.com/tyqeron/narad",
+  "site_url": "https://tyqeron.github.io/narad",
+  "description": "Connect your devices on your own terms. Narad brings local-first file sharing, clipboard sync, notifications, cameras and device controls to your trusted network.",
+  "donation_url": "",
+  "donation_label": "Support Narad on Patreon"
+}
