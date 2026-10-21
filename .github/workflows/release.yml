@@ -101,6 +101,22 @@ jobs:
       - run: cargo test --workspace --locked
       - run: ./scripts/build-windows.ps1
         shell: pwsh
+      - name: Build optional signed MSIX alongside ZIP
+        shell: pwsh
+        env:
+          WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
+          NARAD_WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
+        run: |
+          $Pfx = Join-Path $env:RUNNER_TEMP 'narad-release.pfx'
+          try {
+            if ($env:WINDOWS_PFX_BASE64) {
+              [IO.File]::WriteAllBytes($Pfx, [Convert]::FromBase64String($env:WINDOWS_PFX_BASE64))
+              $env:NARAD_WINDOWS_PFX = $Pfx
+            }
+            ./scripts/build-windows-msix.ps1 -SkipBuild
+          } finally {
+            if (Test-Path $Pfx) { Remove-Item $Pfx -Force }
+          }
       - uses: actions/upload-artifact@v7
         with:
           name: release-windows
@@ -110,6 +126,8 @@ jobs:
           path: |
             dist/narad-windows-x64-release.zip
             dist/narad-windows-x64-release.zip.sha256
+            dist/narad-windows-x64-release*.msix
+            dist/narad-windows-x64-release*.msix.sha256
 
   android:
     needs: prepare
@@ -205,7 +223,8 @@ jobs:
           test -s narad-linux-x64-release.tar.gz
           test -s narad-windows-x64-release.zip
           test -s narad-android-release.apk
-          test "$(find . -maxdepth 1 -name '*.sha256' | wc -l)" -eq 4
+          compgen -G 'narad-windows-x64-release*.msix' >/dev/null
+          test "$(find . -maxdepth 1 -name '*.sha256' | wc -l)" -eq 5
           sha256sum -c -- *.sha256
       - name: Publish release with all packages
         env:

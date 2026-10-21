@@ -79,6 +79,7 @@ fail validation before builds start. Do not move a published release tag.
 The release contains these files and one `.sha256` file for each:
 
 - `narad-windows-x64-release.zip`: app, bundled daemon and install scripts.
+- `narad-windows-x64-release[-unsigned].msix`: packaged Windows app with notification-listener capability. Optional `WINDOWS_PFX_BASE64` and `WINDOWS_PFX_PASSWORD` secrets sign it; otherwise it is explicitly unsigned and requires signing before installation.
 - `narad-linux-x64-release.run`: Linux per-user installer.
 - `narad-linux-x64-release.tar.gz`: portable Linux bundle.
 - `narad-android-release.apk`: signed universal ARM64, ARMv7 and x86_64 APK.

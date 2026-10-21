@@ -173,3 +173,37 @@ Under **Directories shared with this device**, select existing folders or choose
 The device still needs browse permission and, for writes, upload permission plus
 the folder upload switch. Existing folders, including the app Shared folder,
 require explicit device selection after upgrading; their files are preserved.
+
+## MSIX and Windows notification capture
+
+The ZIP installer remains available. An additional MSIX package declares the
+`userNotificationListener` capability for sharing Windows notifications. It
+requires Windows 10 version 1809 or newer and the x64
+`Microsoft.VCLibs.140.00.UWPDesktop` framework. Fully quit any ZIP installation
+before opening the MSIX installation; both use Narad's single-instance window.
+In the MSIX app, turn on **Settings → Share desktop notifications** and approve
+the Windows access prompt. Grant recipients notification permissions in each
+device's settings. Permission can be revoked in Windows Settings at any time.
+Windows capture includes text and dismissal; it cannot invoke other apps' toast
+buttons or reply to them.
+
+Build both formats on Windows:
+
+```powershell
+./scripts/build-windows.ps1
+./scripts/build-windows-msix.ps1 -SkipBuild
+```
+
+Without a signing certificate the second command creates
+`dist/narad-windows-x64-release-unsigned.msix` and its checksum. This is a build
+artifact for review; Windows requires trusted package signing before installation.
+To produce a signed package, set `NARAD_WINDOWS_PFX` to your code-signing PFX path
+and `NARAD_WINDOWS_PFX_PASSWORD` to its password. The package publisher is read
+from that certificate. The script does not install certificates or change trust
+settings. Use the same publisher identity for updates. Pass `-Version x.x.x.x`
+when the app version/build cannot fit MSIX's four 16-bit version components.
+
+GitHub Windows CI builds and validates an unsigned MSIX alongside ZIP. Tag releases
+can sign it with optional `WINDOWS_PFX_BASE64` and `WINDOWS_PFX_PASSWORD` secrets;
+without them the release includes the explicitly named unsigned artifact. Windows
+native listener/consent and signed installation still require Windows device QA.

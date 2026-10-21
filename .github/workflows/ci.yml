@@ -44,6 +44,7 @@ jobs:
       - run: python3 tests/screen_virtual_display_test.py
       - run: ./scripts/build-linux-installer.sh debug
       - run: xvfb-run -a dbus-run-session -- env NARAD_TRAY_TEST_BUS=1 /usr/bin/python3 scripts/test-linux-tray.py
+      - run: xvfb-run -a dbus-run-session -- env NARAD_NOTIFICATION_TEST_BUS=1 /usr/bin/python3 scripts/test-linux-notification-source.py
       - run: python3 tests/linux_packaging.py dist/narad-linux-x64-debug.run
       - run: xvfb-run -a dbus-run-session -- python3 tests/linux_background.py clients/flutter/build/linux/x64/debug/bundle
 
@@ -116,12 +117,16 @@ jobs:
           }
       - run: ./scripts/build-windows.ps1
         shell: pwsh
+      - run: ./scripts/build-windows-msix.ps1 -SkipBuild
+        shell: pwsh
       - uses: actions/upload-artifact@v7
         with:
           name: narad-windows-x64-development
           path: |
             dist/narad-windows-x64-release.zip
             dist/narad-windows-x64-release.zip.sha256
+            dist/narad-windows-x64-release*.msix
+            dist/narad-windows-x64-release*.msix.sha256
 
   ios:
     runs-on: macos-latest
