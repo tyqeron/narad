@@ -580,6 +580,53 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  for (final platform in ['linux', 'windows']) {
+    testWidgets(
+      '$platform device settings expose desktop notification grants',
+      (tester) async {
+        final api = FakeApi();
+        (api.status['device'] as Map)['platform'] = platform;
+        await tester.pumpWidget(NaradApp(api: api));
+        await tester.pumpAndSettle();
+        await tester.scrollUntilVisible(
+          find.byKey(const ValueKey('device-peer')),
+          150,
+        );
+        await tester.tap(find.byKey(const ValueKey('device-peer')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('Device settings and permissions'));
+        await tester.pumpAndSettle();
+        expect(find.text('Desktop notification setup'), findsOneWidget);
+        expect(find.text('Reply to notifications'), findsNothing);
+        expect(find.text('Use notification action buttons'), findsNothing);
+        for (final entry in {
+          'Share notifications': 'notification.read',
+          'Dismiss notifications': 'notification.manage',
+        }.entries) {
+          await tester.ensureVisible(find.text(entry.key));
+          await tester.tap(find.text(entry.key));
+          await tester.pumpAndSettle();
+          expect(
+            api.calls.any(
+              (c) =>
+                  c['op'] == 'permission' &&
+                  c['peer_id'] == 'peer' &&
+                  c['capability'] == entry.value &&
+                  c['allow'] == true,
+            ),
+            isTrue,
+          );
+        }
+        await tester.ensureVisible(find.text('Open Settings'));
+        await tester.tap(find.text('Open Settings'));
+        await tester.pumpAndSettle();
+        expect(find.text('Appearance'), findsOneWidget);
+        await tester.pumpWidget(const SizedBox());
+        await tester.pumpAndSettle();
+      },
+    );
+  }
+
   testWidgets(
     'device settings expose all capability grants and save them per peer',
     (tester) async {

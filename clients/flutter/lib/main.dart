@@ -2146,7 +2146,31 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                       'Choose what this device can do. These grants are remembered, so approved actions do not need another prompt.',
                     ),
                   ),
+                  if ([
+                    'linux',
+                    'windows',
+                  ].contains(_data['device']['platform']))
+                    Card(
+                      child: ListTile(
+                        leading: const Icon(Icons.notifications_outlined),
+                        title: const Text('Desktop notification setup'),
+                        subtitle: const Text(
+                          'Turn on Share desktop notifications in Settings on this computer, then allow this paired device to read or dismiss notifications below.',
+                        ),
+                        trailing: TextButton(
+                          onPressed: () => _openTab(3),
+                          child: const Text('Open Settings'),
+                        ),
+                      ),
+                    ),
                   for (final entry in {
+                    if ([
+                      'linux',
+                      'windows',
+                    ].contains(_data['device']['platform'])) ...{
+                      'notification.read': 'Share notifications',
+                      'notification.manage': 'Dismiss notifications',
+                    },
                     if (_data['device']['platform'] == 'android') ...{
                       'contacts.read': 'Share contacts',
                       'notification.read': 'Share notifications',
