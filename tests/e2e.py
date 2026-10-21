@@ -13,25 +13,31 @@ import unittest
 BIN = Path(os.environ.get("NARAD_TEST_BIN", str(Path(__file__).resolve().parents[1] / ("target/debug/narad.exe" if os.name == "nt" else "target/debug/narad"))))
 
 
-def free_port_pair():
+def free_daemon_ports():
+    """Choose distinct control/file/API ports while all three are reserved.
+
+    In particular, Windows may immediately reuse a just-released ephemeral port.
+    These reservations avoid self-collisions; the daemon binds them after return.
+    """
     for _ in range(100):
-        with socket.socket() as first:
-            first.bind(("127.0.0.1", 0))
-            port = first.getsockname()[1]
+        with socket.socket() as control, socket.socket() as files, socket.socket() as api:
+            control.bind(("127.0.0.1", 0))
+            port = control.getsockname()[1]
+            if port == 65535:
+                continue
             try:
-                with socket.socket() as second:
-                    second.bind(("127.0.0.1", port + 1))
-                    return port
+                files.bind(("127.0.0.1", port + 1))
+                api.bind(("127.0.0.1", 0))
+                return port, api.getsockname()[1]
             except OSError:
                 pass
-    raise RuntimeError("no free ports")
+    raise RuntimeError("no free daemon ports")
 
 
 class Device:
     def __init__(self, root, name):
         self.state = root / name
-        self.control = free_port_pair()
-        self.api = free_port_pair()
+        self.control, self.api = free_daemon_ports()
         self.name = name
         self.process = None
         self.discovery = False

@@ -5,12 +5,37 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
-from e2e import Device, NaradIntegration
+from e2e import Device, NaradIntegration, free_daemon_ports
 
 
 class CleanupTests(unittest.TestCase):
+    def test_daemon_ports_hold_control_and_files_until_api_is_selected(self):
+        control, files, api = [MagicMock() for _ in range(3)]
+        for sock in [control, files, api]:
+            sock.__enter__.return_value = sock
+        control.getsockname.return_value = ('127.0.0.1', 50000)
+        api.getsockname.return_value = ('127.0.0.1', 50002)
+        def bind_api(address):
+            control.bind.assert_called_once_with(('127.0.0.1', 0))
+            files.bind.assert_called_once_with(('127.0.0.1', 50001))
+            control.__exit__.assert_not_called()
+            files.__exit__.assert_not_called()
+        api.bind.side_effect = bind_api
+        with patch('e2e.socket.socket', side_effect=[control, files, api]):
+            self.assertEqual(free_daemon_ports(), (50000, 50002))
+        for sock in [control, files, api]:
+            sock.__exit__.assert_called_once()
+
+    def test_daemon_ports_are_distinct_on_real_sockets(self):
+        for _ in range(10):
+            control, api = free_daemon_ports()
+            self.assertGreater(control, 0)
+            self.assertLess(control, 65535)
+            self.assertGreater(api, 0)
+            self.assertNotIn(api, [control, control + 1])
+
     def device(self, root):
         device = Device.__new__(Device)
         device.state = root / 'Alice'

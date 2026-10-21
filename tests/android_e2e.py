@@ -19,7 +19,7 @@ import tempfile
 import time
 import uuid
 
-from e2e import BIN, free_port_pair
+from e2e import BIN, free_daemon_ports
 
 PACKAGE = 'dev.narad.narad_client'
 
@@ -93,8 +93,7 @@ def main():
         with tempfile.TemporaryDirectory(prefix='narad-android-e2e-') as temporary:
             root = Path(temporary)
             state = root / 'desktop'
-            api = free_port_pair()
-            control = free_port_pair()
+            control, api = free_daemon_ports()
             with (root / 'desktop.log').open('w') as log:
                 process = subprocess.Popen([
                     str(BIN), '--state', str(state), '--api-port', str(api),
