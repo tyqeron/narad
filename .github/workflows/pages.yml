@@ -1,0 +1,94 @@
+name: Build and deploy Narad website
+
+on:
+  push:
+    tags: ['**']
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'docs/**'
+      - '*.md'
+      - 'LICENSE'
+      - 'clients/**/README.md'
+      - 'clients/flutter/assets/branding/**'
+      - 'tests/site_test.py'
+      - 'tests/site_browser.mjs'
+      - '.github/workflows/pages.yml'
+  pull_request:
+    paths:
+      - 'site/**'
+      - 'docs/**'
+      - '*.md'
+      - 'LICENSE'
+      - 'clients/**/README.md'
+      - 'clients/flutter/assets/branding/**'
+      - 'tests/site_test.py'
+      - 'tests/site_browser.mjs'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: ${{ !github.event.deleted }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: site/requirements.txt
+      - run: python -m pip install -r site/requirements.txt
+      - name: Verify website generation and links
+        run: python tests/site_test.py
+      - name: Build static site from this revision
+        env:
+          SITE_VERSION: ${{ github.ref_name }}
+        run: python site/build.py
+      - name: Verify desktop and mobile interactions
+        run: |
+          npm install --prefix "$RUNNER_TEMP/narad-site-browser" playwright-core@1.56.1 --no-audit --no-fund
+          python site/build.py --output "$RUNNER_TEMP/narad-site-preview/narad" --url https://example.org/narad --version "$GITHUB_REF_NAME"
+          python -m http.server 8765 --bind 127.0.0.1 --directory "$RUNNER_TEMP/narad-site-preview" &
+          PreviewPid=$!
+          trap 'kill "$PreviewPid"' EXIT
+          export NARAD_PLAYWRIGHT_MODULE="$RUNNER_TEMP/narad-site-browser/node_modules/playwright-core/index.mjs"
+          export NARAD_CHROME="$(command -v google-chrome)"
+          node tests/site_browser.mjs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: narad-website
+          path: site/_build/
+          include-hidden-files: true
+      - uses: actions/upload-pages-artifact@v4
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+        with:
+          path: site/_build
+
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Deploy website
+        id: deployment
+        uses: actions/deploy-pages@v4
