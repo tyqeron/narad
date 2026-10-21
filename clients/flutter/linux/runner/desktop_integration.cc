@@ -1,4 +1,5 @@
 #include "desktop_integration.h"
+#include "notification_source.h"
 #include <glib/gstdio.h>
 #include <string>
 #include <cstring>
@@ -169,6 +170,7 @@ bool send_device_notification(GApplication* app,FlValue* args,GError** error) {
     }
   GVariantBuilder hints;g_variant_builder_init(&hints,G_VARIANT_TYPE_VARDICT);
   notification_image_hint(args,&hints);
+  g_variant_builder_add(&hints,"{sv}","x-narad-mirrored",g_variant_new_boolean(TRUE));
   const auto heading=std::string(fl_value_get_string(fl_value_lookup_string(args,"title")));
   const auto content=std::string(fl_value_get_string(fl_value_lookup_string(args,"text")));
   const auto line=content.find('\n');
@@ -186,10 +188,42 @@ bool send_device_notification(GApplication* app,FlValue* args,GError** error) {
   guint32 server_id=0;g_variant_get(result,"(u)",&server_id);mirrored_notifications[id]=server_id;
   return true;
 }
+FlValue* source_value(GVariant* value) {
+  if(g_variant_is_of_type(value,G_VARIANT_TYPE_VARDICT)) {
+    auto* result=fl_value_new_map();GVariantIter iter;const gchar* key;GVariant* child;
+    g_variant_iter_init(&iter,value);
+    while(g_variant_iter_next(&iter,"{&sv}",&key,&child)) {
+      fl_value_set_string_take(result,key,source_value(child));g_variant_unref(child);
+    }
+    return result;
+  }
+  if(g_variant_is_of_type(value,G_VARIANT_TYPE_STRING))return fl_value_new_string(g_variant_get_string(value,nullptr));
+  if(g_variant_is_of_type(value,G_VARIANT_TYPE_BOOLEAN))return fl_value_new_bool(g_variant_get_boolean(value));
+  if(g_variant_is_of_type(value,G_VARIANT_TYPE_INT64))return fl_value_new_int(g_variant_get_int64(value));
+  auto* result=fl_value_new_list();
+  for(gsize i=0;i<g_variant_n_children(value);++i){g_autoptr(GVariant) child=g_variant_get_child_value(value,i);fl_value_append_take(result,source_value(child));}
+  return result;
+}
 void handle(FlMethodChannel *, FlMethodCall *call, gpointer user_data) {
   const gchar *method = fl_method_call_get_name(call);
   g_autoptr(FlMethodResponse) response = nullptr;
-  if (g_strcmp0(method, "desktopStatus") == 0) {
+  if (g_strcmp0(method,"notificationSourceStatus")==0 || g_strcmp0(method,"desktopNotifications")==0) {
+    g_autoptr(GVariant) value=g_strcmp0(method,"notificationSourceStatus")==0?
+        narad_notification_source_status(GTK_APPLICATION(user_data)):narad_notification_source_items(GTK_APPLICATION(user_data));
+    g_autoptr(FlValue) result=source_value(value);
+    response=FL_METHOD_RESPONSE(fl_method_success_response_new(result));
+  } else if(g_strcmp0(method,"setNotificationSharing")==0 || g_strcmp0(method,"dismissDesktopNotification")==0) {
+    auto* args=fl_method_call_get_args(call);g_autoptr(GError) error=nullptr;bool ok=false;
+    if(args && fl_value_get_type(args)==FL_VALUE_TYPE_MAP) {
+      auto* enabled=fl_value_lookup_string(args,"enabled");auto* key=fl_value_lookup_string(args,"key");
+      if(g_strcmp0(method,"setNotificationSharing")==0 && enabled && fl_value_get_type(enabled)==FL_VALUE_TYPE_BOOL)
+        ok=narad_notification_source_enable(GTK_APPLICATION(user_data),fl_value_get_bool(enabled),&error);
+      else if(key && fl_value_get_type(key)==FL_VALUE_TYPE_STRING)
+        ok=narad_notification_source_dismiss(GTK_APPLICATION(user_data),fl_value_get_string(key),&error);
+    }
+    if(ok)response=FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+    else response=FL_METHOD_RESPONSE(fl_method_error_response_new("notification_source",error?error->message:"Invalid notification request",nullptr));
+  } else if (g_strcmp0(method, "desktopStatus") == 0) {
     g_autofree gchar *path = autostart_path();
     g_autoptr(FlValue) result = fl_value_new_map();
     fl_value_set_string_take(

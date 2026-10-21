@@ -58,6 +58,33 @@ const peer = {
   'platform': 'android',
 };
 void main() {
+  test(
+    'receives desktop notifications without querying desktop cellular calls',
+    () async {
+      final api = PhoneApi();
+      final notices = <PhoneNotice>[];
+      final sync = PhoneSync(api, (notice) async {
+        notices.add(notice);
+      }, cancel: (_) async {});
+      await sync.tick({
+        'paired': {
+          'desktop': {
+            'peer': {
+              'device_id': 'desktop',
+              'device_name': 'Laptop',
+              'platform': 'linux',
+            },
+          },
+        },
+        'presence': {
+          'desktop': {'online': true},
+        },
+      });
+      expect(notices.single.title, 'Laptop · Generated app');
+      expect(api.commands.map((command) => command['kind']), ['notifications']);
+      sync.dispose();
+    },
+  );
   testWidgets('SMS is sent only after explicit compose confirmation', (
     tester,
   ) async {

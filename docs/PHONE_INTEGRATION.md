@@ -140,3 +140,29 @@ and full message below, followed by the available action buttons. Android and
 Windows retain Narad's system app attribution, which is not a per-notification
 content field. On Linux, the notification sender heading
 is **device · app name** beside the Narad icon, with message content below.
+
+## Desktop notification sources
+
+Enable **Settings → Share desktop notifications** on a Linux desktop or a
+Windows MSIX installation. On that desktop, grant each recipient **Share
+notifications** and, optionally, **Dismiss notifications** in its device settings.
+Online Android devices and other desktops then mirror notifications automatically;
+**Notifications** in a desktop device's actions opens its current alerts. An iPhone
+can view alerts while Narad is open; this does not add iOS background access or
+allow reading other iPhone apps' notifications.
+
+Linux shares notifications posted through the freedesktop notification service
+after sharing is enabled. It keeps up to 128 active items in memory, serves the
+most recent items within the existing response budget, and clears them on opt-out.
+It reconnects if the notification service restarts. Custom desktop integrations
+that bypass that service are not captured. Windows shares active OS toast
+notifications after the user grants notification-listener access. The ZIP build
+receives notifications but needs the MSIX package to capture them.
+
+Desktop sources support reading and dismissing alerts. They do not advertise
+remote reply or arbitrary action buttons: those operations are unavailable through
+the desktop listener APIs used here. Android-source actions and replies remain
+supported. Each read/dismiss rechecks the source device's per-recipient permission;
+revoked or expired jobs cannot execute. Narad excludes its own mirrored alerts
+from capture to prevent forwarding loops. Message content stays in memory rather
+than an app notification archive.

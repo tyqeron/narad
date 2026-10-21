@@ -22,6 +22,7 @@ import 'phone_page.dart';
 import 'phone_sync.dart';
 import 'windows_backend.dart';
 import 'desktop_integration.dart';
+import 'desktop_notification_source.dart';
 import 'pairing_scanner.dart';
 import 'remote_input_page.dart';
 import 'share_url_dialog.dart';
@@ -120,6 +121,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
   WindowsBackend? _windows;
   DesktopIntegration? _desktop;
   PhoneSync? _phoneSync;
+  DesktopNotificationSource? _notificationSource;
   ClipboardSync? _clipboardSync;
   bool? _autostart;
   bool _starting = false;
@@ -285,8 +287,10 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
 
   void _attach(NaradApi api) {
     _phoneSync?.dispose();
+    _notificationSource?.dispose();
     _clipboardSync?.dispose();
     if (_desktop != null) {
+      _notificationSource = DesktopNotificationSource(api, _desktop!.channel);
       _phoneSync = PhoneSync(
         api,
         _desktop!.phoneNotification,
@@ -419,6 +423,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       if (_screens != null) unawaited(_screens!.tick(data));
       if (_desktop != null) unawaited(_desktop!.transferStatus(data));
       if (_phoneSync != null) unawaited(_phoneSync!.tick(data));
+      if (_notificationSource != null) unawaited(_notificationSource!.tick());
       if (_android != null && !_busy && !_widgetDispatching && _foreground) {
         final pending = await _android!.takeDeviceAction();
         if (pending != null && mounted) {
@@ -579,6 +584,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
     }
     if (_audio != null) unawaited(_audio!.dispose());
     _phoneSync?.dispose();
+    _notificationSource?.dispose();
     _clipboardSync?.dispose();
     _status.dispose();
     _directory.dispose();
@@ -793,6 +799,22 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         ),
       ),
       if (_desktop != null) ...[
+        _section('Notifications'),
+        SwitchListTile(
+          title: const Text('Share desktop notifications'),
+          subtitle: Text(
+            _notificationSource?.error.isNotEmpty == true
+                ? _notificationSource!.error
+                : 'Share new notifications with devices you authorize in Device settings. Narad must keep running.',
+          ),
+          value: _notificationSource?.enabled ?? false,
+          onChanged: _notificationSource?.supported == true
+              ? (enabled) => _run(() async {
+                  await _notificationSource!.setEnabled(enabled);
+                  if (mounted) setState(() {});
+                })
+              : null,
+        ),
         _section('Background operation'),
         const Text(
           'Closing the window keeps Narad connected in the background. Reopen it from the application menu or tray. Use Quit Narad to stop it.',
@@ -1785,6 +1807,17 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
             }
           },
         ),
+      if (peer['platform'] != 'android' && peer['platform'] != 'ios')
+        'Notifications': (
+          Icons.notifications_outlined,
+          () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => PhonePage(api: _api!, peer: peer),
+              ),
+            );
+          },
+        ),
       'Browse files': (Icons.folder_open, () => _browseFiles(peer)),
       if (peer['platform'] != 'ios')
         'Run command': (Icons.terminal, () => _runCommand(peer)),
@@ -2116,11 +2149,10 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
                   for (final entry in {
                     if (_data['device']['platform'] == 'android') ...{
                       'contacts.read': 'Share contacts',
-                      'notification.read': 'Share phone notifications',
-                      'notification.manage': 'Dismiss phone notifications',
-                      'notification.reply': 'Reply to phone notifications',
-                      'notification.action':
-                          'Use phone notification action buttons',
+                      'notification.read': 'Share notifications',
+                      'notification.manage': 'Dismiss notifications',
+                      'notification.reply': 'Reply to notifications',
+                      'notification.action': 'Use notification action buttons',
                       'sms.read': 'Read SMS messages',
                       'sms.send': 'Send SMS through this phone',
                       'calls.read': 'Read call history and live call state',

@@ -148,3 +148,22 @@ Under **Directories shared with this device**, select existing folders or choose
 The device still needs browse permission and, for writes, upload permission plus
 the folder upload switch. Existing folders, including the app Shared folder,
 require explicit device selection after upgrading; their files are preserved.
+
+## Share desktop notifications
+
+Turn on **Settings → Share desktop notifications**, then grant notification access
+to recipients in their device settings. Narad captures new freedesktop desktop
+notifications while it runs (including in the tray), and sends them through the
+existing authenticated device connection. Dismissing a synced desktop alert also
+removes the original when the recipient has dismiss permission. Disabling sharing
+clears Narad's in-memory capture. The monitor excludes Narad's own notifications
+and forwarded alerts, so devices do not echo notifications around a loop.
+
+The session D-Bus must permit its notification monitoring interface. If access is
+blocked, Settings shows the failure and notification sharing remains unavailable;
+Narad does not replace or take ownership of the system notification service.
+The isolated native test runs in CI:
+
+```sh
+dbus-run-session -- env NARAD_NOTIFICATION_TEST_BUS=1 /usr/bin/python3 scripts/test-linux-notification-source.py
+```

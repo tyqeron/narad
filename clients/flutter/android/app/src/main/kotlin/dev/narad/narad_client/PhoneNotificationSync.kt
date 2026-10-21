@@ -70,10 +70,10 @@ class PhoneNotificationSync(private val context:Context) {
     fun poll() {
         val status=LocalBackendClient.call(context,JSONObject().put("op","status"))
         val paired=status.getJSONObject("paired");val presence=status.getJSONObject("presence")
-        val online=paired.keys().asSequence().filter{presence.optJSONObject(it)?.optBoolean("online")==true && paired.getJSONObject(it).getJSONObject("peer").optString("platform")=="android"}.take(4).toSet()
+        val online=paired.keys().asSequence().filter{presence.optJSONObject(it)?.optBoolean("online")==true}.toSet()
         synchronized(this){posted.keys.toList().filter{it.substringBefore('/') !in online}.forEach{remove(it)};seen.keys.removeAll{it.substringBefore('/') !in online}}
-        manager.createNotificationChannel(NotificationChannel("narad_phone_notifications","Synced phone notifications",NotificationManager.IMPORTANCE_DEFAULT))
-        for(peer in online)for(kind in listOf("notifications","call_state")) {
+        manager.createNotificationChannel(NotificationChannel("narad_phone_notifications","Synced device notifications",NotificationManager.IMPORTANCE_DEFAULT))
+        for(peer in online)for(kind in if(paired.getJSONObject(peer).getJSONObject("peer").optString("platform")=="android")listOf("notifications","call_state") else listOf("notifications")) {
             val bucket="$peer/$kind"
             try {
                 val response=LocalBackendClient.call(context,JSONObject().put("op","phone_request").put("peer_id",peer).put("kind",kind).put("args",JSONObject()))

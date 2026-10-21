@@ -67,8 +67,12 @@ bool FlutterWindow::OnCreate() {
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(), "dev.narad/windows",
           &flutter::StandardMethodCodec::GetInstance());
+  notification_source_ = std::make_shared<WindowsNotificationSource>();
   backend_channel_->SetMethodCallHandler([this](const auto &call, auto result) {
-    if (call.method_name() == "configuration") {
+    if (WindowsNotificationSource::Handles(call.method_name())) {
+      notification_source_->Handle(call.method_name(),call.arguments(),std::move(result));
+      return;
+    } else if (call.method_name() == "configuration") {
       if (!backend_.Configure()) {
         result->Error("windows_backend", backend_.error());
         return;
@@ -147,6 +151,8 @@ bool FlutterWindow::OnCreate() {
 
 void FlutterWindow::OnDestroy() {
   RemoveTray();
+  if(notification_source_)notification_source_->Close();
+  notification_source_.reset();
   backend_channel_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;

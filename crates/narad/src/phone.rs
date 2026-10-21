@@ -141,16 +141,23 @@ pub async fn local(shared: Arc<Mutex<State>>, p: &Value) -> Result<Value> {
             for (cap, key) in [
                 ("contacts.read", "contacts"),
                 ("notification.read", "notifications"),
-                ("notification.manage", "notifications"),
-                ("notification.reply", "notifications"),
-                ("notification.action", "notifications"),
+                ("notification.manage", "notification_manage"),
+                ("notification.reply", "notification_reply"),
+                ("notification.action", "notification_action"),
                 ("sms.read", "sms_read"),
                 ("sms.send", "sms_send"),
                 ("calls.read", "call_logs"),
                 ("calls.control", "call_control"),
             ] {
                 s.own.capabilities.retain(|c| c != cap);
-                if p["support"]["enabled"] == true && p["support"][key] == true {
+                let available = p["support"].get(key).unwrap_or_else(|| {
+                    if key.starts_with("notification_") {
+                        &p["support"]["notifications"]
+                    } else {
+                        &Value::Null
+                    }
+                });
+                if p["support"]["enabled"] == true && available == true {
                     s.own.capabilities.push(cap.into());
                 }
             }
@@ -200,5 +207,42 @@ pub async fn local(shared: Arc<Mutex<State>>, p: &Value) -> Result<Value> {
             Ok(json!({"ok":true}))
         }
         _ => anyhow::bail!("unsupported phone operation"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn desktop_notifications_advertise_no_reply_or_action_support() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = State::load(
+            dir.path().into(),
+            "Desktop".into(),
+            "127.0.0.1".into(),
+            45678,
+        )
+        .unwrap();
+        let shared = Arc::new(Mutex::new(state));
+        local(shared.clone(), &json!({"op":"phone_bridge_ready","support":{"enabled":true,"notifications":true,"notification_manage":true,"notification_reply":false,"notification_action":false}})).await.unwrap();
+        let capabilities = shared.lock().await.own.capabilities.clone();
+        assert!(capabilities.iter().any(|c| c == "notification.read"));
+        assert!(capabilities.iter().any(|c| c == "notification.manage"));
+        assert!(!capabilities
+            .iter()
+            .any(|c| c == "notification.reply" || c == "notification.action"));
+        local(
+            shared.clone(),
+            &json!({"op":"phone_bridge_ready","support":{"enabled":false}}),
+        )
+        .await
+        .unwrap();
+        assert!(!shared
+            .lock()
+            .await
+            .own
+            .capabilities
+            .iter()
+            .any(|c| c.starts_with("notification.")));
     }
 }

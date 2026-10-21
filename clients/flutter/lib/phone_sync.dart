@@ -24,7 +24,7 @@ class PhoneNotice {
   final Map<String, String> actions;
 }
 
-/// Ephemeral mirrors of authenticated online phones; source grants authorize every click.
+/// Ephemeral mirrors of authenticated online devices; source grants authorize every click.
 class PhoneSync {
   PhoneSync(
     this.api,
@@ -85,12 +85,7 @@ class PhoneSync {
       final paired = status['paired'] as Map? ?? {},
           presence = status['presence'] as Map? ?? {};
       final online = paired.keys
-          .where(
-            (id) =>
-                (presence[id] as Map?)?['online'] == true &&
-                ((paired[id] as Map)['peer'] as Map)['platform'] == 'android',
-          )
-          .take(4)
+          .where((id) => (presence[id] as Map?)?['online'] == true)
           .map((id) => id.toString())
           .toSet();
       for (final key in _posted.keys.toList()) {
@@ -102,7 +97,10 @@ class PhoneSync {
       for (final id in online) {
         if (_disposed) break;
         final peer = (paired[id] as Map)['peer'] as Map;
-        for (final kind in ['notifications', 'call_state']) {
+        for (final kind in [
+          'notifications',
+          if (peer['platform'] == 'android') 'call_state',
+        ]) {
           final bucket = '$id/$kind';
           try {
             final result = await api.call({

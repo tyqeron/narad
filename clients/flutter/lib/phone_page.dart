@@ -14,6 +14,8 @@ class PhonePage extends StatefulWidget {
 }
 
 class _PhonePageState extends State<PhonePage> with WidgetsBindingObserver {
+  bool get _mobile =>
+      const ['android', 'ios'].contains(widget.peer['platform']);
   Timer? _timer;
   int _tab = 0;
   bool _loading = false, _acting = false, _foreground = true;
@@ -195,22 +197,25 @@ class _PhonePageState extends State<PhonePage> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: Text('Phone · ${widget.peer['device_name']}'),
+      title: Text(
+        '${_mobile ? 'Phone' : 'Notifications'} · ${widget.peer['device_name']}',
+      ),
       actions: [
-        IconButton(
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => ContactsPage(
-                api: widget.api,
-                peer: widget.peer,
-                onSms: (number) => _compose(number: number),
-                onCall: (number) => _dial(number),
+        if (_mobile)
+          IconButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => ContactsPage(
+                  api: widget.api,
+                  peer: widget.peer,
+                  onSms: (number) => _compose(number: number),
+                  onCall: (number) => _dial(number),
+                ),
               ),
             ),
+            icon: const Icon(Icons.contacts_outlined),
+            tooltip: 'Contacts',
           ),
-          icon: const Icon(Icons.contacts_outlined),
-          tooltip: 'Contacts',
-        ),
         IconButton(
           onPressed: _loading ? null : _load,
           icon: const Icon(Icons.refresh),
@@ -220,30 +225,31 @@ class _PhonePageState extends State<PhonePage> with WidgetsBindingObserver {
     ),
     body: Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: SegmentedButton<int>(
-            segments: const [
-              ButtonSegment(
-                value: 0,
-                icon: Icon(Icons.notifications_outlined),
-                label: Text('Alerts'),
-              ),
-              ButtonSegment(
-                value: 1,
-                icon: Icon(Icons.sms_outlined),
-                label: Text('SMS'),
-              ),
-              ButtonSegment(
-                value: 2,
-                icon: Icon(Icons.call_outlined),
-                label: Text('Calls'),
-              ),
-            ],
-            selected: {_tab},
-            onSelectionChanged: (s) => _select(s.single),
+        if (_mobile)
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: SegmentedButton<int>(
+              segments: const [
+                ButtonSegment(
+                  value: 0,
+                  icon: Icon(Icons.notifications_outlined),
+                  label: Text('Alerts'),
+                ),
+                ButtonSegment(
+                  value: 1,
+                  icon: Icon(Icons.sms_outlined),
+                  label: Text('SMS'),
+                ),
+                ButtonSegment(
+                  value: 2,
+                  icon: Icon(Icons.call_outlined),
+                  label: Text('Calls'),
+                ),
+              ],
+              selected: {_tab},
+              onSelectionChanged: (s) => _select(s.single),
+            ),
           ),
-        ),
         if (_loading || _acting) const LinearProgressIndicator(),
         Expanded(
           child: ListView(
@@ -254,7 +260,11 @@ class _PhonePageState extends State<PhonePage> with WidgetsBindingObserver {
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Text(
-                      '$_error\n\n${widget.peer['platform'] == 'ios' ? 'Keep Narad visible on iPhone to confirm SMS or call requests.' : 'On the phone, enable Phone integration and grant this device access in Device settings.'}',
+                      '$_error\n\n${widget.peer['platform'] == 'ios'
+                          ? 'Keep Narad visible on iPhone to confirm SMS or call requests.'
+                          : _mobile
+                          ? 'On the phone, enable Phone integration and grant this device access in Device settings.'
+                          : 'On the desktop, enable Share desktop notifications in Settings and grant this device notification access in Device settings.'}',
                     ),
                   ),
                 ),

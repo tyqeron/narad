@@ -8,6 +8,7 @@
 #include <optional>
 
 #include "backend_host.h"
+#include "notification_source.h"
 #include "win32_window.h"
 #include <flutter/encodable_value.h>
 #include <flutter/method_channel.h>
@@ -37,6 +38,7 @@ private:
   void AddTray();
   void RemoveTray();
   BackendHost backend_;
+  std::shared_ptr<WindowsNotificationSource> notification_source_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       backend_channel_;
   // The project to run.
