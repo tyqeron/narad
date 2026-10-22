@@ -461,10 +461,15 @@ class NaradIntegration(unittest.TestCase):
                 self.assertLess(time.monotonic(), deadline)
                 time.sleep(0.05)
             self.b.call(op="permission", peer_id=self.aid, capability="notification.read", allow=False)
+            # The remote waiter removes a revoked job before returning denial.
+            # Await that acknowledgement rather than racing its 80 ms poll: a
+            # native validation may otherwise see either denial or an expired ID.
             with self.assertRaisesRegex(RuntimeError, "permission denied"):
-                self.b.call(op="phone_validate", id=jobs[0]["id"])
-            with self.assertRaisesRegex(RuntimeError, "permission denied"):
-                pending.result()
+                pending.result(timeout=5)
+            for op in ("phone_validate", "phone_result"):
+                with self.subTest(op=op), self.assertRaisesRegex(RuntimeError, "phone request expired"):
+                    self.b.call(op=op, id=jobs[0]["id"], result={"ok": True})
+            self.assertEqual(self.b.call(op="phone_jobs")["jobs"], [])
 
     def test_phone_bridge_is_opt_in_and_sms_send_has_separate_permission(self):
         self.pair()
