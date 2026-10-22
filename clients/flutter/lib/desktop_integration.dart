@@ -5,14 +5,21 @@ import 'package:flutter_local_notifications_windows/flutter_local_notifications_
 import 'phone_sync.dart';
 
 class DesktopIntegration {
-  DesktopIntegration({MethodChannel? channel})
-    : channel =
-          channel ??
-          MethodChannel(
-            Platform.isWindows ? 'dev.narad/windows' : 'dev.narad/desktop',
-          );
+  DesktopIntegration({
+    MethodChannel? channel,
+    bool? useWindowsNotifications,
+    FlutterLocalNotificationsWindows Function()? windowsFactory,
+  }) : _useWindowsNotifications = useWindowsNotifications ?? Platform.isWindows,
+       _windowsFactory = windowsFactory ?? FlutterLocalNotificationsWindows.new,
+       channel =
+           channel ??
+           MethodChannel(
+             Platform.isWindows ? 'dev.narad/windows' : 'dev.narad/desktop',
+           );
   final MethodChannel channel;
-  late final _windows = FlutterLocalNotificationsWindows();
+  final bool _useWindowsNotifications;
+  final FlutterLocalNotificationsWindows Function() _windowsFactory;
+  late final _windows = _windowsFactory();
   Future<bool>? _ready;
   Future<Directory>? _iconDirectory;
   Future<File?> _windowsIcon(int id, Uint8List? bytes) async {
@@ -108,7 +115,7 @@ class DesktopIntegration {
   Future<void> setAutostart(bool enabled) =>
       channel.invokeMethod<void>('setAutostart', {'enabled': enabled});
   Future<void> phoneNotification(PhoneNotice n) async {
-    if (Platform.isWindows) {
+    if (_useWindowsNotifications) {
       _ready ??= _windows.initialize(
         settings: const WindowsInitializationSettings(
           appName: 'Narad',
@@ -180,7 +187,7 @@ class DesktopIntegration {
   }
 
   Future<void> cancelPhoneNotification(int id) async {
-    if (Platform.isWindows) {
+    if (_useWindowsNotifications) {
       if (_ready != null && await _ready!) await _windows.cancel(id: id);
       if (_iconDirectory != null) {
         try {

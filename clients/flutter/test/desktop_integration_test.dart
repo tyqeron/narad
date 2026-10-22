@@ -1,9 +1,45 @@
 import 'package:narad_client/notification_icon.dart';
+import 'package:flutter_local_notifications_windows/flutter_local_notifications_windows.dart';
 import 'package:narad_client/phone_sync.dart';
 import 'fixtures/notification_icon.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:narad_client/desktop_integration.dart';
+
+class FakeWindowsNotifications implements FlutterLocalNotificationsWindows {
+  int initialized = 0;
+  final shown = <int>[];
+  final details = <WindowsNotificationDetails?>[];
+  final cancelled = <int>[];
+  @override
+  Future<bool> initialize({
+    required WindowsInitializationSettings settings,
+    Function? onDidReceiveNotificationResponse,
+  }) async {
+    initialized++;
+    return true;
+  }
+
+  @override
+  Future<void> show({
+    required int id,
+    String? title,
+    String? body,
+    String? payload,
+    WindowsNotificationDetails? notificationDetails,
+  }) async {
+    shown.add(id);
+    details.add(notificationDetails);
+  }
+
+  @override
+  Future<void> cancel({required int id}) async {
+    cancelled.add(id);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -23,9 +59,54 @@ void main() {
         .setMockMethodCallHandler(channel, null),
   );
   test(
+    'Windows notifications use an injected backend without loading a DLL',
+    () async {
+      final windows = FakeWindowsNotifications();
+      var constructed = 0;
+      final desktop = DesktopIntegration(
+        channel: channel,
+        useWindowsNotifications: true,
+        windowsFactory: () {
+          constructed++;
+          return windows;
+        },
+      );
+      await desktop.cancelPhoneNotification(7);
+      expect(constructed, 0, reason: 'Unused Windows backend stays lazy');
+      for (final value in [20, 75]) {
+        await desktop.phoneNotification(
+          PhoneNotice(
+            id: 7,
+            peer: 'phone',
+            key: 'live',
+            title: 'Phone · App',
+            body: 'Downloading',
+            actions: {'dismiss': 'Dismiss'},
+            progress: value,
+          ),
+        );
+      }
+      expect(constructed, 1);
+      expect(windows.initialized, 1);
+      expect(windows.shown, [7, 7]);
+      expect(windows.details.map((d) => d!.progressBars.single.value), [
+        .2,
+        .75,
+      ]);
+      expect(windows.details.last!.actions.single.arguments, '7:dismiss');
+      await desktop.cancelPhoneNotification(7);
+      expect(windows.cancelled, [7]);
+      expect(calls, isEmpty);
+    },
+  );
+
+  test(
     'forwards validated source icon bytes with the device notification',
     () async {
-      final desktop = DesktopIntegration(channel: channel);
+      final desktop = DesktopIntegration(
+        channel: channel,
+        useWindowsNotifications: false,
+      );
       final icon = notificationIcon(sampleNotificationIcon)!;
       await desktop.phoneNotification(
         PhoneNotice(
@@ -50,7 +131,10 @@ void main() {
   test(
     'transfer notification updates one ID as bytes advance and completes',
     () async {
-      final desktop = DesktopIntegration(channel: channel);
+      final desktop = DesktopIntegration(
+        channel: channel,
+        useWindowsNotifications: false,
+      );
       Map<String, dynamic> snapshot(int done, String state) => {
         'transfers': [
           {
@@ -79,7 +163,10 @@ void main() {
   test(
     'reads login preference and forwards explicit enable and disable changes',
     () async {
-      final desktop = DesktopIntegration(channel: channel);
+      final desktop = DesktopIntegration(
+        channel: channel,
+        useWindowsNotifications: false,
+      );
       expect(await desktop.autostart(), isTrue);
       await desktop.setAutostart(false);
       await desktop.setAutostart(true);
@@ -93,7 +180,10 @@ void main() {
     },
   );
   test('native tray quit waits for Dart media cleanup', () async {
-    final desktop = DesktopIntegration(channel: channel);
+    final desktop = DesktopIntegration(
+      channel: channel,
+      useWindowsNotifications: false,
+    );
     final events = <String>[];
     desktop.onPrepareQuit(() async {
       events.add('stop-media');
@@ -117,7 +207,10 @@ void main() {
     channel.setMethodCallHandler(null);
   });
   test('quit uses the native exit path instead of hiding the window', () async {
-    await DesktopIntegration(channel: channel).quit();
+    await DesktopIntegration(
+      channel: channel,
+      useWindowsNotifications: false,
+    ).quit();
     expect(calls.single.method, 'quit');
   });
 }
