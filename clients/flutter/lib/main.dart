@@ -1634,7 +1634,16 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         ],
       ),
     ),
-    _section('Nearby devices'),
+    Row(
+      children: [
+        Expanded(child: _section('Nearby devices')),
+        TextButton.icon(
+          onPressed: _busy ? null : () => _run(_refresh),
+          icon: const Icon(Icons.refresh),
+          label: const Text('Refresh devices'),
+        ),
+      ],
+    ),
     if (_items(
       'discovered',
     ).where((p) => !_paired.containsKey(p['device_id'])).isEmpty)

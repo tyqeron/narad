@@ -242,6 +242,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('My laptop'), findsOneWidget);
     expect(find.text('Looking on your local network'), findsOneWidget);
+    final previousStatusCalls = api.calls
+        .where((c) => c['op'] == 'status')
+        .length;
+    await tester.tap(find.text('Refresh devices'));
+    await tester.pumpAndSettle();
+    expect(
+      api.calls.where((c) => c['op'] == 'status').length,
+      greaterThan(previousStatusCalls),
+    );
     await tester.scrollUntilVisible(find.text('My phone'), 150);
     await tester.pumpAndSettle();
     expect(find.text('My phone'), findsOneWidget);
