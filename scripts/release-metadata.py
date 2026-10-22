@@ -16,7 +16,7 @@ def metadata(tag, pubspec):
         raise ValueError('pubspec.yaml must declare version: VERSION+BUILD_NUMBER')
     name, _, build = app[1].partition('+')
     if name != version:
-        raise ValueError(f'Tag version {version} does not match pubspec version {name}')
+        raise ValueError(f'Tag version {version} does not match pubspec version {name}. Update clients/flutter/pubspec.yaml, commit it, and tag that commit; rerunning the old tag uses its original version.')
     if not build.isascii() or not build.isdigit() or not 1 <= int(build) <= 2_100_000_000:
         raise ValueError('App build number must be between 1 and 2100000000')
     return {'version': version, 'build_number': str(int(build)), 'prerelease': str(bool(match[4])).lower()}
