@@ -16,60 +16,107 @@ class TestAudioBackend implements RTCPeerConnection {
 }
 
 void main() {
-  testWidgets('failed discovery unloads its route before retrying', (
-    tester,
-  ) async {
-    final audio = AudioController(MultiMediaApi(), (e) => fail('$e'));
-    var created = 0, removed = 0;
-    LinuxAudioRoutes? route;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: SystemAudioPage(
-          createConnection: (_) async => TestAudioBackend(),
-          audio: audio,
-          peer: 'phone',
-          name: 'Phone',
-          routeFactory: () => route = LinuxAudioRoutes(
-            token: 'retry_${++created}',
-            command: (args) async {
-              if (args.first == 'get-default-sink') return 'speakers';
-              if (args.first == 'unload-module') removed++;
-              return '123';
-            },
+  testWidgets(
+    'Windows selects a recording endpoint without creating Linux routes',
+    (tester) async {
+      final audio = AudioController(MultiMediaApi(), (e) => fail('$e'));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SystemAudioPage(
+            audio: audio,
+            peer: 'phone',
+            name: 'Phone',
+            routeFactory: () =>
+                throw StateError('Windows must not create Linux routes'),
+            createConnection: (_) => throw StateError(
+              'Windows must not initialize the Linux observer',
+            ),
+            enumerateDevices: () async => [
+              MediaDeviceInfo(
+                deviceId: 'stereo-mix',
+                label: 'Stereo Mix',
+                kind: 'audioinput',
+              ),
+            ],
           ),
-          enumerateDevices: () async => created == 1
-              ? []
-              : [
-                  MediaDeviceInfo(
-                    deviceId: route!.speakerCapture,
-                    label: route!.captureLabel,
-                    kind: 'audioinput',
-                  ),
-                ],
         ),
-      ),
-    );
-    await tester.tap(find.text('Prepare / refresh audio capture'));
-    await tester.pump();
-    for (var i = 0; i < 22; i++) {
-      await tester.pump(const Duration(milliseconds: 250));
-    }
-    expect(removed, 1);
-    expect(
-      find.textContaining('Audio capture did not become available'),
-      findsOneWidget,
-    );
-    await tester.tap(find.text('Prepare / refresh audio capture'));
-    await tester.pumpAndSettle();
-    expect(created, 2);
-    expect(
-      find.textContaining('Audio capture did not become available'),
-      findsNothing,
-    );
-    await tester.pumpWidget(const SizedBox());
-    await audio.dispose();
-    await tester.pumpAndSettle();
-  });
+      );
+      await tester.tap(find.text('Prepare / refresh audio capture'));
+      await tester.pumpAndSettle();
+      expect(audio.systemAudioSharing!.input, isNull);
+      await tester.tap(find.byType(DropdownButtonFormField<String>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Stereo Mix').last);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Play on selected devices'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Play on selected devices'));
+      await tester.pumpAndSettle();
+      expect(audio.links.values.single.inputDeviceId, 'stereo-mix');
+      await tester.pumpWidget(const SizedBox());
+      expect(audio.links.values.single.peer, 'phone');
+      await audio.dispose();
+      expect(audio.links, isEmpty);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'failed discovery unloads its route before retrying',
+    (tester) async {
+      final audio = AudioController(MultiMediaApi(), (e) => fail('$e'));
+      var created = 0, removed = 0;
+      LinuxAudioRoutes? route;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SystemAudioPage(
+            createConnection: (_) async => TestAudioBackend(),
+            audio: audio,
+            peer: 'phone',
+            name: 'Phone',
+            routeFactory: () => route = LinuxAudioRoutes(
+              token: 'retry_${++created}',
+              command: (args) async {
+                if (args.first == 'get-default-sink') return 'speakers';
+                if (args.first == 'unload-module') removed++;
+                return '123';
+              },
+            ),
+            enumerateDevices: () async => created == 1
+                ? []
+                : [
+                    MediaDeviceInfo(
+                      deviceId: route!.speakerCapture,
+                      label: route!.captureLabel,
+                      kind: 'audioinput',
+                    ),
+                  ],
+          ),
+        ),
+      );
+      await tester.tap(find.text('Prepare / refresh audio capture'));
+      await tester.pump();
+      for (var i = 0; i < 22; i++) {
+        await tester.pump(const Duration(milliseconds: 250));
+      }
+      expect(removed, 1);
+      expect(
+        find.textContaining('Audio capture did not become available'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Prepare / refresh audio capture'));
+      await tester.pumpAndSettle();
+      expect(created, 2);
+      expect(
+        find.textContaining('Audio capture did not become available'),
+        findsNothing,
+      );
+      await tester.pumpWidget(const SizedBox());
+      await audio.dispose();
+      await tester.pumpAndSettle();
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.linux),
+  );
 
   testWidgets(
     'audio survives Back, reopens with listeners and stops explicitly',
@@ -150,5 +197,6 @@ void main() {
       await tester.pumpWidget(const SizedBox());
       await audio.dispose();
     },
+    variant: TargetPlatformVariant.only(TargetPlatform.linux),
   );
 }

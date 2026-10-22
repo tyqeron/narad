@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'audio.dart';
@@ -59,7 +59,7 @@ class _SystemAudioPageState extends State<SystemAudioPage> {
       padding: const EdgeInsets.all(20),
       children: [
         Text(
-          Platform.isLinux
+          defaultTargetPlatform == TargetPlatform.linux
               ? 'Send playback from your current default laptop speaker to selected devices. Local playback continues. Sharing continues when you go back or minimize Narad.'
               : 'Select an installed Stereo Mix or virtual cable recording device. For a cable, route your video application’s output to its matching playback device in Windows sound settings. Sharing continues when you go back or minimize Narad.',
         ),
@@ -95,7 +95,9 @@ class _SystemAudioPageState extends State<SystemAudioPage> {
               )
               .toList(),
           onChanged:
-              sharing.busy || sharing.sessions.isNotEmpty || Platform.isLinux
+              sharing.busy ||
+                  sharing.sessions.isNotEmpty ||
+                  defaultTargetPlatform == TargetPlatform.linux
               ? null
               : sharing.selectInput,
         ),

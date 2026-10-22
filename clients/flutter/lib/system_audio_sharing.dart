@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'audio.dart';
@@ -103,19 +102,20 @@ class SystemAudioSharing extends ChangeNotifier {
 
   Future<void> prepare() async {
     if (_disposed) return;
-    if (Platform.isLinux && _audioBackend == null) {
+    if (defaultTargetPlatform == TargetPlatform.linux &&
+        _audioBackend == null) {
       // The native backend stops its audio-device observer after the last
       // connection closes. Keep an idle connection while discovering/using
       // temporary devices; this does not open a microphone or transmit media.
       _audioBackend = await createConnection({'iceServers': []});
     }
-    if (Platform.isLinux && _route == null) {
+    if (defaultTargetPlatform == TargetPlatform.linux && _route == null) {
       final route = routeFactory?.call() ?? LinuxAudioRoutes();
       await route.createSystemMonitor();
       _route = route;
     }
     await _refresh();
-    if (Platform.isLinux) {
+    if (defaultTargetPlatform == TargetPlatform.linux) {
       // PipeWire/PulseAudio device removal and addition reach WebRTC
       // asynchronously, especially after the last capture stream is closed.
       for (var attempt = 0; input == null && attempt < 20; attempt++) {
