@@ -298,6 +298,11 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       );
       _desktop!.onNotificationAction = (id, action, reply) async {
         try {
+          if (action == 'pairing-review') {
+            await _desktop!.show();
+            if (mounted) _openTab(0);
+            return;
+          }
           if (action == 'reply' && reply == null) {
             await _desktop!.show();
             if (!mounted) return;
@@ -414,6 +419,7 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
       });
       if (Platform.isAndroid && _android != null && _foreground) {
         unawaited(_receiveSharedContent());
+        if (await _android!.takePairingNotification() && mounted) _openTab(0);
       }
       final pendingDesktopShare = _pendingDesktopShare;
       if (pendingDesktopShare != null) {
@@ -421,7 +427,10 @@ class _DashboardState extends State<Dashboard> with WidgetsBindingObserver {
         unawaited(_receiveDesktopShare(pendingDesktopShare));
       }
       if (_screens != null) unawaited(_screens!.tick(data));
-      if (_desktop != null) unawaited(_desktop!.transferStatus(data));
+      if (_desktop != null) {
+        unawaited(_desktop!.transferStatus(data));
+        unawaited(_desktop!.pairingStatus(data));
+      }
       if (_phoneSync != null) unawaited(_phoneSync!.tick(data));
       if (_notificationSource != null) unawaited(_notificationSource!.tick());
       if (_android != null && !_busy && !_widgetDispatching && _foreground) {

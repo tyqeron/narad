@@ -59,6 +59,51 @@ class DesktopIntegration {
     });
   }
 
+  final Map<String, int> _pairingNotices = {};
+  int _nextPairingId = 5000;
+  bool _pairingBusy = false;
+  Future<void> pairingStatus(Map<String, dynamic> snapshot) async {
+    if (_pairingBusy) return;
+    _pairingBusy = true;
+    try {
+      final pending = <String>{};
+      for (final raw in snapshot['pairings'] as List? ?? const []) {
+        final request = raw as Map;
+        if (request['outgoing'] == true ||
+            request['status'] != 'pending' ||
+            ((request['expires_at'] as num?)?.toInt() ?? 0) <=
+                DateTime.now().millisecondsSinceEpoch ~/ 1000) {
+          continue;
+        }
+        final key = request['id'] as String;
+        pending.add(key);
+        if (_pairingNotices.containsKey(key)) continue;
+        final id = _nextPairingId++;
+        await phoneNotification(
+          PhoneNotice(
+            id: id,
+            peer: '',
+            key: key,
+            title:
+                'Pairing request · ${(request['peer'] as Map)['device_name']}',
+            body:
+                'Open Narad to review the request and compare the verification code.',
+            actions: {'pairing-review': 'Review request'},
+          ),
+        );
+        _pairingNotices[key] = id;
+      }
+      for (final key in _pairingNotices.keys.toList()) {
+        if (!pending.contains(key)) {
+          await cancelPhoneNotification(_pairingNotices[key]!);
+          _pairingNotices.remove(key);
+        }
+      }
+    } finally {
+      _pairingBusy = false;
+    }
+  }
+
   final Map<String, String> _transferStates = {};
   bool _transfersInitialized = false;
   Future<void> transferStatus(Map<String, dynamic> snapshot) async {

@@ -80,6 +80,7 @@ class NaradService : Service() {
     private val storageWorker=Executors.newSingleThreadExecutor()
     private val phoneSyncWorker=Executors.newSingleThreadExecutor()
     private val phoneSync by lazy{PhoneNotificationSync(this)}
+    private val pairingNotices by lazy{PairingNotices(this)}
     @Volatile private var phoneSyncBusy=false
     private var lastConnectionText=""
     private var multicast: WifiManager.MulticastLock? = null
@@ -159,16 +160,19 @@ class NaradService : Service() {
         if(destroyed || state!="running")return
         try {
             val paired=JSONObject()
+            val pairingItems=org.json.JSONArray()
             var presence=JSONObject()
             var offset=0
             do {
                 val snapshot=LocalBackendClient.call(this,JSONObject().put("op","status").put("offset",offset),3000)
                 TransferNotices.update(this,snapshot)
+                snapshot.optJSONArray("pairings")?.let{items->for(i in 0 until items.length())pairingItems.put(items.getJSONObject(i))}
                 val page=snapshot.getJSONObject("paired")
                 for(id in page.keys())paired.put(id,page.getJSONObject(id))
                 presence=snapshot.optJSONObject("presence") ?: JSONObject()
                 offset+=32
             }while(snapshot.optBoolean("has_more") && offset<=512)
+            pairingNotices.update(pairingItems)
             val names=paired.keys().asSequence().filter{presence.optJSONObject(it)?.optBoolean("online")==true}
                 .map{paired.getJSONObject(it).getJSONObject("peer").getString("device_name")}.toList()
             val text=DeviceWidgetModel.title(names)+DeviceWidgetModel.details(names)
@@ -323,7 +327,7 @@ class NaradService : Service() {
         mediaWake?.release();mediaWake=null
         cameraReady=false;audioReady=false;playbackReady=false
         storageWorker.shutdownNow();
-        phoneSyncWorker.shutdownNow();phoneSync.stop();
+        phoneSyncWorker.shutdownNow();phoneSync.stop();pairingNotices.clear();
         destroyed=true
         main.removeCallbacks(platformPoll)
         CommandWidget.disconnected(this)

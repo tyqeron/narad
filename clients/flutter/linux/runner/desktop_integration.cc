@@ -293,6 +293,8 @@ void handle(FlMethodChannel *, FlMethodCall *call, gpointer user_data) {
           FlValue* key=fl_value_get_map_key(actions,i);FlValue* label=fl_value_get_map_value(actions,i);
           if(fl_value_get_type(key)!=FL_VALUE_TYPE_STRING || fl_value_get_type(label)!=FL_VALUE_TYPE_STRING)continue;
           auto target=std::to_string(fl_value_get_int(id))+":"+fl_value_get_string(key);
+          if(g_strcmp0(fl_value_get_string(key),"pairing-review")==0)
+            g_notification_set_default_action_and_target(notification,"app.notification-action","s",target.c_str());
           g_notification_add_button_with_target(notification,fl_value_get_string(label),"app.notification-action","s",target.c_str());
         }
       }

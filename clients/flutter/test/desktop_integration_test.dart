@@ -59,6 +59,45 @@ void main() {
         .setMockMethodCallHandler(channel, null),
   );
   test(
+    'incoming pairing alerts are deduplicated and removed after resolution',
+    () async {
+      final desktop = DesktopIntegration(
+        channel: channel,
+        useWindowsNotifications: false,
+      );
+      final request = {
+        'id': 'pairing',
+        'outgoing': false,
+        'status': 'pending',
+        'expires_at': DateTime.now().millisecondsSinceEpoch ~/ 1000 + 300,
+        'peer': {'device_name': 'Nearby phone'},
+      };
+      final status = {
+        'pairings': [request],
+      };
+      await desktop.pairingStatus(status);
+      await desktop.pairingStatus(status);
+      expect(calls, hasLength(1));
+      expect(calls.single.method, 'phoneNotification');
+      final notice = calls.single.arguments as Map;
+      expect(notice['title'], 'Pairing request · Nearby phone');
+      expect(notice['actions'], {'pairing-review': 'Review request'});
+      request['status'] = 'approved';
+      await desktop.pairingStatus(status);
+      expect(calls.last.method, 'cancelPhoneNotification');
+      expect((calls.last.arguments as Map)['id'], notice['id']);
+      calls.clear();
+      request['status'] = 'pending';
+      request['outgoing'] = true;
+      await desktop.pairingStatus(status);
+      request['outgoing'] = false;
+      request['expires_at'] = 1;
+      await desktop.pairingStatus(status);
+      expect(calls, isEmpty);
+    },
+  );
+
+  test(
     'Windows notifications use an injected backend without loading a DLL',
     () async {
       final windows = FakeWindowsNotifications();

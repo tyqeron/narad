@@ -82,6 +82,11 @@ class MainActivity : FlutterActivity() {
                         startForegroundService(Intent(this,NaradService::class.java))
                         result.success(mapOf("stateDirectory" to NaradService.stateDirectory(this).absolutePath,"apiPort" to NaradService.API_PORT,"deviceName" to NaradService.deviceName(this)))
                     }
+                    "takePairingNotification" -> {
+                        val open=intent.getBooleanExtra("narad_pairing_request",false)
+                        intent.removeExtra("narad_pairing_request")
+                        result.success(open)
+                    }
                     "takeDeviceAction" -> result.success(CommandWidget.takeAction(this,intent))
                     "status" -> result.success(mapOf("state" to NaradService.state,"error" to NaradService.lastError))
                     "stop" -> {stopService(Intent(this,NaradService::class.java));result.success(null)}

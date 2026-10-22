@@ -42,6 +42,9 @@ class AndroidBackend {
   Future<void> phoneSetup() =>
       _platformChannel.invokeMethod<void>('phoneSetup');
 
+  Future<bool> takePairingNotification() async =>
+      await _platformChannel.invokeMethod<bool>('takePairingNotification') ==
+      true;
   Future<Map<String, dynamic>?> takeDeviceAction() =>
       _platformChannel.invokeMapMethod<String, dynamic>('takeDeviceAction');
 
